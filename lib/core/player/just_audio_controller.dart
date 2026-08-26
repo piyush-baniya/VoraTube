@@ -237,6 +237,9 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   }
 
   @override
+  List<SongRef> get currentQueue => List<SongRef>.of(_queueRefs);
+
+  @override
   Future<void> setShuffle(bool enabled) async {
     await _player.setShuffleModeEnabled(enabled);
     _schedulePersist(immediate: true);

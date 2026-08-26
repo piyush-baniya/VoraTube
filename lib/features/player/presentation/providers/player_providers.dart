@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../library/data/library_repository.dart';
 import '../../../library/presentation/providers/library_providers.dart';
+import '../../../library/presentation/providers/library_view_providers.dart';
 
 /// The app's single [PlayerController], created during bootstrap in
 /// `main()` and injected here via override.
@@ -24,6 +25,36 @@ final playbackSnapshotProvider = StreamProvider<PlayerSnapshot>(
 final playbackPositionProvider = StreamProvider<Duration>(
   (ref) => ref.watch(playerProvider).positions,
 );
+
+/// Resolves a SongRef identity key to a database song row ID for
+/// operations like toggling favorites from the player UI.
+final songRowIdProvider = FutureProvider.family<int?, String>((
+  ref,
+  identityKey,
+) async {
+  final repo = ref.watch(libraryRepositoryProvider);
+  final map = await repo.rowIdsByIdentityKeys({identityKey});
+  return map[identityKey];
+});
+
+/// Convenience provider that exposes whether the currently playing song
+/// is a favorite, derived from [playbackSnapshotProvider] +
+/// [favoriteIdsProvider].
+final currentSongIsFavoriteProvider = Provider<bool>((ref) {
+  final snapshot = ref.watch(playbackSnapshotProvider).value;
+  if (snapshot == null || !snapshot.hasTrack) return false;
+
+  final key = snapshot.current!.identityKey;
+  final rowIdAsync = ref.watch(songRowIdProvider(key));
+  return rowIdAsync.when(
+    data: (rowId) {
+      if (rowId == null) return false;
+      return ref.watch(favoriteIdsProvider).contains(rowId);
+    },
+    loading: () => false,
+    error: (_, __) => false,
+  );
+});
 
 final class DriftPlayerPersistence implements PlayerPersistence {
   const DriftPlayerPersistence(this._repository);

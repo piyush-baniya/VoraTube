@@ -5,17 +5,23 @@ import 'package:vora_tube/core/player/player_controller.dart';
 /// Deterministic no-op player for widget tests. Never touches platform
 /// channels.
 class FakePlayerController implements PlayerController {
-  FakePlayerController({PlayerSnapshot? initial})
-    : current = initial ?? PlayerSnapshot.initial;
+  FakePlayerController({PlayerSnapshot? initial, List<SongRef>? queue})
+    : current = initial ?? PlayerSnapshot.initial,
+      _queue = queue ?? const [];
 
   @override
   PlayerSnapshot current;
+
+  final List<SongRef> _queue;
+
+  @override
+  List<SongRef> get currentQueue => List<SongRef>.of(_queue);
 
   @override
   Stream<PlayerSnapshot> get snapshot => Stream.value(current);
 
   @override
-  Stream<Duration> get positions => const Stream.empty();
+  Stream<Duration> get positions => Stream.value(Duration.zero);
 
   @override
   Future<void> playQueue(List<SongRef> songs, {int startIndex = 0}) async {}

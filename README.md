@@ -19,7 +19,8 @@ playback.
 | 3 | Playback foundation: `PlayerController` abstraction, `just_audio` + `audio_service` + `audio_session`, background/lock-screen/BT controls, queue persistence, gapless queue engine | ✅ Done |
 | 4 | Library experience & local search: Songs/Albums/Artists/Genres browsing, favorites, sorting, pagination, debounced local search, visual identity rework | ✅ Done |
 | 5 | Playlists & collections: full CRUD, playlist detail, add-to-playlist sheet, song-tile menu, collections strip (Favorites/Recently Added/Most Played/Recently Played), playback stats recording | ✅ Done |
-| Next | Full player UI, lyrics, smart mixes, settings | Planned |
+| 6 | Full-screen player: premium immersive UI, large artwork with Hero transitions, progress slider, playback controls, queue bottom sheet, favorite toggle, MiniPlayer navigation | ✅ Done |
+| Next | Lyrics, smart mixes, settings redesign, visual polish pass | Planned |
 
 ---
 
@@ -57,9 +58,9 @@ lib/
 │   ├── player/
 │   │   ├── player_controller.dart              # PlayerController iface, SongRef, PlayerSnapshot,
 │   │   │                                       #   QueueSnapshot JSON, RepeatMode, persistence iface,
-│   │   │                                       #   playNext(), PlaybackStatsSink typedef
+│   │   │                                       #   currentQueue getter, PlaybackStatsSink typedef
 │   │   └── just_audio_controller.dart          # BaseAudioHandler impl (the entire audio engine);
-│   │                                           #   stats batch recording (20-stat/5s threshold)
+│   │                                           #   stats batch recording, currentQueue snapshot copy
 │   └── utils/
 │       └── string_utils.dart                   # filename-title fallback, format detection
 ├── features/
@@ -87,8 +88,17 @@ lib/
 │   ├── player/presentation/
 │   │   ├── providers/player_providers.dart     # playerProvider (override-injected), snapshot &
 │   │   │                                       #   position streams, DriftPlayerPersistence,
-│   │   │                                       #   PlaybackStatsBuffer (batched flush, 20/5s)
-│   │   └── widgets/mini_player.dart            # Compact now-playing bar above bottom nav
+│   │   │                                       #   PlaybackStatsBuffer, songRowIdProvider,
+│   │   │                                       #   currentSongIsFavoriteProvider
+│   │   ├── screens/
+│   │   │   └── full_player_screen.dart         # Immersive full-screen player: artwork, metadata,
+│   │   │                                       #   controls, progress, queue access, favorite toggle
+│   │   └── widgets/
+│   │       ├── mini_player.dart                # Compact bar above nav; Hero artwork + tap → full player
+│   │       ├── player_artwork.dart             # Large artwork: Hero, AnimatedSwitcher, fallback gradient
+│   │       ├── player_controls.dart            # Play/pause/prev/next/shuffle/repeat; press animation
+│   │       ├── player_progress.dart            # Seekable slider + time labels; high-freq rebuild only here
+│   │       └── queue_sheet.dart                # DraggableScrollableSheet queue with swipe-to-remove
 │   ├── search/presentation/
 │   │   ├── providers/search_providers.dart     # Debounced query (250 ms) + results provider
 │   │   └── screens/search_screen.dart          # Local grouped results incl. playlist taps
@@ -217,6 +227,81 @@ The play queue is a JSON snapshot in `kv_entries`, not a relational table.
 
 ---
 
+## Player Architecture (Phase 6)
+
+The full-screen player follows a **separated-frequency architecture** to ensure 60fps
+during playback:
+
+### State Isolation
+
+| Provider | Frequency | What rebuilds |
+|---|---|---|
+| `playbackSnapshotProvider` | Low (track changes, mode toggles) | Song metadata, controls, artwork, favorite |
+| `playbackPositionProvider` | High (~200ms–1s ticks) | ONLY `PlayerProgress` widget |
+
+The full player screen watches `playbackSnapshotProvider` for coarse state.
+Only the nested `_PositionConsumer` subscribes to `playbackPositionProvider`.
+This means artwork, title, artist, controls, and favorite button NEVER rebuild
+on position ticks — they only rebuild when the track or mode actually changes.
+
+### File Responsibilities
+
+| File | Responsibility |
+|---|---|
+| `full_player_screen.dart` | Top-level composition: SafeArea, LayoutBuilder, responsive
+  artwork sizing, scroll view, empty state. Uses `AnnotatedRegion` for
+  transparent status/nav bar. |
+| `player_artwork.dart` | Hero-tagged large artwork with `AnimatedSwitcher` cross-fade
+  on song change. Fallback: gradient + decorative rings + icon.
+  Box shadows for depth. |
+| `player_controls.dart` | Playback controls row: shuffle, prev, play/pause (hero
+  button with scale animation), next, repeat. Disabled states at
+  queue boundaries (unless repeat-all). |
+| `player_progress.dart` | Seekable slider + time labels. Local `StatefulWidget` manages
+  drag state internally. Custom `_RoundedTrackShape` for visual polish. |
+| `queue_sheet.dart` | `DraggableScrollableSheet` bottom sheet with drag handle,
+  song count header, swipe-to-remove `Dismissible`, current-song
+  highlight with equalizer icon. |
+| `mini_player.dart` | Compact 64px bar. Taps push `FullPlayerScreen` via a
+  fade+slide route. Artwork wrapped in `Hero` for shared transition. |
+| `player_providers.dart` | Added `songRowIdProvider` (identityKey → rowId) and
+  `currentSongIsFavoriteProvider` (derived favorite state). |
+
+### MiniPlayer → Full Player Transition
+
+Opening the full player uses a custom `PageRouteBuilder` with 400ms fade-out
+curve and 320ms reverse. The artwork `Hero` tag (`'player_artwork_hero'`) is
+shared between `MiniPlayer._Artwork` and `PlayerArtwork` in the full screen.
+The mini player artwork is 48×48; the full screen artwork scales responsively
+(between 200–360px) via `LayoutBuilder`.
+
+### Favorite Toggle Flow
+
+1. Full player watches `currentSongIsFavoriteProvider`
+2. Provider resolves: `playbackSnapshotProvider` → `current.identityKey`
+   → `songRowIdProvider(key)` → `libraryRepository.rowIdsByIdentityKeys`
+   → checks `favoriteIdsProvider.contains(rowId)`
+3. Heart tap: reads `songRowIdProvider`, calls `favoriteIdsProvider.toggle(rowId)`
+4. Optimistic update via `FavoriteIdsController` (rollback on error)
+
+### Artwork Rendering
+
+- `PlayerArtwork` uses `AnimatedSwitcher` (350ms easeOutCubic) to cross-fade
+  between songs. The `ValueKey(path)` ensures the switcher detects changes.
+- `cacheWidth` set to 2× display size for efficient GPU texture allocation.
+- `gaplessPlayback: true` prevents flicker during image decode.
+- Fallback shows a gradient surface with three concentric ring decorations
+  and a centered album icon — not a bare empty box.
+
+### Queue Sheet
+
+- `DraggableScrollableSheet` with 0.55 initial, 0.3 min, 0.85 max.
+- Current song highlighted with primary-colored background + equalizer icon.
+- Swipe-to-dismiss removes from queue via `PlayerController.removeAt()`.
+- List index numbers shown for non-current items.
+
+---
+
 ## Search Implementation
 
 100% local. Uses existing normalized columns (`title_search`, `artist_search`) and
@@ -243,6 +328,8 @@ indexed fields — no FTS5 (re-evaluate only if profiling demands it):
 | `playerProvider` | Override-injected `PlayerController` (created in `main`) |
 | `playbackSnapshotProvider` | Coarse playback state stream |
 | `playbackPositionProvider` | Throttled positions (progress widgets only) |
+| `songRowIdProvider` | Maps identityKey → database rowId for favorite toggle |
+| `currentSongIsFavoriteProvider` | Derived: is current track a favorite? |
 | `librarySectionProvider` / `songSortProvider` / `favoritesOnlyProvider` | View selections |
 | `pagedSongsProvider` | Accumulating paginated songs (`loadMore()` on scroll threshold) |
 | `albumsOverviewProvider` etc. | Grouped browses; invalidated via `libraryRefreshTickProvider` |
@@ -308,6 +395,8 @@ Both implement the single `IngestService` contract; nothing downstream knows the
 
 - `flutter analyze` clean; `dart format` enforced; strict lints (`avoid_print`,
   `prefer_single_quotes`, const lints…).
+- 98 tests: widget shell, repository, import worker, migration, playlist,
+  collection, playback stats, and full player screen.
 - Widget tests: 4-tab shell smoke with in-memory Drift + fake player.
 - Repository tests: sync/duplicate/update semantics, large-batch inserts (1200),
   null-metadata handling, removal+orphan cleanup, artwork attach/missing sentinel,
@@ -315,6 +404,10 @@ Both implement the single `IngestService` contract; nothing downstream knows the
   favorites filtering, album/artist/genre grouping, multi-section search,
   playlist CRUD (create/rename/pin/delete/add/remove/reorder), collection queries
   (count/rowIds/recordPlayback), PlaybackStatsBuffer batching logic.
+- Player tests: full player screen renders with track/empty state, controls
+  interaction (play/pause/next/previous/shuffle/repeat), disabled-state behavior,
+  controller integration (tap → method call), small viewport safety, FakePlayer
+  currentQueue snapshot.
 - Import-worker tests (pure Dart): copy+hash identity, filename fallback, unsupported-format
   rejection, per-file failure isolation incl. cleanup, artwork surfacing, null-key safety.
 - Real-device (Samsung SM-M145F, Android 15): Phase 1 scan verified end-to-end incl.
@@ -333,6 +426,9 @@ Both implement the single `IngestService` contract; nothing downstream knows the
 - Play count incremented on track-change, not on full-listen completion (intentional simplicity trade-off).
 - Collection songs are not paginated yet (full list per collection); fine ≤5k per collection.
 - Playlist songs view doesn't use Drift keyset pagination (linear scans acceptable for typical playlist sizes).
+- Full player artwork does not use dynamic palette extraction yet (planned for visual polish phase).
+- Queue reorder drag-and-drop not yet implemented (current: swipe-to-remove only).
+- MiniPlayer lacks a thin progress indicator line (added in visual polish phase).
 
 ---
 

@@ -213,5 +213,10 @@ abstract class PlayerController {
 
   Future<void> setRepeat(RepeatMode mode);
 
+  /// A snapshot copy of the current queue. Safe to call from UI; returns
+  /// a new list each time so callers never hold a mutable reference to
+  /// the engine's internal list.
+  List<SongRef> get currentQueue;
+
   Future<void> dispose();
 }
