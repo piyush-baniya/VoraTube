@@ -3,10 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/app/app.dart';
+import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
+
+import 'fakes/fake_player.dart';
 
 void main() {
   testWidgets('VoraTube shell renders with four tabs', (tester) async {
-    await tester.pumpWidget(const ProviderScope(child: VoraTubeApp()));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [playerProvider.overrideWithValue(FakePlayerController())],
+        child: const VoraTubeApp(),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.byType(NavigationBar), findsOneWidget);

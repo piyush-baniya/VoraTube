@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/ingest/ingest_service.dart';
 import '../../../../shared/widgets/screen_header.dart';
+import '../../../player/presentation/providers/player_providers.dart';
 import '../providers/library_providers.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
@@ -273,6 +274,12 @@ class _CompleteView extends ConsumerWidget {
                 ref.watch(scanControllerProvider.notifier).startScan(),
             child: const Text('Scan again'),
           ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: () => startPlaybackOfWholeLibrary(ref),
+            icon: const Icon(Icons.play_circle_fill_rounded),
+            label: const Text('Play all (dev)'),
+          ),
         ],
       ),
     );
@@ -465,6 +472,12 @@ class _ImportCompleteView extends ConsumerWidget {
               label: const Text('Import more'),
             ),
             const SizedBox(height: 12),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: () => startPlaybackOfWholeLibrary(ref),
+              icon: const Icon(Icons.play_circle_fill_rounded),
+              label: const Text('Play all (dev)'),
+            ),
             TextButton(
               onPressed: () async {
                 final removed = await ref

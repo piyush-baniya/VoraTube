@@ -2,6 +2,7 @@
 
 import '../../../core/db/app_database.dart';
 import '../../../core/ingest/ingest_service.dart';
+import '../../../core/player/player_controller.dart';
 import '../../../core/utils/string_utils.dart';
 
 class SyncBatchResult {
@@ -401,5 +402,92 @@ class LibraryRepository {
       return fallback;
     }
     return 'Untitled';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Playback support: KV access and song resolution for the player layer.
+// ---------------------------------------------------------------------------
+
+extension LibraryPlaybackData on LibraryRepository {
+  Future<String?> kvGet(String key) async {
+    final query = _db.selectOnly(_db.kvEntries)
+      ..addColumns([_db.kvEntries.valueText])
+      ..where(_db.kvEntries.key.equals(key));
+    final row = await query.getSingleOrNull();
+    return row?.read(_db.kvEntries.valueText);
+  }
+
+  Future<void> kvSet(String key, String value) async {
+    await _db
+        .into(_db.kvEntries)
+        .insertOnConflictUpdate(
+          KvEntriesCompanion.insert(key: key, valueText: Value(value)),
+        );
+  }
+
+  Future<List<SongRef>> allSongRefs({int limit = 1000}) async {
+    final rows =
+        await (_db.select(_db.songs)
+              ..orderBy([(tbl) => OrderingTerm.asc(tbl.titleSearch)])
+              ..limit(limit))
+            .get();
+    return _rowsToRefs(rows);
+  }
+
+  Future<List<SongRef>> resolveSongsByIdentityKeys(
+    List<String> identityKeys,
+  ) async {
+    if (identityKeys.isEmpty) {
+      return const [];
+    }
+    final rows = await (_db.select(_db.songs)..limit(2000)).get();
+    final refs = await _rowsToRefs(rows);
+    final wanted = identityKeys.toSet();
+    final matches = <SongRef>[];
+    final byKey = <String, SongRef>{};
+    for (final ref in refs) {
+      if (wanted.contains(ref.identityKey)) {
+        byKey[ref.identityKey] = ref;
+      }
+    }
+    for (final key in identityKeys) {
+      final ref = byKey[key];
+      if (ref != null) {
+        matches.add(ref);
+      }
+    }
+    return matches;
+  }
+}
+
+extension on LibraryRepository {
+  Future<List<SongRef>> _rowsToRefs(List<Song> rows) async {
+    final albumIds = rows.map((r) => r.albumRowId).whereType<int>().toSet();
+    final artByAlbumRowId = <int, String?>{};
+    if (albumIds.isNotEmpty) {
+      final albums = await (_db.select(
+        _db.albums,
+      )..where((tbl) => tbl.id.isIn(albumIds))).get();
+      for (final a in albums) {
+        artByAlbumRowId[a.id] = (a.artLargePath?.isNotEmpty ?? false)
+            ? a.artLargePath
+            : (a.artSmallPath?.isNotEmpty ?? false ? a.artSmallPath : null);
+      }
+    }
+    return [
+      for (final r in rows)
+        SongRef(
+          identityKey: r.source == IngestSource.mediastore.name
+              ? 'ms:${r.mediaStoreId}'
+              : 'h:${r.contentHash}',
+          uri: r.contentUri,
+          title: r.title,
+          artist: r.artist,
+          album: r.albumName,
+          artPath: r.albumRowId == null ? null : artByAlbumRowId[r.albumRowId!],
+          durationMs: r.durationMs,
+        ),
+    ];
   }
 }

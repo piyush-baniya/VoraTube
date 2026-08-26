@@ -1,8 +1,8 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../features/library/presentation/screens/library_screen.dart';
 import '../features/playlists/presentation/screens/playlists_screen.dart';
-import '../features/player/presentation/widgets/mini_player_placeholder.dart';
+import '../features/player/presentation/widgets/mini_player.dart';
 import '../features/search/presentation/screens/search_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
 
@@ -35,7 +35,7 @@ class _HomeShellState extends State<HomeShell> {
           Expanded(
             child: IndexedStack(index: _currentIndex, children: _screens),
           ),
-          const MiniPlayerPlaceholder(),
+          const MiniPlayer(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
