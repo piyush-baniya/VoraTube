@@ -1,499 +1,313 @@
-import 'dart:io';
-
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/ingest/ingest_service.dart';
+import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/screen_header.dart';
+import '../../../../shared/widgets/skeleton_list.dart';
+import '../../../../shared/widgets/transitions.dart';
 import '../../../player/presentation/providers/player_providers.dart';
-import '../providers/library_providers.dart';
+import '../../data/library_models.dart';
+import '../../data/song_ref_mapper.dart';
+import 'filtered_songs_screen.dart';
+import '../providers/library_view_providers.dart';
+import '../widgets/library_tiles.dart';
+import '../widgets/section_selector.dart';
+import '../widgets/song_tile.dart';
+import '../widgets/sort_sheet.dart';
 
-class LibraryScreen extends ConsumerStatefulWidget {
+class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
 
   @override
-  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final section = ref.watch(librarySectionProvider);
+    final isSongs = section == LibrarySection.songs;
 
-class _LibraryScreenState extends ConsumerState<LibraryScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (Platform.isAndroid) {
-        ref.read(scanControllerProvider.notifier).refreshPermission();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
     return SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const ScreenHeader(title: 'Library'),
+          SectionSelector(
+            selected: section,
+            onChanged: (s) =>
+                ref.read(librarySectionProvider.notifier).state = s,
+          ),
+          if (isSongs) const _SongsToolbar(),
           Expanded(
-            child: Platform.isIOS ? const _ImportBody() : const _ScanBody(),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ScanBody extends ConsumerWidget {
-  const _ScanBody();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(scanControllerProvider);
-    return switch (state) {
-      ScanPermissionNeeded() => _PermissionView(
-        permanentlyDenied: state.permanentlyDenied,
-      ),
-      ScanReady() => const _ReadyView(),
-      ScanRunning() => _RunningView(
-        phase: state.phase,
-        processedCount: state.processedCount,
-        addedCount: state.addedCount,
-        totalHint: state.totalHint,
-      ),
-      ScanComplete() => _CompleteView(summary: state.summary),
-      ScanFailure() => _FailureView(message: state.message),
-    };
-  }
-}
-
-class _ImportBody extends ConsumerWidget {
-  const _ImportBody();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(importControllerProvider);
-    return switch (state) {
-      ImportReady() => const _ImportReadyView(),
-      Importing() => _ImportingView(
-        phase: state.phase,
-        processedCount: state.processedCount,
-        totalCount: state.totalCount,
-        importedCount: state.importedCount,
-        skippedCount: state.skippedCount,
-        failedCount: state.failedCount,
-      ),
-      ImportComplete() => _ImportCompleteView(summary: state.summary),
-      ImportFailure() => _FailureView(message: state.message),
-    };
-  }
-}
-
-class _PermissionView extends ConsumerWidget {
-  const _PermissionView({required this.permanentlyDenied});
-
-  final bool permanentlyDenied;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.library_music_rounded,
-            size: 56,
-            color: theme.colorScheme.onSurfaceVariant,
-            semanticLabel: 'Your music lives here',
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Allow access to your music',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'VoraTube plays music stored on your device. Nothing is '
-            'uploaded and nothing leaves your phone.',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: () =>
-                ref.read(scanControllerProvider.notifier).requestPermission(),
-            icon: const Icon(Icons.lock_open_rounded),
-            label: const Text('Allow access'),
-          ),
-          if (permanentlyDenied) ...[
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () =>
-                  ref.read(scanControllerProvider.notifier).openSettings(),
-              child: const Text('Open settings'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ReadyView extends ConsumerWidget {
-  const _ReadyView();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          FilledButton.icon(
-            onPressed: () =>
-                ref.read(scanControllerProvider.notifier).startScan(),
-            icon: const Icon(Icons.radar_rounded),
-            label: const Text('Scan Music'),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              'VoraTube will look for audio files already on this device.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RunningView extends StatelessWidget {
-  const _RunningView({
-    required this.phase,
-    required this.processedCount,
-    required this.addedCount,
-    this.totalHint,
-  });
-
-  final ScanPhase phase;
-  final int processedCount;
-  final int addedCount;
-  final int? totalHint;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final phaseLabel = switch (phase) {
-      ScanPhase.reading => 'Scanning\u2026',
-      ScanPhase.artwork => 'Preparing artwork\u2026',
-      ScanPhase.finalizing => 'Finishing up\u2026',
-    };
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 48),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const LinearProgressIndicator(minHeight: 4),
-          const SizedBox(height: 20),
-          Text(
-            phaseLabel,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (phase == ScanPhase.reading) ...[
-            const SizedBox(height: 6),
-            Text(
-              '$processedCount songs found',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ] else if (totalHint != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              '$addedCount new songs \u00b7 $totalHint album covers to prepare',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _CompleteView extends ConsumerWidget {
-  const _CompleteView({required this.summary});
-
-  final ScanSummary summary;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.done_all_rounded,
-            size: 56,
-            color: theme.colorScheme.primary,
-            semanticLabel: 'Scan complete',
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '${summary.totalSongs} songs found',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Scan complete \u00b7 ${summary.artworksResolved} album covers '
-            'ready',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 24),
-          OutlinedButton(
-            onPressed: () =>
-                ref.watch(scanControllerProvider.notifier).startScan(),
-            child: const Text('Scan again'),
-          ),
-          const SizedBox(height: 8),
-          TextButton.icon(
-            onPressed: () => startPlaybackOfWholeLibrary(ref),
-            icon: const Icon(Icons.play_circle_fill_rounded),
-            label: const Text('Play all (dev)'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FailureView extends ConsumerWidget {
-  const _FailureView({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.error_outline_rounded,
-            size: 56,
-            color: theme.colorScheme.error,
-            semanticLabel: 'Scan failed',
-          ),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: theme.textTheme.bodyMedium,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: () =>
-                ref.read(scanControllerProvider.notifier).startScan(),
-            child: const Text('Try again'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ImportReadyView extends ConsumerWidget {
-  const _ImportReadyView();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          FilledButton.icon(
-            onPressed: () =>
-                ref.read(importControllerProvider.notifier).startImport(),
-            icon: const Icon(Icons.library_add_rounded),
-            label: const Text('Import Music'),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Text(
-              'Pick audio files from your device. VoraTube copies them into '
-              'its own library so they always stay available.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ImportingView extends StatelessWidget {
-  const _ImportingView({
-    required this.phase,
-    required this.processedCount,
-    required this.totalCount,
-    required this.importedCount,
-    required this.skippedCount,
-    required this.failedCount,
-  });
-
-  final ImportPhase phase;
-  final int processedCount;
-  final int totalCount;
-  final int importedCount;
-  final int skippedCount;
-  final int failedCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final label = phase == ImportPhase.artwork
-        ? 'Preparing artwork\u2026'
-        : 'Importing\u2026';
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 48),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const LinearProgressIndicator(minHeight: 4),
-          const SizedBox(height: 20),
-          Text(
-            label,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '$processedCount / $totalCount files \u00b7 '
-            '$importedCount imported'
-            '${skippedCount > 0 ? ' \u00b7 $skippedCount duplicates' : ''}'
-            '${failedCount > 0 ? ' \u00b7 $failedCount failed' : ''}',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ImportCompleteView extends ConsumerWidget {
-  const _ImportCompleteView({required this.summary});
-
-  final ImportSummary summary;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.done_all_rounded,
-              size: 56,
-              color: theme.colorScheme.primary,
-              semanticLabel: 'Import complete',
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '${summary.importedSongs} songs imported',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${summary.totalSelected} selected \u00b7 '
-              '${summary.skippedDuplicates} duplicates skipped \u00b7 '
-              '${summary.failedCount} failed',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            for (final failure in summary.failures.take(3)) ...[
-              const SizedBox(height: 4),
-              Text(
-                '${failure.fileName}: ${failure.reason}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-            if (summary.failures.length > 3)
-              Text(
-                '+${summary.failures.length - 3} more',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () =>
-                  ref.read(importControllerProvider.notifier).startImport(),
-              icon: const Icon(Icons.library_add_rounded),
-              label: const Text('Import more'),
-            ),
-            const SizedBox(height: 12),
-            const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: () => startPlaybackOfWholeLibrary(ref),
-              icon: const Icon(Icons.play_circle_fill_rounded),
-              label: const Text('Play all (dev)'),
-            ),
-            TextButton(
-              onPressed: () async {
-                final removed = await ref
-                    .read(importControllerProvider.notifier)
-                    .reconcileMissingFiles();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('$removed missing imports removed')),
-                  );
-                }
+            child: FadeThroughSwitcher(
+              child: switch (section) {
+                LibrarySection.songs => const _SongsView(),
+                LibrarySection.albums => const _AlbumsView(),
+                LibrarySection.artists => const _ArtistsView(),
+                LibrarySection.genres => const _GenresView(),
               },
-              child: const Text('Clean up missing files'),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _SongsToolbar extends ConsumerWidget {
+  const _SongsToolbar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final favoritesOnly = ref.watch(favoritesOnlyProvider);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+      child: Row(
+        children: [
+          FilterChip(
+            label: const Text('Favorites'),
+            selected: favoritesOnly,
+            showCheckmark: false,
+            avatar: Icon(
+              favoritesOnly
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              size: 18,
+              color: favoritesOnly
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.onSurfaceVariant,
+            ),
+            onSelected: (v) =>
+                ref.read(favoritesOnlyProvider.notifier).state = v,
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Sort',
+            onPressed: () => showSortSheet(context, ref),
+            icon: const Icon(Icons.swap_vert_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SongsView extends ConsumerStatefulWidget {
+  const _SongsView();
+
+  @override
+  ConsumerState<_SongsView> createState() => _SongsViewState();
+}
+
+class _SongsViewState extends ConsumerState<_SongsView> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_controller.position.extentAfter < 600) {
+      ref.read(pagedSongsProvider.notifier).loadMore();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(pagedSongsProvider);
+
+    return AsyncValueSwitcher<List<SongTileData>>(
+      value: async,
+      loading: const SkeletonList(rows: 10),
+      errorBuilder: (e, _) => _LibraryError(
+        retry: () {
+          ref.invalidate(pagedSongsProvider);
+        },
+      ),
+      data: (tiles) {
+        if (tiles.isEmpty) {
+          final favoritesOnly = ref.watch(favoritesOnlyProvider);
+          return EmptyState(
+            icon: favoritesOnly
+                ? Icons.favorite_border_rounded
+                : Icons.library_music_rounded,
+            title: favoritesOnly ? 'No favorites yet' : 'Nothing here yet',
+            message: favoritesOnly
+                ? 'Tap the heart on any song to keep it close.'
+                : 'Scan or import music to fill your library.',
+          );
+        }
+        return ListView.separated(
+          controller: _controller,
+          physics: const AlwaysScrollableScrollPhysics(),
+          itemCount:
+              tiles.length +
+              (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
+          separatorBuilder: (_, i) => i == tiles.length - 1
+              ? const SizedBox.shrink()
+              : const Divider(height: 1, indent: 78),
+          itemBuilder: (context, index) {
+            if (index >= tiles.length) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.2),
+                  ),
+                ),
+              );
+            }
+            return SongTile(
+              tile: tiles[index],
+              index: index,
+              onPlay: (_) => _playFrom(tiles, index),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _playFrom(List<SongTileData> tiles, int startIndex) {
+    final context = playContextFromTiles(tiles, startIndex);
+    ref
+        .read(playerProvider)
+        .playQueue(context.refs, startIndex: context.startIndex);
+  }
+}
+
+class _AlbumsView extends ConsumerWidget {
+  const _AlbumsView();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(albumsOverviewProvider);
+    return async.when(
+      loading: () => const SkeletonList(rows: 8),
+      error: (e, _) =>
+          _LibraryError(retry: () => ref.invalidate(albumsOverviewProvider)),
+      data: (albums) {
+        if (albums.isEmpty) {
+          return const EmptyState(
+            icon: Icons.album_rounded,
+            title: 'No albums yet',
+            message: 'Albums appear once your library has music.',
+          );
+        }
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 200,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 0.82,
+          ),
+          itemCount: albums.length,
+          itemBuilder: (context, index) {
+            final album = albums[index];
+            return AlbumCard(
+              album: album,
+              onTap: () => Navigator.of(context).push(
+                pushSharedAxis<void>(context, FilteredSongsScreen.album(album)),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ArtistsView extends ConsumerWidget {
+  const _ArtistsView();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(artistsOverviewProvider);
+    return async.when(
+      loading: () => const SkeletonList(rows: 8),
+      error: (e, _) =>
+          _LibraryError(retry: () => ref.invalidate(artistsOverviewProvider)),
+      data: (artists) {
+        if (artists.isEmpty) {
+          return const EmptyState(
+            icon: Icons.person_off_rounded,
+            title: 'No artists yet',
+            message: 'Artists appear once your library has music.',
+          );
+        }
+        return ListView.builder(
+          itemCount: artists.length,
+          itemBuilder: (context, index) {
+            final artist = artists[index];
+            return ArtistTile(
+              artist: artist,
+              onTap: () => Navigator.of(context).push(
+                pushSharedAxis<void>(
+                  context,
+                  FilteredSongsScreen.artist(artist),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _GenresView extends ConsumerWidget {
+  const _GenresView();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(genresOverviewProvider);
+    return async.when(
+      loading: () => const SkeletonList(rows: 8),
+      error: (e, _) =>
+          _LibraryError(retry: () => ref.invalidate(genresOverviewProvider)),
+      data: (genres) {
+        if (genres.isEmpty) {
+          return const EmptyState(
+            icon: Icons.style_rounded,
+            title: 'No genre information',
+            message:
+                'Genres come from your files\u2019 tags. Many files '
+                'simply don\u2019t carry them.',
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          itemCount: genres.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (context, index) =>
+              GenreTile(genre: genres[index], onTap: () {}),
+        );
+      },
+    );
+  }
+}
+
+class _LibraryError extends StatelessWidget {
+  const _LibraryError({required this.retry});
+
+  final VoidCallback retry;
+
+  @override
+  Widget build(BuildContext context) {
+    return EmptyState(
+      icon: Icons.error_outline_rounded,
+      title: 'Could not load the library',
+      message: 'Your music is safe. Try again in a moment.',
+      actionLabel: 'Retry',
+      onAction: retry,
     );
   }
 }

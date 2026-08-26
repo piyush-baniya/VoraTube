@@ -4,6 +4,7 @@ import '../../../core/db/app_database.dart';
 import '../../../core/ingest/ingest_service.dart';
 import '../../../core/player/player_controller.dart';
 import '../../../core/utils/string_utils.dart';
+import 'library_models.dart';
 
 class SyncBatchResult {
   const SyncBatchResult({
@@ -487,6 +488,345 @@ extension on LibraryRepository {
           album: r.albumName,
           artPath: r.albumRowId == null ? null : artByAlbumRowId[r.albumRowId!],
           durationMs: r.durationMs,
+        ),
+    ];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Library browsing queries: paginated, indexed, never whole-table watches.
+// ---------------------------------------------------------------------------
+
+extension LibraryQueries on LibraryRepository {
+  Future<SongPage> songsPage({
+    required int limit,
+    int offset = 0,
+    SongSort sort = SongSort.recentlyAdded,
+    bool favoritesOnly = false,
+  }) async {
+    final stats = _db.songStats;
+    final albums = _db.albums;
+    final favoriteExp = stats.isFavorite;
+
+    final query = _db.select(_db.songs).join([
+      leftOuterJoin(stats, stats.songId.equalsExp(_db.songs.id)),
+      leftOuterJoin(albums, albums.id.equalsExp(_db.songs.albumRowId)),
+    ]);
+
+    if (favoritesOnly) {
+      query.where(favoriteExp.equals(true));
+    }
+
+    switch (sort) {
+      case SongSort.recentlyAdded:
+        query.orderBy([
+          OrderingTerm.desc(_db.songs.dateAddedSec),
+          OrderingTerm.desc(_db.songs.id),
+        ]);
+      case SongSort.title:
+        query.orderBy([OrderingTerm.asc(_db.songs.titleSearch)]);
+      case SongSort.artist:
+        query.orderBy([
+          OrderingTerm.asc(
+            coalesce([_db.songs.artistSearch, const Variable('')]),
+          ),
+          OrderingTerm.asc(_db.songs.titleSearch),
+        ]);
+      case SongSort.album:
+        query.orderBy([
+          OrderingTerm.asc(coalesce([_db.songs.albumName, const Variable('')])),
+          OrderingTerm.asc(_db.songs.trackNumber),
+        ]);
+      case SongSort.duration:
+        query.orderBy([OrderingTerm.desc(_db.songs.durationMs)]);
+    }
+
+    query.limit(limit, offset: offset);
+    final rows = await query.get();
+
+    final songs = [
+      for (final row in rows)
+        SongTileData(
+          song: row.readTable(_db.songs),
+          artPath: _pickArt(
+            row.read(albums.artLargePath),
+            row.read(albums.artSmallPath),
+          ),
+        ),
+    ];
+    final next = songs.length < limit ? -1 : offset + limit;
+    return SongPage(songs: songs, nextOffset: next);
+  }
+
+  Future<List<AlbumSummary>> albumOverview({int limit = 500}) async {
+    final albums = _db.albums;
+    final songs = _db.songs;
+    final songCount = songs.id.count();
+    final totalDur = songs.durationMs.sum();
+
+    final query = _db.selectOnly(albums).join([
+      innerJoin(songs, songs.albumRowId.equalsExp(albums.id)),
+    ]);
+    query
+      ..addColumns([
+        albums.id,
+        albums.albumKey,
+        albums.name,
+        albums.artistName,
+        albums.artSmallPath,
+        albums.artLargePath,
+        songCount,
+        totalDur,
+      ])
+      ..groupBy([albums.id])
+      ..orderBy([OrderingTerm.desc(totalDur)]);
+
+    query.limit(limit);
+    final rows = await query.get();
+    return [
+      for (final row in rows)
+        AlbumSummary(
+          albumRowId: row.read(albums.id)!,
+          key: row.read(albums.albumKey) ?? '',
+          name: row.read(albums.name)!,
+          artistName: row.read(albums.artistName),
+          artPath: _pickArt(
+            row.read(albums.artLargePath),
+            row.read(albums.artSmallPath),
+          ),
+          songCount: row.read(songCount) ?? 0,
+          totalDurationMs: row.read(totalDur) ?? 0,
+        ),
+    ];
+  }
+
+  Future<List<ArtistSummary>> artistOverview({int limit = 500}) async {
+    final artists = _db.artists;
+    final songs = _db.songs;
+    final songCount = songs.id.count();
+
+    final query = _db.selectOnly(artists).join([
+      innerJoin(songs, songs.artistRowId.equalsExp(artists.id)),
+    ]);
+    query
+      ..addColumns([artists.id, artists.artistKey, artists.name, songCount])
+      ..groupBy([artists.id])
+      ..orderBy([OrderingTerm.desc(songCount)]);
+
+    query.limit(limit);
+    final rows = await query.get();
+    return [
+      for (final row in rows)
+        ArtistSummary(
+          artistRowId: row.read(artists.id)!,
+          key: row.read(artists.artistKey) ?? '',
+          name: row.read(artists.name)!,
+          songCount: row.read(songCount) ?? 0,
+        ),
+    ];
+  }
+
+  Future<List<GenreSummary>> genreOverview({int limit = 100}) async {
+    final genreExp = _db.songs.genre;
+    final countExp = _db.songs.id.count();
+    final query = _db.selectOnly(_db.songs)
+      ..addColumns([genreExp, countExp])
+      ..where(genreExp.isNotNull() & genreExp.equals('').not())
+      ..groupBy([genreExp])
+      ..orderBy([OrderingTerm.desc(countExp)]);
+
+    query.limit(limit);
+    final rows = await query.get();
+    return [
+      for (final row in rows)
+        GenreSummary(
+          genre: row.read(genreExp)!,
+          songCount: row.read(countExp) ?? 0,
+        ),
+    ];
+  }
+
+  Future<int> toggleFavorite(int songRowId) async {
+    return _db.transaction(() async {
+      final existing = await (_db.select(
+        _db.songStats,
+      )..where((tbl) => tbl.songId.equals(songRowId))).getSingleOrNull();
+      if (existing == null) {
+        await _db
+            .into(_db.songStats)
+            .insert(
+              SongStatsCompanion(
+                songId: Value(songRowId),
+                isFavorite: const Value(true),
+              ),
+            );
+        return 1;
+      }
+      final newValue = !existing.isFavorite;
+      await (_db.update(_db.songStats)
+            ..where((tbl) => tbl.songId.equals(songRowId)))
+          .write(SongStatsCompanion(isFavorite: Value(newValue)));
+      return newValue ? 1 : 0;
+    });
+  }
+
+  Future<bool> isFavorite(int songRowId) async {
+    final row = await (_db.select(
+      _db.songStats,
+    )..where((tbl) => tbl.songId.equals(songRowId))).getSingleOrNull();
+    return row?.isFavorite ?? false;
+  }
+
+  /// Local search across songs, albums, artists and playlists using the
+  /// existing normalized search columns and indexes. No FTS, no network.
+  Future<SearchResults> searchAll(
+    String rawQuery, {
+    int perSectionLimit = 20,
+  }) async {
+    final q = rawQuery.trim();
+    if (q.isEmpty) {
+      return SearchResults(
+        query: q,
+        songs: const [],
+        albums: const [],
+        artists: const [],
+        playlists: const [],
+      );
+    }
+    final needle = '%${q.toLowerCase()}%';
+
+    final songRows =
+        await (_db.select(_db.songs)
+              ..where(
+                (tbl) =>
+                    tbl.titleSearch.like(needle) |
+                    tbl.artistSearch.like(needle) |
+                    tbl.albumName.lower().like(needle),
+              )
+              ..orderBy([(tbl) => OrderingTerm.asc(tbl.titleSearch)])
+              ..limit(perSectionLimit))
+            .get();
+
+    final albums = _db.albums;
+    final albumNameLower = albums.name.lower();
+    final albumRows =
+        await (_db.selectOnly(albums)
+              ..addColumns([
+                albums.id,
+                albums.albumKey,
+                albums.name,
+                albums.artistName,
+                albums.artSmallPath,
+                albums.artLargePath,
+              ])
+              ..where(albumNameLower.like(needle))
+              ..limit(perSectionLimit))
+            .get();
+
+    final artists = _db.artists;
+    final artistRows =
+        await (_db.selectOnly(artists)
+              ..addColumns([artists.id, artists.artistKey, artists.name])
+              ..where(artists.name.lower().like(needle))
+              ..limit(perSectionLimit))
+            .get();
+
+    final playlistRows =
+        await (_db.select(_db.playlists)
+              ..where((tbl) => tbl.name.lower().like(needle))
+              ..limit(perSectionLimit))
+            .get();
+
+    return SearchResults(
+      query: q,
+      songs: await _decorate(songRows),
+      albums: [
+        for (final row in albumRows)
+          AlbumSummary(
+            albumRowId: row.read(albums.id)!,
+            key: row.read(albums.albumKey) ?? '',
+            name: row.read(albums.name)!,
+            artistName: row.read(albums.artistName),
+            artPath: _pickArt(
+              row.read(albums.artLargePath),
+              row.read(albums.artSmallPath),
+            ),
+            songCount: 0,
+          ),
+      ],
+      artists: [
+        for (final row in artistRows)
+          ArtistSummary(
+            artistRowId: row.read(artists.id)!,
+            key: row.read(artists.artistKey) ?? '',
+            name: row.read(artists.name)!,
+            songCount: 0,
+          ),
+      ],
+      playlists: playlistRows,
+    );
+  }
+}
+
+String? _pickArt(String? large, String? small) {
+  if (large != null && large.isNotEmpty && large != '') return large;
+  if (small != null && small.isNotEmpty) return small;
+  return null;
+}
+
+extension FilteredSongQueries on LibraryRepository {
+  Future<List<SongTileData>> songsForAlbum(
+    int albumRowId, {
+    int limit = 500,
+  }) async {
+    final rows =
+        await (_db.select(_db.songs)
+              ..where((tbl) => tbl.albumRowId.equals(albumRowId))
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.discNumber),
+                (t) => OrderingTerm.asc(t.trackNumber),
+                (t) => OrderingTerm.asc(t.titleSearch),
+              ])
+              ..limit(limit))
+            .get();
+    return _decorate(rows);
+  }
+
+  Future<List<SongTileData>> songsForArtist(
+    int artistRowId, {
+    int limit = 1000,
+  }) async {
+    final rows =
+        await (_db.select(_db.songs)
+              ..where((tbl) => tbl.artistRowId.equals(artistRowId))
+              ..orderBy([
+                (t) => OrderingTerm.desc(t.dateAddedSec),
+                (t) => OrderingTerm.asc(t.titleSearch),
+              ])
+              ..limit(limit))
+            .get();
+    return _decorate(rows);
+  }
+
+  Future<List<SongTileData>> _decorate(List<Song> rows) async {
+    if (rows.isEmpty) {
+      return const [];
+    }
+    final albums =
+        await (_db.select(_db.albums)..where(
+              (tbl) => tbl.id.isIn(
+                rows.map((r) => r.albumRowId).whereType<int>().toSet(),
+              ),
+            ))
+            .get();
+    final artById = {
+      for (final a in albums) a.id: _pickArt(a.artLargePath, a.artSmallPath),
+    };
+    return [
+      for (final r in rows)
+        SongTileData(
+          song: r,
+          artPath: r.albumRowId == null ? null : artById[r.albumRowId!],
         ),
     ];
   }
