@@ -3,6 +3,11 @@ import 'library_repository.dart';
 
 typedef ScanProgressListener = void Function(ScanProgress progress);
 
+/// Pull-style ingestion orchestration (Android MediaStore today).
+///
+/// The loop is deliberately platform-agnostic: it only speaks in
+/// [IngestTrack]s, identity keys and album keys, so a future pull-style
+/// source could reuse it unchanged.
 class LibraryScanner {
   LibraryScanner({
     required this.ingest,
@@ -20,10 +25,11 @@ class LibraryScanner {
     await ingest.prepareScan();
 
     final existing = await repository.existingSongIndex();
-    final seenIds = <int>{};
+    final seenKeys = <String>{};
+    final seenMediaStoreIds = <int>{};
     var addedTotal = 0;
     var updatedTotal = 0;
-    final dirtyAlbums = <int>{};
+    final dirtyAlbums = <String>{};
     var lastId = 0;
 
     while (true) {
@@ -37,7 +43,10 @@ class LibraryScanner {
 
       final changed = batch
           .where(
-            (track) => existing[track.mediaStoreId] != track.dateModifiedSec,
+            (track) =>
+                !seenKeys.contains(track.identityKey) &&
+                (existing[track.identityKey] == null ||
+                    existing[track.identityKey] != track.dateModifiedSec),
           )
           .toList(growable: false);
 
@@ -45,20 +54,23 @@ class LibraryScanner {
         final result = await repository.syncTracks(changed);
         addedTotal += result.added;
         updatedTotal += result.updated;
-        dirtyAlbums.addAll(result.dirtyAlbumMediaStoreIds);
+        dirtyAlbums.addAll(result.dirtyAlbumKeys);
       }
 
       for (final track in batch) {
-        seenIds.add(track.mediaStoreId);
-        if (track.mediaStoreId > lastId) {
-          lastId = track.mediaStoreId;
+        seenKeys.add(track.identityKey);
+        if (track.mediaStoreId != null) {
+          seenMediaStoreIds.add(track.mediaStoreId!);
+          if (track.mediaStoreId! > lastId) {
+            lastId = track.mediaStoreId!;
+          }
         }
       }
 
       onProgress?.call(
         ScanProgress(
           phase: ScanPhase.reading,
-          processedCount: seenIds.length,
+          processedCount: seenKeys.length,
           addedCount: addedTotal,
         ),
       );
@@ -68,12 +80,14 @@ class LibraryScanner {
       }
     }
 
-    final removedCount = await repository.removeAbsent(seenIds);
+    final removedCount = await repository.removeAbsentMediaStore(
+      seenMediaStoreIds,
+    );
 
     onProgress?.call(
       ScanProgress(
         phase: ScanPhase.artwork,
-        processedCount: seenIds.length,
+        processedCount: seenKeys.length,
         addedCount: addedTotal,
       ),
     );
@@ -95,7 +109,7 @@ class LibraryScanner {
       onProgress?.call(
         ScanProgress(
           phase: ScanPhase.artwork,
-          processedCount: seenIds.length,
+          processedCount: seenKeys.length,
           addedCount: addedTotal,
           totalHint: targetList.length,
         ),
@@ -105,15 +119,15 @@ class LibraryScanner {
     onProgress?.call(
       ScanProgress(
         phase: ScanPhase.finalizing,
-        processedCount: seenIds.length,
+        processedCount: seenKeys.length,
         addedCount: addedTotal,
       ),
     );
 
-    await repository.completeScan(totalSongs: seenIds.length);
+    await repository.completeScan(totalSongs: seenKeys.length);
 
     return ScanSummary(
-      totalSongs: seenIds.length,
+      totalSongs: seenKeys.length,
       addedSongs: addedTotal,
       updatedSongs: updatedTotal,
       removedSongs: removedCount,

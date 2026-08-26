@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 
 import '../ingest_service.dart';
@@ -8,6 +10,11 @@ class AndroidIngestService implements IngestService {
 
   final MethodChannel _channel;
 
+  static const _unsupported = 'Android ingest supports MediaStore scans only';
+
+  @override
+  IngestCapabilities get capabilities =>
+      const IngestCapabilities({IngestCapability.scan});
   @override
   Future<void> prepareScan() async {
     await _channel.invokeMethod<void>('prepareScan');
@@ -32,31 +39,64 @@ class AndroidIngestService implements IngestService {
   }
 
   @override
-  Future<Map<int, ResolvedArtwork?>> resolveArtwork(Set<int> albumIds) async {
-    if (albumIds.isEmpty) {
+  Future<Map<String, ResolvedArtwork?>> resolveArtwork(
+    Set<String> albumKeys,
+  ) async {
+    if (albumKeys.isEmpty) {
+      return const {};
+    }
+    final ids = <int>[];
+    for (final key in albumKeys) {
+      final id = int.tryParse(key.startsWith('ms:') ? key.substring(3) : key);
+      if (id != null) {
+        ids.add(id);
+      }
+    }
+    if (ids.isEmpty) {
       return const {};
     }
     final Object? raw = await _channel.invokeMethod<Object?>(
       'resolveArtwork',
-      <String, Object?>{'albumIds': albumIds.toList(growable: false)},
+      <String, Object?>{'albumIds': ids},
     );
     if (raw is! Map<Object?, Object?>) {
       return const {};
     }
     return {
       for (final entry in raw.entries)
-        (entry.key as num).toInt(): _parseArtwork(entry.value),
+        'ms:${(entry.key as num).toInt()}': _parseArtwork(entry.value),
     };
   }
 
+  @override
+  Future<List<PickedImportFile>> pickImportFiles() async {
+    throw UnsupportedError(_unsupported);
+  }
+
+  @override
+  Future<ProcessedImport> processImportFile(PickedImportFile file) async {
+    throw UnsupportedError(_unsupported);
+  }
+
+  @override
+  Future<Directory?> importedFilesRoot() async {
+    throw UnsupportedError(_unsupported);
+  }
+
   IngestTrack _parseTrack(Map<Object?, Object?> row) {
+    final mediaStoreId = _reqInt(row, 'id');
+    final albumMsId = _reqInt(row, 'albumId');
+    final artistMsId = _reqInt(row, 'artistId');
     return IngestTrack(
-      mediaStoreId: _reqInt(row, 'id'),
+      source: IngestSource.mediastore,
+      mediaStoreId: mediaStoreId,
+      albumMediaStoreId: albumMsId,
+      artistMediaStoreId: artistMsId,
+      albumKey: albumMsId > 0 ? 'ms:$albumMsId' : null,
+      artistKey: artistMsId > 0 ? 'ms:$artistMsId' : null,
       contentUri: _reqStr(row, 'contentUri'),
       durationMs: _reqInt(row, 'durationMs'),
       dateModifiedSec: _reqInt(row, 'dateModifiedSec'),
-      albumMediaStoreId: _reqInt(row, 'albumId'),
-      artistMediaStoreId: _reqInt(row, 'artistId'),
       path: _str(row, 'path'),
       title: _str(row, 'title'),
       artist: _str(row, 'artist'),

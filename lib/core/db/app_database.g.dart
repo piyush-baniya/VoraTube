@@ -28,9 +28,20 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, Album> {
   late final GeneratedColumn<int> mediaStoreAlbumId = GeneratedColumn<int>(
     'media_store_album_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.int,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _albumKeyMeta = const VerificationMeta(
+    'albumKey',
+  );
+  @override
+  late final GeneratedColumn<String> albumKey = GeneratedColumn<String>(
+    'album_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
@@ -78,6 +89,7 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, Album> {
   List<GeneratedColumn> get $columns => [
     id,
     mediaStoreAlbumId,
+    albumKey,
     name,
     artistName,
     artSmallPath,
@@ -106,8 +118,12 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, Album> {
           _mediaStoreAlbumIdMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_mediaStoreAlbumIdMeta);
+    }
+    if (data.containsKey('album_key')) {
+      context.handle(
+        _albumKeyMeta,
+        albumKey.isAcceptableOrUnknown(data['album_key']!, _albumKeyMeta),
+      );
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -157,7 +173,11 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, Album> {
       mediaStoreAlbumId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}media_store_album_id'],
-      )!,
+      ),
+      albumKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album_key'],
+      ),
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -185,14 +205,16 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, Album> {
 
 class Album extends DataClass implements Insertable<Album> {
   final int id;
-  final int mediaStoreAlbumId;
+  final int? mediaStoreAlbumId;
+  final String? albumKey;
   final String name;
   final String? artistName;
   final String? artSmallPath;
   final String? artLargePath;
   const Album({
     required this.id,
-    required this.mediaStoreAlbumId,
+    this.mediaStoreAlbumId,
+    this.albumKey,
     required this.name,
     this.artistName,
     this.artSmallPath,
@@ -202,7 +224,12 @@ class Album extends DataClass implements Insertable<Album> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['media_store_album_id'] = Variable<int>(mediaStoreAlbumId);
+    if (!nullToAbsent || mediaStoreAlbumId != null) {
+      map['media_store_album_id'] = Variable<int>(mediaStoreAlbumId);
+    }
+    if (!nullToAbsent || albumKey != null) {
+      map['album_key'] = Variable<String>(albumKey);
+    }
     map['name'] = Variable<String>(name);
     if (!nullToAbsent || artistName != null) {
       map['artist_name'] = Variable<String>(artistName);
@@ -219,7 +246,12 @@ class Album extends DataClass implements Insertable<Album> {
   AlbumsCompanion toCompanion(bool nullToAbsent) {
     return AlbumsCompanion(
       id: Value(id),
-      mediaStoreAlbumId: Value(mediaStoreAlbumId),
+      mediaStoreAlbumId: mediaStoreAlbumId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mediaStoreAlbumId),
+      albumKey: albumKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(albumKey),
       name: Value(name),
       artistName: artistName == null && nullToAbsent
           ? const Value.absent()
@@ -240,7 +272,8 @@ class Album extends DataClass implements Insertable<Album> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return Album(
       id: serializer.fromJson<int>(json['id']),
-      mediaStoreAlbumId: serializer.fromJson<int>(json['mediaStoreAlbumId']),
+      mediaStoreAlbumId: serializer.fromJson<int?>(json['mediaStoreAlbumId']),
+      albumKey: serializer.fromJson<String?>(json['albumKey']),
       name: serializer.fromJson<String>(json['name']),
       artistName: serializer.fromJson<String?>(json['artistName']),
       artSmallPath: serializer.fromJson<String?>(json['artSmallPath']),
@@ -252,7 +285,8 @@ class Album extends DataClass implements Insertable<Album> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'mediaStoreAlbumId': serializer.toJson<int>(mediaStoreAlbumId),
+      'mediaStoreAlbumId': serializer.toJson<int?>(mediaStoreAlbumId),
+      'albumKey': serializer.toJson<String?>(albumKey),
       'name': serializer.toJson<String>(name),
       'artistName': serializer.toJson<String?>(artistName),
       'artSmallPath': serializer.toJson<String?>(artSmallPath),
@@ -262,14 +296,18 @@ class Album extends DataClass implements Insertable<Album> {
 
   Album copyWith({
     int? id,
-    int? mediaStoreAlbumId,
+    Value<int?> mediaStoreAlbumId = const Value.absent(),
+    Value<String?> albumKey = const Value.absent(),
     String? name,
     Value<String?> artistName = const Value.absent(),
     Value<String?> artSmallPath = const Value.absent(),
     Value<String?> artLargePath = const Value.absent(),
   }) => Album(
     id: id ?? this.id,
-    mediaStoreAlbumId: mediaStoreAlbumId ?? this.mediaStoreAlbumId,
+    mediaStoreAlbumId: mediaStoreAlbumId.present
+        ? mediaStoreAlbumId.value
+        : this.mediaStoreAlbumId,
+    albumKey: albumKey.present ? albumKey.value : this.albumKey,
     name: name ?? this.name,
     artistName: artistName.present ? artistName.value : this.artistName,
     artSmallPath: artSmallPath.present ? artSmallPath.value : this.artSmallPath,
@@ -281,6 +319,7 @@ class Album extends DataClass implements Insertable<Album> {
       mediaStoreAlbumId: data.mediaStoreAlbumId.present
           ? data.mediaStoreAlbumId.value
           : this.mediaStoreAlbumId,
+      albumKey: data.albumKey.present ? data.albumKey.value : this.albumKey,
       name: data.name.present ? data.name.value : this.name,
       artistName: data.artistName.present
           ? data.artistName.value
@@ -299,6 +338,7 @@ class Album extends DataClass implements Insertable<Album> {
     return (StringBuffer('Album(')
           ..write('id: $id, ')
           ..write('mediaStoreAlbumId: $mediaStoreAlbumId, ')
+          ..write('albumKey: $albumKey, ')
           ..write('name: $name, ')
           ..write('artistName: $artistName, ')
           ..write('artSmallPath: $artSmallPath, ')
@@ -311,6 +351,7 @@ class Album extends DataClass implements Insertable<Album> {
   int get hashCode => Object.hash(
     id,
     mediaStoreAlbumId,
+    albumKey,
     name,
     artistName,
     artSmallPath,
@@ -322,6 +363,7 @@ class Album extends DataClass implements Insertable<Album> {
       (other is Album &&
           other.id == this.id &&
           other.mediaStoreAlbumId == this.mediaStoreAlbumId &&
+          other.albumKey == this.albumKey &&
           other.name == this.name &&
           other.artistName == this.artistName &&
           other.artSmallPath == this.artSmallPath &&
@@ -330,7 +372,8 @@ class Album extends DataClass implements Insertable<Album> {
 
 class AlbumsCompanion extends UpdateCompanion<Album> {
   final Value<int> id;
-  final Value<int> mediaStoreAlbumId;
+  final Value<int?> mediaStoreAlbumId;
+  final Value<String?> albumKey;
   final Value<String> name;
   final Value<String?> artistName;
   final Value<String?> artSmallPath;
@@ -338,6 +381,7 @@ class AlbumsCompanion extends UpdateCompanion<Album> {
   const AlbumsCompanion({
     this.id = const Value.absent(),
     this.mediaStoreAlbumId = const Value.absent(),
+    this.albumKey = const Value.absent(),
     this.name = const Value.absent(),
     this.artistName = const Value.absent(),
     this.artSmallPath = const Value.absent(),
@@ -345,16 +389,17 @@ class AlbumsCompanion extends UpdateCompanion<Album> {
   });
   AlbumsCompanion.insert({
     this.id = const Value.absent(),
-    required int mediaStoreAlbumId,
+    this.mediaStoreAlbumId = const Value.absent(),
+    this.albumKey = const Value.absent(),
     required String name,
     this.artistName = const Value.absent(),
     this.artSmallPath = const Value.absent(),
     this.artLargePath = const Value.absent(),
-  }) : mediaStoreAlbumId = Value(mediaStoreAlbumId),
-       name = Value(name);
+  }) : name = Value(name);
   static Insertable<Album> custom({
     Expression<int>? id,
     Expression<int>? mediaStoreAlbumId,
+    Expression<String>? albumKey,
     Expression<String>? name,
     Expression<String>? artistName,
     Expression<String>? artSmallPath,
@@ -363,6 +408,7 @@ class AlbumsCompanion extends UpdateCompanion<Album> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (mediaStoreAlbumId != null) 'media_store_album_id': mediaStoreAlbumId,
+      if (albumKey != null) 'album_key': albumKey,
       if (name != null) 'name': name,
       if (artistName != null) 'artist_name': artistName,
       if (artSmallPath != null) 'art_small_path': artSmallPath,
@@ -372,7 +418,8 @@ class AlbumsCompanion extends UpdateCompanion<Album> {
 
   AlbumsCompanion copyWith({
     Value<int>? id,
-    Value<int>? mediaStoreAlbumId,
+    Value<int?>? mediaStoreAlbumId,
+    Value<String?>? albumKey,
     Value<String>? name,
     Value<String?>? artistName,
     Value<String?>? artSmallPath,
@@ -381,6 +428,7 @@ class AlbumsCompanion extends UpdateCompanion<Album> {
     return AlbumsCompanion(
       id: id ?? this.id,
       mediaStoreAlbumId: mediaStoreAlbumId ?? this.mediaStoreAlbumId,
+      albumKey: albumKey ?? this.albumKey,
       name: name ?? this.name,
       artistName: artistName ?? this.artistName,
       artSmallPath: artSmallPath ?? this.artSmallPath,
@@ -396,6 +444,9 @@ class AlbumsCompanion extends UpdateCompanion<Album> {
     }
     if (mediaStoreAlbumId.present) {
       map['media_store_album_id'] = Variable<int>(mediaStoreAlbumId.value);
+    }
+    if (albumKey.present) {
+      map['album_key'] = Variable<String>(albumKey.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -417,6 +468,7 @@ class AlbumsCompanion extends UpdateCompanion<Album> {
     return (StringBuffer('AlbumsCompanion(')
           ..write('id: $id, ')
           ..write('mediaStoreAlbumId: $mediaStoreAlbumId, ')
+          ..write('albumKey: $albumKey, ')
           ..write('name: $name, ')
           ..write('artistName: $artistName, ')
           ..write('artSmallPath: $artSmallPath, ')
@@ -450,9 +502,20 @@ class $ArtistsTable extends Artists with TableInfo<$ArtistsTable, Artist> {
   late final GeneratedColumn<int> mediaStoreArtistId = GeneratedColumn<int>(
     'media_store_artist_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.int,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _artistKeyMeta = const VerificationMeta(
+    'artistKey',
+  );
+  @override
+  late final GeneratedColumn<String> artistKey = GeneratedColumn<String>(
+    'artist_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _nameMeta = const VerificationMeta('name');
   @override
@@ -464,7 +527,12 @@ class $ArtistsTable extends Artists with TableInfo<$ArtistsTable, Artist> {
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [id, mediaStoreArtistId, name];
+  List<GeneratedColumn> get $columns => [
+    id,
+    mediaStoreArtistId,
+    artistKey,
+    name,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -488,8 +556,12 @@ class $ArtistsTable extends Artists with TableInfo<$ArtistsTable, Artist> {
           _mediaStoreArtistIdMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_mediaStoreArtistIdMeta);
+    }
+    if (data.containsKey('artist_key')) {
+      context.handle(
+        _artistKeyMeta,
+        artistKey.isAcceptableOrUnknown(data['artist_key']!, _artistKeyMeta),
+      );
     }
     if (data.containsKey('name')) {
       context.handle(
@@ -515,7 +587,11 @@ class $ArtistsTable extends Artists with TableInfo<$ArtistsTable, Artist> {
       mediaStoreArtistId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}media_store_artist_id'],
-      )!,
+      ),
+      artistKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}artist_key'],
+      ),
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -531,18 +607,25 @@ class $ArtistsTable extends Artists with TableInfo<$ArtistsTable, Artist> {
 
 class Artist extends DataClass implements Insertable<Artist> {
   final int id;
-  final int mediaStoreArtistId;
+  final int? mediaStoreArtistId;
+  final String? artistKey;
   final String name;
   const Artist({
     required this.id,
-    required this.mediaStoreArtistId,
+    this.mediaStoreArtistId,
+    this.artistKey,
     required this.name,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['media_store_artist_id'] = Variable<int>(mediaStoreArtistId);
+    if (!nullToAbsent || mediaStoreArtistId != null) {
+      map['media_store_artist_id'] = Variable<int>(mediaStoreArtistId);
+    }
+    if (!nullToAbsent || artistKey != null) {
+      map['artist_key'] = Variable<String>(artistKey);
+    }
     map['name'] = Variable<String>(name);
     return map;
   }
@@ -550,7 +633,12 @@ class Artist extends DataClass implements Insertable<Artist> {
   ArtistsCompanion toCompanion(bool nullToAbsent) {
     return ArtistsCompanion(
       id: Value(id),
-      mediaStoreArtistId: Value(mediaStoreArtistId),
+      mediaStoreArtistId: mediaStoreArtistId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mediaStoreArtistId),
+      artistKey: artistKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(artistKey),
       name: Value(name),
     );
   }
@@ -562,7 +650,8 @@ class Artist extends DataClass implements Insertable<Artist> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return Artist(
       id: serializer.fromJson<int>(json['id']),
-      mediaStoreArtistId: serializer.fromJson<int>(json['mediaStoreArtistId']),
+      mediaStoreArtistId: serializer.fromJson<int?>(json['mediaStoreArtistId']),
+      artistKey: serializer.fromJson<String?>(json['artistKey']),
       name: serializer.fromJson<String>(json['name']),
     );
   }
@@ -571,14 +660,23 @@ class Artist extends DataClass implements Insertable<Artist> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'mediaStoreArtistId': serializer.toJson<int>(mediaStoreArtistId),
+      'mediaStoreArtistId': serializer.toJson<int?>(mediaStoreArtistId),
+      'artistKey': serializer.toJson<String?>(artistKey),
       'name': serializer.toJson<String>(name),
     };
   }
 
-  Artist copyWith({int? id, int? mediaStoreArtistId, String? name}) => Artist(
+  Artist copyWith({
+    int? id,
+    Value<int?> mediaStoreArtistId = const Value.absent(),
+    Value<String?> artistKey = const Value.absent(),
+    String? name,
+  }) => Artist(
     id: id ?? this.id,
-    mediaStoreArtistId: mediaStoreArtistId ?? this.mediaStoreArtistId,
+    mediaStoreArtistId: mediaStoreArtistId.present
+        ? mediaStoreArtistId.value
+        : this.mediaStoreArtistId,
+    artistKey: artistKey.present ? artistKey.value : this.artistKey,
     name: name ?? this.name,
   );
   Artist copyWithCompanion(ArtistsCompanion data) {
@@ -587,6 +685,7 @@ class Artist extends DataClass implements Insertable<Artist> {
       mediaStoreArtistId: data.mediaStoreArtistId.present
           ? data.mediaStoreArtistId.value
           : this.mediaStoreArtistId,
+      artistKey: data.artistKey.present ? data.artistKey.value : this.artistKey,
       name: data.name.present ? data.name.value : this.name,
     );
   }
@@ -596,58 +695,66 @@ class Artist extends DataClass implements Insertable<Artist> {
     return (StringBuffer('Artist(')
           ..write('id: $id, ')
           ..write('mediaStoreArtistId: $mediaStoreArtistId, ')
+          ..write('artistKey: $artistKey, ')
           ..write('name: $name')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, mediaStoreArtistId, name);
+  int get hashCode => Object.hash(id, mediaStoreArtistId, artistKey, name);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Artist &&
           other.id == this.id &&
           other.mediaStoreArtistId == this.mediaStoreArtistId &&
+          other.artistKey == this.artistKey &&
           other.name == this.name);
 }
 
 class ArtistsCompanion extends UpdateCompanion<Artist> {
   final Value<int> id;
-  final Value<int> mediaStoreArtistId;
+  final Value<int?> mediaStoreArtistId;
+  final Value<String?> artistKey;
   final Value<String> name;
   const ArtistsCompanion({
     this.id = const Value.absent(),
     this.mediaStoreArtistId = const Value.absent(),
+    this.artistKey = const Value.absent(),
     this.name = const Value.absent(),
   });
   ArtistsCompanion.insert({
     this.id = const Value.absent(),
-    required int mediaStoreArtistId,
+    this.mediaStoreArtistId = const Value.absent(),
+    this.artistKey = const Value.absent(),
     required String name,
-  }) : mediaStoreArtistId = Value(mediaStoreArtistId),
-       name = Value(name);
+  }) : name = Value(name);
   static Insertable<Artist> custom({
     Expression<int>? id,
     Expression<int>? mediaStoreArtistId,
+    Expression<String>? artistKey,
     Expression<String>? name,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (mediaStoreArtistId != null)
         'media_store_artist_id': mediaStoreArtistId,
+      if (artistKey != null) 'artist_key': artistKey,
       if (name != null) 'name': name,
     });
   }
 
   ArtistsCompanion copyWith({
     Value<int>? id,
-    Value<int>? mediaStoreArtistId,
+    Value<int?>? mediaStoreArtistId,
+    Value<String?>? artistKey,
     Value<String>? name,
   }) {
     return ArtistsCompanion(
       id: id ?? this.id,
       mediaStoreArtistId: mediaStoreArtistId ?? this.mediaStoreArtistId,
+      artistKey: artistKey ?? this.artistKey,
       name: name ?? this.name,
     );
   }
@@ -661,6 +768,9 @@ class ArtistsCompanion extends UpdateCompanion<Artist> {
     if (mediaStoreArtistId.present) {
       map['media_store_artist_id'] = Variable<int>(mediaStoreArtistId.value);
     }
+    if (artistKey.present) {
+      map['artist_key'] = Variable<String>(artistKey.value);
+    }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
     }
@@ -672,6 +782,7 @@ class ArtistsCompanion extends UpdateCompanion<Artist> {
     return (StringBuffer('ArtistsCompanion(')
           ..write('id: $id, ')
           ..write('mediaStoreArtistId: $mediaStoreArtistId, ')
+          ..write('artistKey: $artistKey, ')
           ..write('name: $name')
           ..write(')'))
         .toString();
@@ -703,9 +814,30 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
   late final GeneratedColumn<int> mediaStoreId = GeneratedColumn<int>(
     'media_store_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.int,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('mediastore'),
+  );
+  static const VerificationMeta _contentHashMeta = const VerificationMeta(
+    'contentHash',
+  );
+  @override
+  late final GeneratedColumn<String> contentHash = GeneratedColumn<String>(
+    'content_hash',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _contentUriMeta = const VerificationMeta(
     'contentUri',
@@ -903,6 +1035,8 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
   List<GeneratedColumn> get $columns => [
     id,
     mediaStoreId,
+    source,
+    contentHash,
     contentUri,
     path,
     title,
@@ -945,8 +1079,21 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
           _mediaStoreIdMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_mediaStoreIdMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    }
+    if (data.containsKey('content_hash')) {
+      context.handle(
+        _contentHashMeta,
+        contentHash.isAcceptableOrUnknown(
+          data['content_hash']!,
+          _contentHashMeta,
+        ),
+      );
     }
     if (data.containsKey('content_uri')) {
       context.handle(
@@ -1103,7 +1250,15 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
       mediaStoreId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}media_store_id'],
+      ),
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
       )!,
+      contentHash: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content_hash'],
+      ),
       contentUri: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}content_uri'],
@@ -1187,7 +1342,9 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
 
 class Song extends DataClass implements Insertable<Song> {
   final int id;
-  final int mediaStoreId;
+  final int? mediaStoreId;
+  final String source;
+  final String? contentHash;
   final String contentUri;
   final String? path;
   final String title;
@@ -1208,7 +1365,9 @@ class Song extends DataClass implements Insertable<Song> {
   final String? format;
   const Song({
     required this.id,
-    required this.mediaStoreId,
+    this.mediaStoreId,
+    required this.source,
+    this.contentHash,
     required this.contentUri,
     this.path,
     required this.title,
@@ -1232,7 +1391,13 @@ class Song extends DataClass implements Insertable<Song> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    map['media_store_id'] = Variable<int>(mediaStoreId);
+    if (!nullToAbsent || mediaStoreId != null) {
+      map['media_store_id'] = Variable<int>(mediaStoreId);
+    }
+    map['source'] = Variable<String>(source);
+    if (!nullToAbsent || contentHash != null) {
+      map['content_hash'] = Variable<String>(contentHash);
+    }
     map['content_uri'] = Variable<String>(contentUri);
     if (!nullToAbsent || path != null) {
       map['path'] = Variable<String>(path);
@@ -1283,7 +1448,13 @@ class Song extends DataClass implements Insertable<Song> {
   SongsCompanion toCompanion(bool nullToAbsent) {
     return SongsCompanion(
       id: Value(id),
-      mediaStoreId: Value(mediaStoreId),
+      mediaStoreId: mediaStoreId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mediaStoreId),
+      source: Value(source),
+      contentHash: contentHash == null && nullToAbsent
+          ? const Value.absent()
+          : Value(contentHash),
       contentUri: Value(contentUri),
       path: path == null && nullToAbsent ? const Value.absent() : Value(path),
       title: Value(title),
@@ -1334,7 +1505,9 @@ class Song extends DataClass implements Insertable<Song> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return Song(
       id: serializer.fromJson<int>(json['id']),
-      mediaStoreId: serializer.fromJson<int>(json['mediaStoreId']),
+      mediaStoreId: serializer.fromJson<int?>(json['mediaStoreId']),
+      source: serializer.fromJson<String>(json['source']),
+      contentHash: serializer.fromJson<String?>(json['contentHash']),
       contentUri: serializer.fromJson<String>(json['contentUri']),
       path: serializer.fromJson<String?>(json['path']),
       title: serializer.fromJson<String>(json['title']),
@@ -1360,7 +1533,9 @@ class Song extends DataClass implements Insertable<Song> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'mediaStoreId': serializer.toJson<int>(mediaStoreId),
+      'mediaStoreId': serializer.toJson<int?>(mediaStoreId),
+      'source': serializer.toJson<String>(source),
+      'contentHash': serializer.toJson<String?>(contentHash),
       'contentUri': serializer.toJson<String>(contentUri),
       'path': serializer.toJson<String?>(path),
       'title': serializer.toJson<String>(title),
@@ -1384,7 +1559,9 @@ class Song extends DataClass implements Insertable<Song> {
 
   Song copyWith({
     int? id,
-    int? mediaStoreId,
+    Value<int?> mediaStoreId = const Value.absent(),
+    String? source,
+    Value<String?> contentHash = const Value.absent(),
     String? contentUri,
     Value<String?> path = const Value.absent(),
     String? title,
@@ -1405,7 +1582,9 @@ class Song extends DataClass implements Insertable<Song> {
     Value<String?> format = const Value.absent(),
   }) => Song(
     id: id ?? this.id,
-    mediaStoreId: mediaStoreId ?? this.mediaStoreId,
+    mediaStoreId: mediaStoreId.present ? mediaStoreId.value : this.mediaStoreId,
+    source: source ?? this.source,
+    contentHash: contentHash.present ? contentHash.value : this.contentHash,
     contentUri: contentUri ?? this.contentUri,
     path: path.present ? path.value : this.path,
     title: title ?? this.title,
@@ -1431,6 +1610,10 @@ class Song extends DataClass implements Insertable<Song> {
       mediaStoreId: data.mediaStoreId.present
           ? data.mediaStoreId.value
           : this.mediaStoreId,
+      source: data.source.present ? data.source.value : this.source,
+      contentHash: data.contentHash.present
+          ? data.contentHash.value
+          : this.contentHash,
       contentUri: data.contentUri.present
           ? data.contentUri.value
           : this.contentUri,
@@ -1477,6 +1660,8 @@ class Song extends DataClass implements Insertable<Song> {
     return (StringBuffer('Song(')
           ..write('id: $id, ')
           ..write('mediaStoreId: $mediaStoreId, ')
+          ..write('source: $source, ')
+          ..write('contentHash: $contentHash, ')
           ..write('contentUri: $contentUri, ')
           ..write('path: $path, ')
           ..write('title: $title, ')
@@ -1500,9 +1685,11 @@ class Song extends DataClass implements Insertable<Song> {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     mediaStoreId,
+    source,
+    contentHash,
     contentUri,
     path,
     title,
@@ -1521,13 +1708,15 @@ class Song extends DataClass implements Insertable<Song> {
     dateAddedSec,
     sizeBytes,
     format,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Song &&
           other.id == this.id &&
           other.mediaStoreId == this.mediaStoreId &&
+          other.source == this.source &&
+          other.contentHash == this.contentHash &&
           other.contentUri == this.contentUri &&
           other.path == this.path &&
           other.title == this.title &&
@@ -1550,7 +1739,9 @@ class Song extends DataClass implements Insertable<Song> {
 
 class SongsCompanion extends UpdateCompanion<Song> {
   final Value<int> id;
-  final Value<int> mediaStoreId;
+  final Value<int?> mediaStoreId;
+  final Value<String> source;
+  final Value<String?> contentHash;
   final Value<String> contentUri;
   final Value<String?> path;
   final Value<String> title;
@@ -1572,6 +1763,8 @@ class SongsCompanion extends UpdateCompanion<Song> {
   const SongsCompanion({
     this.id = const Value.absent(),
     this.mediaStoreId = const Value.absent(),
+    this.source = const Value.absent(),
+    this.contentHash = const Value.absent(),
     this.contentUri = const Value.absent(),
     this.path = const Value.absent(),
     this.title = const Value.absent(),
@@ -1593,7 +1786,9 @@ class SongsCompanion extends UpdateCompanion<Song> {
   });
   SongsCompanion.insert({
     this.id = const Value.absent(),
-    required int mediaStoreId,
+    this.mediaStoreId = const Value.absent(),
+    this.source = const Value.absent(),
+    this.contentHash = const Value.absent(),
     required String contentUri,
     this.path = const Value.absent(),
     required String title,
@@ -1612,8 +1807,7 @@ class SongsCompanion extends UpdateCompanion<Song> {
     this.dateAddedSec = const Value.absent(),
     this.sizeBytes = const Value.absent(),
     this.format = const Value.absent(),
-  }) : mediaStoreId = Value(mediaStoreId),
-       contentUri = Value(contentUri),
+  }) : contentUri = Value(contentUri),
        title = Value(title),
        titleSearch = Value(titleSearch),
        durationMs = Value(durationMs),
@@ -1621,6 +1815,8 @@ class SongsCompanion extends UpdateCompanion<Song> {
   static Insertable<Song> custom({
     Expression<int>? id,
     Expression<int>? mediaStoreId,
+    Expression<String>? source,
+    Expression<String>? contentHash,
     Expression<String>? contentUri,
     Expression<String>? path,
     Expression<String>? title,
@@ -1643,6 +1839,8 @@ class SongsCompanion extends UpdateCompanion<Song> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (mediaStoreId != null) 'media_store_id': mediaStoreId,
+      if (source != null) 'source': source,
+      if (contentHash != null) 'content_hash': contentHash,
       if (contentUri != null) 'content_uri': contentUri,
       if (path != null) 'path': path,
       if (title != null) 'title': title,
@@ -1666,7 +1864,9 @@ class SongsCompanion extends UpdateCompanion<Song> {
 
   SongsCompanion copyWith({
     Value<int>? id,
-    Value<int>? mediaStoreId,
+    Value<int?>? mediaStoreId,
+    Value<String>? source,
+    Value<String?>? contentHash,
     Value<String>? contentUri,
     Value<String?>? path,
     Value<String>? title,
@@ -1689,6 +1889,8 @@ class SongsCompanion extends UpdateCompanion<Song> {
     return SongsCompanion(
       id: id ?? this.id,
       mediaStoreId: mediaStoreId ?? this.mediaStoreId,
+      source: source ?? this.source,
+      contentHash: contentHash ?? this.contentHash,
       contentUri: contentUri ?? this.contentUri,
       path: path ?? this.path,
       title: title ?? this.title,
@@ -1718,6 +1920,12 @@ class SongsCompanion extends UpdateCompanion<Song> {
     }
     if (mediaStoreId.present) {
       map['media_store_id'] = Variable<int>(mediaStoreId.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (contentHash.present) {
+      map['content_hash'] = Variable<String>(contentHash.value);
     }
     if (contentUri.present) {
       map['content_uri'] = Variable<String>(contentUri.value);
@@ -1781,6 +1989,8 @@ class SongsCompanion extends UpdateCompanion<Song> {
     return (StringBuffer('SongsCompanion(')
           ..write('id: $id, ')
           ..write('mediaStoreId: $mediaStoreId, ')
+          ..write('source: $source, ')
+          ..write('contentHash: $contentHash, ')
           ..write('contentUri: $contentUri, ')
           ..write('path: $path, ')
           ..write('title: $title, ')
@@ -3334,9 +3544,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PlaylistSongsTable playlistSongs = $PlaylistSongsTable(this);
   late final $KvEntriesTable kvEntries = $KvEntriesTable(this);
   late final $ScanStatesTable scanStates = $ScanStatesTable(this);
-  late final Index songsMediaStoreId = Index(
-    'songs_media_store_id',
-    'CREATE UNIQUE INDEX songs_media_store_id ON songs (media_store_id)',
+  late final Index songsSourceMediaStoreId = Index(
+    'songs_source_media_store_id',
+    'CREATE UNIQUE INDEX songs_source_media_store_id ON songs (source, media_store_id)',
+  );
+  late final Index songsSourceContentHash = Index(
+    'songs_source_content_hash',
+    'CREATE UNIQUE INDEX songs_source_content_hash ON songs (source, content_hash)',
   );
   late final Index songsAlbum = Index(
     'songs_album',
@@ -3358,9 +3572,17 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'albums_media_store_id',
     'CREATE UNIQUE INDEX albums_media_store_id ON albums (media_store_album_id)',
   );
+  late final Index albumsAlbumKey = Index(
+    'albums_album_key',
+    'CREATE UNIQUE INDEX albums_album_key ON albums (album_key)',
+  );
   late final Index artistsMediaStoreId = Index(
     'artists_media_store_id',
     'CREATE UNIQUE INDEX artists_media_store_id ON artists (media_store_artist_id)',
+  );
+  late final Index artistsArtistKey = Index(
+    'artists_artist_key',
+    'CREATE UNIQUE INDEX artists_artist_key ON artists (artist_key)',
   );
   late final Index playlistSongsPosition = Index(
     'playlist_songs_position',
@@ -3379,20 +3601,24 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     playlistSongs,
     kvEntries,
     scanStates,
-    songsMediaStoreId,
+    songsSourceMediaStoreId,
+    songsSourceContentHash,
     songsAlbum,
     songsArtist,
     songsTitleSearch,
     songsDateAdded,
     albumsMediaStoreId,
+    albumsAlbumKey,
     artistsMediaStoreId,
+    artistsArtistKey,
     playlistSongsPosition,
   ];
 }
 
 typedef $$AlbumsTableCreateCompanionBuilder = AlbumsCompanion Function({
   Value<int> id,
-  required int mediaStoreAlbumId,
+  Value<int?> mediaStoreAlbumId,
+  Value<String?> albumKey,
   required String name,
   Value<String?> artistName,
   Value<String?> artSmallPath,
@@ -3400,7 +3626,8 @@ typedef $$AlbumsTableCreateCompanionBuilder = AlbumsCompanion Function({
 });
 typedef $$AlbumsTableUpdateCompanionBuilder = AlbumsCompanion Function({
   Value<int> id,
-  Value<int> mediaStoreAlbumId,
+  Value<int?> mediaStoreAlbumId,
+  Value<String?> albumKey,
   Value<String> name,
   Value<String?> artistName,
   Value<String?> artSmallPath,
@@ -3447,6 +3674,11 @@ class $$AlbumsTableFilterComposer
 
   ColumnFilters<int> get mediaStoreAlbumId => $composableBuilder(
     column: $table.mediaStoreAlbumId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get albumKey => $composableBuilder(
+    column: $table.albumKey,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3515,6 +3747,11 @@ class $$AlbumsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get albumKey => $composableBuilder(
+    column: $table.albumKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -3552,6 +3789,9 @@ class $$AlbumsTableAnnotationComposer
     column: $table.mediaStoreAlbumId,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get albumKey =>
+      $composableBuilder(column: $table.albumKey, builder: (column) => column);
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -3626,7 +3866,8 @@ class $$AlbumsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<int> mediaStoreAlbumId = const Value.absent(),
+                Value<int?> mediaStoreAlbumId = const Value.absent(),
+                Value<String?> albumKey = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String?> artistName = const Value.absent(),
                 Value<String?> artSmallPath = const Value.absent(),
@@ -3634,6 +3875,7 @@ class $$AlbumsTableTableManager
               }) => AlbumsCompanion(
                 id: id,
                 mediaStoreAlbumId: mediaStoreAlbumId,
+                albumKey: albumKey,
                 name: name,
                 artistName: artistName,
                 artSmallPath: artSmallPath,
@@ -3642,7 +3884,8 @@ class $$AlbumsTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                required int mediaStoreAlbumId,
+                Value<int?> mediaStoreAlbumId = const Value.absent(),
+                Value<String?> albumKey = const Value.absent(),
                 required String name,
                 Value<String?> artistName = const Value.absent(),
                 Value<String?> artSmallPath = const Value.absent(),
@@ -3650,6 +3893,7 @@ class $$AlbumsTableTableManager
               }) => AlbumsCompanion.insert(
                 id: id,
                 mediaStoreAlbumId: mediaStoreAlbumId,
+                albumKey: albumKey,
                 name: name,
                 artistName: artistName,
                 artSmallPath: artSmallPath,
@@ -3704,12 +3948,14 @@ typedef $$AlbumsTableProcessedTableManager =
     >;
 typedef $$ArtistsTableCreateCompanionBuilder = ArtistsCompanion Function({
   Value<int> id,
-  required int mediaStoreArtistId,
+  Value<int?> mediaStoreArtistId,
+  Value<String?> artistKey,
   required String name,
 });
 typedef $$ArtistsTableUpdateCompanionBuilder = ArtistsCompanion Function({
   Value<int> id,
-  Value<int> mediaStoreArtistId,
+  Value<int?> mediaStoreArtistId,
+  Value<String?> artistKey,
   Value<String> name,
 });
 
@@ -3753,6 +3999,11 @@ class $$ArtistsTableFilterComposer
 
   ColumnFilters<int> get mediaStoreArtistId => $composableBuilder(
     column: $table.mediaStoreArtistId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get artistKey => $composableBuilder(
+    column: $table.artistKey,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3806,6 +4057,11 @@ class $$ArtistsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get artistKey => $composableBuilder(
+    column: $table.artistKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -3828,6 +4084,9 @@ class $$ArtistsTableAnnotationComposer
     column: $table.mediaStoreArtistId,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get artistKey =>
+      $composableBuilder(column: $table.artistKey, builder: (column) => column);
 
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
@@ -3887,21 +4146,25 @@ class $$ArtistsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<int> mediaStoreArtistId = const Value.absent(),
+                Value<int?> mediaStoreArtistId = const Value.absent(),
+                Value<String?> artistKey = const Value.absent(),
                 Value<String> name = const Value.absent(),
               }) => ArtistsCompanion(
                 id: id,
                 mediaStoreArtistId: mediaStoreArtistId,
+                artistKey: artistKey,
                 name: name,
               ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                required int mediaStoreArtistId,
+                Value<int?> mediaStoreArtistId = const Value.absent(),
+                Value<String?> artistKey = const Value.absent(),
                 required String name,
               }) => ArtistsCompanion.insert(
                 id: id,
                 mediaStoreArtistId: mediaStoreArtistId,
+                artistKey: artistKey,
                 name: name,
               ),
           withReferenceMapper: (p0) => p0
@@ -3957,7 +4220,9 @@ typedef $$ArtistsTableProcessedTableManager =
     >;
 typedef $$SongsTableCreateCompanionBuilder = SongsCompanion Function({
   Value<int> id,
-  required int mediaStoreId,
+  Value<int?> mediaStoreId,
+  Value<String> source,
+  Value<String?> contentHash,
   required String contentUri,
   Value<String?> path,
   required String title,
@@ -3979,7 +4244,9 @@ typedef $$SongsTableCreateCompanionBuilder = SongsCompanion Function({
 });
 typedef $$SongsTableUpdateCompanionBuilder = SongsCompanion Function({
   Value<int> id,
-  Value<int> mediaStoreId,
+  Value<int?> mediaStoreId,
+  Value<String> source,
+  Value<String?> contentHash,
   Value<String> contentUri,
   Value<String?> path,
   Value<String> title,
@@ -4072,6 +4339,16 @@ class $$SongsTableFilterComposer extends Composer<_$AppDatabase, $SongsTable> {
 
   ColumnFilters<int> get mediaStoreId => $composableBuilder(
     column: $table.mediaStoreId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get contentHash => $composableBuilder(
+    column: $table.contentHash,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4246,6 +4523,16 @@ class $$SongsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get contentHash => $composableBuilder(
+    column: $table.contentHash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get contentUri => $composableBuilder(
     column: $table.contentUri,
     builder: (column) => ColumnOrderings(column),
@@ -4387,6 +4674,14 @@ class $$SongsTableAnnotationComposer
 
   GeneratedColumn<int> get mediaStoreId => $composableBuilder(
     column: $table.mediaStoreId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get contentHash => $composableBuilder(
+    column: $table.contentHash,
     builder: (column) => column,
   );
 
@@ -4559,7 +4854,9 @@ class $$SongsTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<int> mediaStoreId = const Value.absent(),
+                Value<int?> mediaStoreId = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String?> contentHash = const Value.absent(),
                 Value<String> contentUri = const Value.absent(),
                 Value<String?> path = const Value.absent(),
                 Value<String> title = const Value.absent(),
@@ -4581,6 +4878,8 @@ class $$SongsTableTableManager
               }) => SongsCompanion(
                 id: id,
                 mediaStoreId: mediaStoreId,
+                source: source,
+                contentHash: contentHash,
                 contentUri: contentUri,
                 path: path,
                 title: title,
@@ -4603,7 +4902,9 @@ class $$SongsTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                required int mediaStoreId,
+                Value<int?> mediaStoreId = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String?> contentHash = const Value.absent(),
                 required String contentUri,
                 Value<String?> path = const Value.absent(),
                 required String title,
@@ -4625,6 +4926,8 @@ class $$SongsTableTableManager
               }) => SongsCompanion.insert(
                 id: id,
                 mediaStoreId: mediaStoreId,
+                source: source,
+                contentHash: contentHash,
                 contentUri: contentUri,
                 path: path,
                 title: title,

@@ -1,18 +1,19 @@
-import 'package:drift/drift.dart';
+﻿import 'package:drift/drift.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/ingest/ingest_service.dart';
+import '../../../core/utils/string_utils.dart';
 
 class SyncBatchResult {
   const SyncBatchResult({
     required this.added,
     required this.updated,
-    required this.dirtyAlbumMediaStoreIds,
+    required this.dirtyAlbumKeys,
   });
 
   final int added;
   final int updated;
-  final Set<int> dirtyAlbumMediaStoreIds;
+  final Set<String> dirtyAlbumKeys;
 }
 
 class LibraryCounts {
@@ -27,77 +28,118 @@ class LibraryCounts {
   final int artists;
 }
 
+final class StoredImportedSong {
+  const StoredImportedSong({required this.rowId, required this.path});
+
+  final int rowId;
+  final String path;
+}
+
 class LibraryRepository {
   LibraryRepository(this._db);
 
   final AppDatabase _db;
 
   static const int _deleteChunkSize = 400;
-  static const String _missingArtSentinel = '';
-  static const String _scanSource = 'mediastore';
 
-  Future<Map<int, int>> existingSongIndex() async {
+  /// Identity map used for change detection: track identityKey ->
+  /// stored dateModifiedSec. Works uniformly across platforms because
+  /// both produce stable [IngestTrack.identityKey]s.
+  Future<Map<String, int>> existingSongIndex() async {
     final query = _db.selectOnly(_db.songs)
-      ..addColumns([_db.songs.mediaStoreId, _db.songs.dateModifiedSec]);
+      ..addColumns([
+        _db.songs.source,
+        _db.songs.mediaStoreId,
+        _db.songs.contentHash,
+        _db.songs.dateModifiedSec,
+      ]);
     final rows = await query.get();
-    return {
-      for (final row in rows)
-        row.read(_db.songs.mediaStoreId)!: row.read(_db.songs.dateModifiedSec)!,
-    };
+    final index = <String, int>{};
+    for (final row in rows) {
+      final source = row.read(_db.songs.source)!;
+      final modified = row.read(_db.songs.dateModifiedSec)!;
+      if (source == IngestSource.mediastore.name) {
+        final msId = row.read(_db.songs.mediaStoreId);
+        if (msId != null) {
+          index['ms:$msId'] = modified;
+        }
+      } else {
+        final hash = row.read(_db.songs.contentHash);
+        if (hash != null) {
+          index['h:$hash'] = modified;
+        }
+      }
+    }
+    return index;
   }
 
   Future<SyncBatchResult> syncTracks(List<IngestTrack> tracks) {
     return _db.transaction(() async {
       var added = 0;
       var updated = 0;
-      final dirtyAlbums = <int>{};
+      final dirtyAlbums = <String>{};
 
       final existingSongs =
           await (_db.select(_db.songs)..where(
-                (tbl) => tbl.mediaStoreId.isIn(
-                  tracks.map((tr) => tr.mediaStoreId).toSet(),
-                ),
+                (tbl) =>
+                    tbl.source.isIn(tracks.map((tr) => tr.source.name).toSet()),
               ))
               .get();
-      final songByMediaStoreId = {
-        for (final row in existingSongs) row.mediaStoreId: row,
-      };
+      final songByIdentityKey = <String, Song>{};
+      for (final row in existingSongs) {
+        final key = row.source == IngestSource.mediastore.name
+            ? 'ms:${row.mediaStoreId}'
+            : 'h:${row.contentHash}';
+        songByIdentityKey[key] = row;
+      }
 
-      final albumIds = tracks.map((tr) => tr.albumMediaStoreId).toSet();
+      final albumKeys = tracks
+          .map((tr) => tr.albumKey)
+          .whereType<String>()
+          .where((k) => k.isNotEmpty)
+          .toSet();
       final existingAlbums = await (_db.select(
         _db.albums,
-      )..where((tbl) => tbl.mediaStoreAlbumId.isIn(albumIds))).get();
-      final albumByMediaStoreId = {
-        for (final row in existingAlbums) row.mediaStoreAlbumId: row.id,
+      )..where((tbl) => tbl.albumKey.isIn(albumKeys))).get();
+      final albumRowIdByKey = {
+        for (final row in existingAlbums)
+          if (row.albumKey != null) row.albumKey!: row.id,
       };
 
-      final artistIds = tracks.map((tr) => tr.artistMediaStoreId).toSet();
+      final artistKeys = tracks
+          .map((tr) => tr.artistKey)
+          .whereType<String>()
+          .where((k) => k.isNotEmpty)
+          .toSet();
       final existingArtists = await (_db.select(
         _db.artists,
-      )..where((tbl) => tbl.mediaStoreArtistId.isIn(artistIds))).get();
-      final artistByMediaStoreId = {
-        for (final row in existingArtists) row.mediaStoreArtistId: row.id,
+      )..where((tbl) => tbl.artistKey.isIn(artistKeys))).get();
+      final artistRowIdByKey = {
+        for (final row in existingArtists)
+          if (row.artistKey != null) row.artistKey!: row.id,
       };
 
       for (final track in tracks) {
         final albumRowId = await _ensureAlbum(
           track: track,
-          byMediaStoreId: albumByMediaStoreId,
+          rowIdByKey: albumRowIdByKey,
         );
         final artistRowId = await _ensureArtist(
           track: track,
-          byMediaStoreId: artistByMediaStoreId,
+          rowIdByKey: artistRowIdByKey,
         );
 
         final title = _resolveTitle(track);
         final companion =
             SongsCompanion.insert(
-              mediaStoreId: track.mediaStoreId,
               contentUri: track.contentUri,
               title: title,
               titleSearch: title.toLowerCase(),
               durationMs: track.durationMs,
               dateModifiedSec: track.dateModifiedSec,
+              source: Value(track.source.name),
+              mediaStoreId: Value(track.mediaStoreId),
+              contentHash: Value(track.contentHash),
               path: Value(track.path),
               artist: Value(track.artist),
               artistSearch: Value(track.artist?.toLowerCase()),
@@ -108,87 +150,92 @@ class LibraryRepository {
               discNumber: Value(track.discNumber),
               dateAddedSec: Value(track.dateAddedSec),
               sizeBytes: Value(track.sizeBytes),
-              format: Value(_resolveFormat(track.path)),
+              format: Value(formatFromPath(track.path)),
             ).copyWith(
               albumRowId: Value(albumRowId),
               artistRowId: Value(artistRowId),
             );
 
-        final existing = songByMediaStoreId[track.mediaStoreId];
+        final existing = songByIdentityKey[track.identityKey];
         if (existing == null) {
           await _db.into(_db.songs).insert(companion);
           added++;
-          if (albumRowId != null) {
-            dirtyAlbums.add(track.albumMediaStoreId);
+          if (albumRowId != null && track.albumKey != null) {
+            dirtyAlbums.add(track.albumKey!);
           }
         } else if (existing.dateModifiedSec != track.dateModifiedSec) {
           await (_db.update(
             _db.songs,
           )..where((tbl) => tbl.id.equals(existing.id))).write(companion);
           updated++;
-          if (albumRowId != null) {
-            dirtyAlbums.add(track.albumMediaStoreId);
+          if (albumRowId != null && track.albumKey != null) {
+            dirtyAlbums.add(track.albumKey!);
           }
         }
 
         if (track.album != null && albumRowId != null) {
-          await _refreshAlbumNameIfNeeded(
-            mediaStoreAlbumId: track.albumMediaStoreId,
-            name: track.album!,
-            knownIds: albumByMediaStoreId,
-          );
+          await (_db.update(_db.albums)
+                ..where((tbl) => tbl.id.equals(albumRowId)))
+              .write(AlbumsCompanion(name: Value(track.album!)));
         }
       }
 
       return SyncBatchResult(
         added: added,
         updated: updated,
-        dirtyAlbumMediaStoreIds: dirtyAlbums,
+        dirtyAlbumKeys: dirtyAlbums,
       );
     });
   }
 
   Future<int?> _ensureAlbum({
     required IngestTrack track,
-    required Map<int, int> byMediaStoreId,
+    required Map<String, int> rowIdByKey,
   }) async {
-    final name = track.album;
-    if (name == null || name.isEmpty) {
+    final key = track.albumKey;
+    if (key == null || key.isEmpty) {
       return null;
     }
-    if (byMediaStoreId.containsKey(track.albumMediaStoreId)) {
-      return byMediaStoreId[track.albumMediaStoreId];
+    if (rowIdByKey.containsKey(key)) {
+      return rowIdByKey[key];
+    }
+    final name = track.album?.trim();
+    if (name == null || name.isEmpty) {
+      return null;
     }
     await _db
         .into(_db.albums)
         .insert(
           AlbumsCompanion.insert(
-            mediaStoreAlbumId: track.albumMediaStoreId,
             name: name,
+            albumKey: Value(key),
+            mediaStoreAlbumId: Value(track.albumMediaStoreId),
             artistName: Value(track.albumArtist ?? track.artist),
           ),
           mode: InsertMode.insertOrIgnore,
         );
-    final created =
-        await (_db.select(_db.albums)..where(
-              (tbl) => tbl.mediaStoreAlbumId.equals(track.albumMediaStoreId),
-            ))
-            .getSingleOrNull();
+    final created = await (_db.select(
+      _db.albums,
+    )..where((tbl) => tbl.albumKey.equals(key))).getSingleOrNull();
     if (created == null) {
       return null;
     }
-    byMediaStoreId[track.albumMediaStoreId] = created.id;
+    rowIdByKey[key] = created.id;
     return created.id;
   }
 
   Future<int?> _ensureArtist({
     required IngestTrack track,
-    required Map<int, int> byMediaStoreId,
+    required Map<String, int> rowIdByKey,
   }) async {
-    if (byMediaStoreId.containsKey(track.artistMediaStoreId)) {
-      return byMediaStoreId[track.artistMediaStoreId];
+    final key = track.artistKey;
+    if (key == null || key.isEmpty) {
+      return null;
     }
-    final name = track.artist;
+    if (rowIdByKey.containsKey(key)) {
+      return rowIdByKey[key];
+    }
+    final name = track.artist?.trim();
     if (name == null || name.isEmpty) {
       return null;
     }
@@ -196,52 +243,40 @@ class LibraryRepository {
         .into(_db.artists)
         .insert(
           ArtistsCompanion.insert(
-            mediaStoreArtistId: track.artistMediaStoreId,
             name: name,
+            artistKey: Value(key),
+            mediaStoreArtistId: Value(track.artistMediaStoreId),
           ),
           mode: InsertMode.insertOrIgnore,
         );
-    final created =
-        await (_db.select(_db.artists)..where(
-              (tbl) => tbl.mediaStoreArtistId.equals(track.artistMediaStoreId),
-            ))
-            .getSingleOrNull();
+    final created = await (_db.select(
+      _db.artists,
+    )..where((tbl) => tbl.artistKey.equals(key))).getSingleOrNull();
     if (created == null) {
       return null;
     }
-    byMediaStoreId[track.artistMediaStoreId] = created.id;
+    rowIdByKey[key] = created.id;
     return created.id;
   }
 
-  Future<void> _refreshAlbumNameIfNeeded({
-    required int mediaStoreAlbumId,
-    required String name,
-    required Map<int, int> knownIds,
-  }) async {
-    final rowId = knownIds[mediaStoreAlbumId];
-    if (rowId == null) {
-      return;
-    }
-    await (_db.update(_db.albums)..where((tbl) => tbl.id.equals(rowId))).write(
-      AlbumsCompanion(name: Value(name)),
-    );
-  }
-
-  Future<List<int>> albumsNeedingArt(Set<int> dirtyAlbumMediaStoreIds) async {
-    if (dirtyAlbumMediaStoreIds.isEmpty) {
+  Future<List<String>> albumsNeedingArt(Set<String> dirtyAlbumKeys) async {
+    if (dirtyAlbumKeys.isEmpty) {
       return const [];
     }
     final query = _db.selectOnly(_db.albums)
-      ..addColumns([_db.albums.mediaStoreAlbumId])
-      ..where(_db.albums.mediaStoreAlbumId.isIn(dirtyAlbumMediaStoreIds))
+      ..addColumns([_db.albums.albumKey])
+      ..where(_db.albums.albumKey.isIn(dirtyAlbumKeys))
       ..where(
         _db.albums.artSmallPath.isNull() | _db.albums.artLargePath.isNull(),
       );
     final rows = await query.get();
-    return rows.map((row) => row.read(_db.albums.mediaStoreAlbumId)!).toList();
+    return rows
+        .map((row) => row.read(_db.albums.albumKey))
+        .whereType<String>()
+        .toList();
   }
 
-  Future<void> attachArtwork(Map<int, ResolvedArtwork?> resolved) async {
+  Future<void> attachArtwork(Map<String, ResolvedArtwork?> resolved) async {
     if (resolved.isEmpty) {
       return;
     }
@@ -250,34 +285,62 @@ class LibraryRepository {
         final artwork = entry.value;
         await (_db.update(
           _db.albums,
-        )..where((tbl) => tbl.mediaStoreAlbumId.equals(entry.key))).write(
+        )..where((tbl) => tbl.albumKey.equals(entry.key))).write(
           AlbumsCompanion(
-            artSmallPath: Value(artwork?.smallPath ?? _missingArtSentinel),
-            artLargePath: Value(artwork?.largePath ?? _missingArtSentinel),
+            artSmallPath: Value(artwork?.smallPath ?? ''),
+            artLargePath: Value(artwork?.largePath ?? ''),
           ),
         );
       }
     });
   }
 
-  Future<int> removeAbsent(Set<int> seenMediaStoreIds) async {
-    final existingKeys = (await existingSongIndex()).keys.toList(
-      growable: false,
-    );
-    final doomed = existingKeys
-        .where((id) => !seenMediaStoreIds.contains(id))
-        .toList();
+  Future<int> removeAbsentMediaStore(Set<int> seenMediaStoreIds) async {
+    final doomedRows = seenMediaStoreIds.isEmpty
+        ? await (_db.select(_db.songs)..where(
+                (tbl) => tbl.source.equals(IngestSource.mediastore.name),
+              ))
+              .get()
+        : await (_db.select(_db.songs)..where(
+                (tbl) =>
+                    tbl.source.equals(IngestSource.mediastore.name) &
+                    tbl.mediaStoreId.isNotIn(seenMediaStoreIds),
+              ))
+              .get();
+    final doomedIds = doomedRows.map((r) => r.id).toList();
 
-    for (var i = 0; i < doomed.length; i += _deleteChunkSize) {
-      final chunk = doomed.sublist(
-        i,
-        (i + _deleteChunkSize).clamp(0, doomed.length),
-      );
-      await (_db.delete(
-        _db.songs,
-      )..where((tbl) => tbl.mediaStoreId.isIn(chunk))).go();
+    await _deleteSongRows(doomedIds);
+    await _cleanupOrphans();
+    return doomedIds.length;
+  }
+
+  Future<List<StoredImportedSong>> importedSongsForReconciliation() async {
+    final rows = await (_db.select(
+      _db.songs,
+    )..where((tbl) => tbl.source.equals(IngestSource.imported.name))).get();
+    return rows
+        .map((row) => StoredImportedSong(rowId: row.id, path: row.path ?? ''))
+        .where((s) => s.path.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<int> deleteSongsByRowIds(Set<int> rowIds) async {
+    if (rowIds.isEmpty) {
+      return 0;
     }
+    await _deleteSongRows(rowIds.toList());
+    await _cleanupOrphans();
+    return rowIds.length;
+  }
 
+  Future<void> _deleteSongRows(List<int> ids) async {
+    for (var i = 0; i < ids.length; i += _deleteChunkSize) {
+      final chunk = ids.sublist(i, (i + _deleteChunkSize).clamp(0, ids.length));
+      await (_db.delete(_db.songs)..where((tbl) => tbl.id.isIn(chunk))).go();
+    }
+  }
+
+  Future<void> _cleanupOrphans() async {
     await _db.customStatement(
       'DELETE FROM albums WHERE id NOT IN '
       '(SELECT DISTINCT album_row_id FROM songs WHERE album_row_id IS NOT NULL)',
@@ -286,7 +349,6 @@ class LibraryRepository {
       'DELETE FROM artists WHERE id NOT IN '
       '(SELECT DISTINCT artist_row_id FROM songs WHERE artist_row_id IS NOT NULL)',
     );
-    return doomed.length;
   }
 
   Future<LibraryCounts> currentCounts() async {
@@ -316,7 +378,7 @@ class LibraryRepository {
         .into(_db.scanStates)
         .insertOnConflictUpdate(
           ScanStatesCompanion.insert(
-            source: _scanSource,
+            source: 'mediastore',
             lastCompletedAt: Value(DateTime.now()),
             totalSongs: Value(totalSongs),
           ),
@@ -326,7 +388,7 @@ class LibraryRepository {
   Future<ScanStateEntry?> lastScanEntry() {
     return (_db.select(
       _db.scanStates,
-    )..where((tbl) => tbl.source.equals(_scanSource))).getSingleOrNull();
+    )..where((tbl) => tbl.source.equals('mediastore'))).getSingleOrNull();
   }
 
   String _resolveTitle(IngestTrack track) {
@@ -334,38 +396,10 @@ class LibraryRepository {
     if (raw != null && raw.isNotEmpty) {
       return raw;
     }
-    final fallback = _fallbackNameFromPath(track.path);
+    final fallback = fallbackTitleFromPath(track.path);
     if (fallback != null && fallback.isNotEmpty) {
       return fallback;
     }
     return 'Untitled';
-  }
-
-  String? _fallbackNameFromPath(String? path) {
-    if (path == null || path.isEmpty) {
-      return null;
-    }
-    final normalized = path.replaceAll('\\', '/');
-    final segment = normalized.split('/').last;
-    final dot = segment.lastIndexOf('.');
-    if (dot <= 0) {
-      return segment;
-    }
-    return segment.substring(0, dot);
-  }
-
-  String? _resolveFormat(String? path) {
-    if (path == null) {
-      return null;
-    }
-    final dot = path.lastIndexOf('.');
-    if (dot < 0 || dot == path.length - 1) {
-      return null;
-    }
-    final ext = path.substring(dot + 1).toLowerCase();
-    if (ext.length > 5) {
-      return null;
-    }
-    return ext;
   }
 }

@@ -1,8 +1,13 @@
 import 'package:drift/drift.dart';
 
 @TableIndex(
-  name: 'songs_media_store_id',
-  columns: {#mediaStoreId},
+  name: 'songs_source_media_store_id',
+  columns: {#source, #mediaStoreId},
+  unique: true,
+)
+@TableIndex(
+  name: 'songs_source_content_hash',
+  columns: {#source, #contentHash},
   unique: true,
 )
 @TableIndex(name: 'songs_album', columns: {#albumRowId})
@@ -11,7 +16,9 @@ import 'package:drift/drift.dart';
 @TableIndex(name: 'songs_date_added', columns: {#dateAddedSec})
 class Songs extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get mediaStoreId => integer()();
+  IntColumn get mediaStoreId => integer().nullable()();
+  TextColumn get source => text().withDefault(const Constant('mediastore'))();
+  TextColumn get contentHash => text().nullable()();
   TextColumn get contentUri => text()();
   TextColumn get path => text().nullable()();
   TextColumn get title => text()();
@@ -37,9 +44,11 @@ class Songs extends Table {
   columns: {#mediaStoreAlbumId},
   unique: true,
 )
+@TableIndex(name: 'albums_album_key', columns: {#albumKey}, unique: true)
 class Albums extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get mediaStoreAlbumId => integer()();
+  IntColumn get mediaStoreAlbumId => integer().nullable()();
+  TextColumn get albumKey => text().nullable()();
   TextColumn get name => text()();
   TextColumn get artistName => text().nullable()();
   TextColumn get artSmallPath => text().nullable()();
@@ -51,9 +60,11 @@ class Albums extends Table {
   columns: {#mediaStoreArtistId},
   unique: true,
 )
+@TableIndex(name: 'artists_artist_key', columns: {#artistKey}, unique: true)
 class Artists extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get mediaStoreArtistId => integer()();
+  IntColumn get mediaStoreArtistId => integer().nullable()();
+  TextColumn get artistKey => text().nullable()();
   TextColumn get name => text()();
 }
 

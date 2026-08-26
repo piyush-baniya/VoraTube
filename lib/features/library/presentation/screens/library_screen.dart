@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,37 +19,70 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(scanControllerProvider.notifier).refreshPermission();
+      if (Platform.isAndroid) {
+        ref.read(scanControllerProvider.notifier).refreshPermission();
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(scanControllerProvider);
     return SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const ScreenHeader(title: 'Library'),
           Expanded(
-            child: switch (state) {
-              ScanPermissionNeeded() => _PermissionView(
-                permanentlyDenied: state.permanentlyDenied,
-              ),
-              ScanReady() => const _ReadyView(),
-              ScanRunning() => _RunningView(
-                phase: state.phase,
-                processedCount: state.processedCount,
-                addedCount: state.addedCount,
-                totalHint: state.totalHint,
-              ),
-              ScanComplete() => _CompleteView(summary: state.summary),
-              ScanFailure() => _FailureView(message: state.message),
-            },
+            child: Platform.isIOS ? const _ImportBody() : const _ScanBody(),
           ),
         ],
       ),
     );
+  }
+}
+
+class _ScanBody extends ConsumerWidget {
+  const _ScanBody();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(scanControllerProvider);
+    return switch (state) {
+      ScanPermissionNeeded() => _PermissionView(
+        permanentlyDenied: state.permanentlyDenied,
+      ),
+      ScanReady() => const _ReadyView(),
+      ScanRunning() => _RunningView(
+        phase: state.phase,
+        processedCount: state.processedCount,
+        addedCount: state.addedCount,
+        totalHint: state.totalHint,
+      ),
+      ScanComplete() => _CompleteView(summary: state.summary),
+      ScanFailure() => _FailureView(message: state.message),
+    };
+  }
+}
+
+class _ImportBody extends ConsumerWidget {
+  const _ImportBody();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(importControllerProvider);
+    return switch (state) {
+      ImportReady() => const _ImportReadyView(),
+      Importing() => _ImportingView(
+        phase: state.phase,
+        processedCount: state.processedCount,
+        totalCount: state.totalCount,
+        importedCount: state.importedCount,
+        skippedCount: state.skippedCount,
+        failedCount: state.failedCount,
+      ),
+      ImportComplete() => _ImportCompleteView(summary: state.summary),
+      ImportFailure() => _FailureView(message: state.message),
+    };
   }
 }
 
@@ -276,6 +311,175 @@ class _FailureView extends ConsumerWidget {
             child: const Text('Try again'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ImportReadyView extends ConsumerWidget {
+  const _ImportReadyView();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          FilledButton.icon(
+            onPressed: () =>
+                ref.read(importControllerProvider.notifier).startImport(),
+            icon: const Icon(Icons.library_add_rounded),
+            label: const Text('Import Music'),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              'Pick audio files from your device. VoraTube copies them into '
+              'its own library so they always stay available.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImportingView extends StatelessWidget {
+  const _ImportingView({
+    required this.phase,
+    required this.processedCount,
+    required this.totalCount,
+    required this.importedCount,
+    required this.skippedCount,
+    required this.failedCount,
+  });
+
+  final ImportPhase phase;
+  final int processedCount;
+  final int totalCount;
+  final int importedCount;
+  final int skippedCount;
+  final int failedCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = phase == ImportPhase.artwork
+        ? 'Preparing artwork\u2026'
+        : 'Importing\u2026';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 48),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const LinearProgressIndicator(minHeight: 4),
+          const SizedBox(height: 20),
+          Text(
+            label,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$processedCount / $totalCount files \u00b7 '
+            '$importedCount imported'
+            '${skippedCount > 0 ? ' \u00b7 $skippedCount duplicates' : ''}'
+            '${failedCount > 0 ? ' \u00b7 $failedCount failed' : ''}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImportCompleteView extends ConsumerWidget {
+  const _ImportCompleteView({required this.summary});
+
+  final ImportSummary summary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.done_all_rounded,
+              size: 56,
+              color: theme.colorScheme.primary,
+              semanticLabel: 'Import complete',
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '${summary.importedSongs} songs imported',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${summary.totalSelected} selected \u00b7 '
+              '${summary.skippedDuplicates} duplicates skipped \u00b7 '
+              '${summary.failedCount} failed',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            for (final failure in summary.failures.take(3)) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${failure.fileName}: ${failure.reason}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (summary.failures.length > 3)
+              Text(
+                '+${summary.failures.length - 3} more',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () =>
+                  ref.read(importControllerProvider.notifier).startImport(),
+              icon: const Icon(Icons.library_add_rounded),
+              label: const Text('Import more'),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () async {
+                final removed = await ref
+                    .read(importControllerProvider.notifier)
+                    .reconcileMissingFiles();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('$removed missing imports removed')),
+                  );
+                }
+              },
+              child: const Text('Clean up missing files'),
+            ),
+          ],
+        ),
       ),
     );
   }
