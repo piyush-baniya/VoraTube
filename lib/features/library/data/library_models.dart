@@ -1,4 +1,5 @@
 ﻿import '../../../core/db/app_database.dart' show Song, Playlist;
+import '../../../core/ingest/ingest_service.dart' show ReplayGainInfo;
 
 enum LibrarySection { songs, albums, artists, genres }
 
@@ -20,10 +21,11 @@ enum SongSort {
 
 /// One page of song rows plus a cursor for fetching the next page.
 final class SongTileData {
-  const SongTileData({required this.song, this.artPath});
+  const SongTileData({required this.song, this.artPath, this.replayGain});
 
   final Song song;
   final String? artPath;
+  final ReplayGainInfo? replayGain;
 }
 
 final class SongPage {

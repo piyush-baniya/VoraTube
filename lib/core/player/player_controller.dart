@@ -2,9 +2,13 @@ import 'dart:async';
 
 import 'dart:convert';
 
+import '../../../core/ingest/ingest_service.dart';
+
 enum RepeatMode { off, all, one }
 
 enum PlayerStatus { idle, loading, ready }
+
+enum ReplayGainMode { off, track, album }
 
 /// Minimal track reference handed to the player.
 ///
@@ -19,6 +23,7 @@ final class SongRef {
     this.album,
     this.artPath,
     this.durationMs = 0,
+    this.replayGain,
   });
 
   final String identityKey;
@@ -28,6 +33,7 @@ final class SongRef {
   final String? album;
   final String? artPath;
   final int durationMs;
+  final ReplayGainInfo? replayGain;
 }
 
 /// Coarse playback state. Emitted only when something meaningful changes;
@@ -212,6 +218,16 @@ abstract class PlayerController {
   Future<void> setShuffle(bool enabled);
 
   Future<void> setRepeat(RepeatMode mode);
+
+  /// Sets the ReplayGain normalization mode.
+  ///
+  /// - [ReplayGainMode.off]: No normalization (default)
+  /// - [ReplayGainMode.track]: Normalize per track using track gain
+  /// - [ReplayGainMode.album]: Normalize per album using album gain
+  Future<void> setReplayGainMode(ReplayGainMode mode);
+
+  /// Current ReplayGain normalization mode.
+  ReplayGainMode get replayGainMode;
 
   /// A snapshot copy of the current queue. Safe to call from UI; returns
   /// a new list each time so callers never hold a mutable reference to

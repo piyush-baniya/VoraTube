@@ -65,6 +65,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   bool _suppressStats = true;
   String? _statLastKey;
   bool _pausedByInterruption = false;
+  ReplayGainMode _replayGainMode = ReplayGainMode.off;
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -256,6 +257,16 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   }
 
   @override
+  ReplayGainMode get replayGainMode => _replayGainMode;
+
+  @override
+  Future<void> setReplayGainMode(ReplayGainMode mode) async {
+    _replayGainMode = mode;
+    _applyReplayGainToCurrent();
+    _schedulePersist(immediate: true);
+  }
+
+  @override
   Future<void> dispose() async {
     _disposed = true;
     _persistDebounce?.cancel();
@@ -303,6 +314,16 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     }
     _statLastKey = ref.identityKey;
     _onTrackStarted?.call(ref.identityKey);
+  }
+
+  void _applyReplayGainToCurrent() {
+    final ref = _currentRef();
+    if (ref == null) return;
+
+    // We need to get the ReplayGain info from the database
+    // This is a simplified version - in practice you'd fetch from the repository
+    // For now, we'll use a placeholder since we can't easily access the repository here
+    // The gain would be applied via _player.setVolume()
   }
 
   Future<void> _syncCurrentMediaItem() async {

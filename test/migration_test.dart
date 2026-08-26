@@ -7,7 +7,7 @@ import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/ingest/ingest_service.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
 
-/// Simulates upgrading a real Phase-1 (schema v1) database file to v4 and
+/// Simulates upgrading a real Phase-1 (schema v1) database file to v5 and
 /// verifies user data plus identity-key backfilling survive the trip.
 void main() {
   late File dbFile;

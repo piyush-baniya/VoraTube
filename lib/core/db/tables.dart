@@ -37,6 +37,7 @@ class Songs extends Table {
   IntColumn get dateAddedSec => integer().nullable()();
   IntColumn get sizeBytes => integer().nullable()();
   TextColumn get format => text().nullable()();
+  TextColumn get replayGainJson => text().nullable()();
 }
 
 @TableIndex(

@@ -151,6 +151,7 @@ Future<ProcessedImport> processPickedImportFile(
     sizeBytes: sizeBytes,
     albumKey: albumKeyFor(meta.album, meta.albumArtist, meta.artist),
     artistKey: artistKeyFor(meta.artist),
+    replayGain: meta.replayGain,
   );
 
   return ProcessedImport(track: track, artworkBytes: meta.pictureBytes);

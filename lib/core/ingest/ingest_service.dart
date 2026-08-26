@@ -1,5 +1,6 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'dart:typed_data';
+import 'dart:math';
 
 enum IngestSource { mediastore, imported }
 
@@ -23,6 +24,64 @@ final class ResolvedArtwork {
   bool get hasArt => smallPath != null && largePath != null;
 }
 
+/// ReplayGain information extracted from audio metadata.
+final class ReplayGainInfo {
+  const ReplayGainInfo({
+    this.trackGainDb,
+    this.trackPeak,
+    this.albumGainDb,
+    this.albumPeak,
+  });
+
+  /// Track gain in dB (e.g., -3.5). Apply as volume multiplier: 10^(gain/20)
+  final double? trackGainDb;
+
+  /// Track peak as linear amplitude (0.0-1.0 or higher)
+  final double? trackPeak;
+
+  /// Album gain in dB (for album-level normalization)
+  final double? albumGainDb;
+
+  /// Album peak as linear amplitude
+  final double? albumPeak;
+
+  bool get hasTrackGain => trackGainDb != null;
+  bool get hasAlbumGain => albumGainDb != null;
+
+  /// Compute volume multiplier for track gain (clamped to prevent clipping)
+  double trackGainMultiplier({
+    double preampDb = 0.0,
+    bool preventClipping = true,
+  }) {
+    if (trackGainDb == null) return 1.0;
+    var gainDb = trackGainDb! + preampDb;
+    if (preventClipping && trackPeak != null) {
+      // 0 dBFS = 1.0 linear. If applying gain would exceed 1.0, reduce.
+      final peakAfterGain = trackPeak! * pow(10.0, gainDb / 20.0);
+      if (peakAfterGain > 1.0) {
+        gainDb = 20.0 * log(1.0 / trackPeak!) / ln10;
+      }
+    }
+    return pow(10.0, gainDb / 20.0).toDouble();
+  }
+
+  /// Compute volume multiplier for album gain
+  double albumGainMultiplier({
+    double preampDb = 0.0,
+    bool preventClipping = true,
+  }) {
+    if (albumGainDb == null) return 1.0;
+    var gainDb = albumGainDb! + preampDb;
+    if (preventClipping && albumPeak != null) {
+      final peakAfterGain = albumPeak! * pow(10.0, gainDb / 20.0);
+      if (peakAfterGain > 1.0) {
+        gainDb = 20.0 * log(1.0 / albumPeak!) / ln10;
+      }
+    }
+    return pow(10.0, gainDb / 20.0).toDouble();
+  }
+}
+
 final class ExtractedMetadata {
   const ExtractedMetadata({
     this.title,
@@ -35,6 +94,7 @@ final class ExtractedMetadata {
     this.discNumber,
     this.durationMs,
     this.pictureBytes,
+    this.replayGain,
   });
 
   final String? title;
@@ -47,6 +107,7 @@ final class ExtractedMetadata {
   final int? discNumber;
   final int? durationMs;
   final Uint8List? pictureBytes;
+  final ReplayGainInfo? replayGain;
 }
 
 abstract interface class MetadataReader {
@@ -76,6 +137,7 @@ final class IngestTrack {
     this.discNumber,
     this.dateAddedSec,
     this.sizeBytes,
+    this.replayGain,
   }) : assert(
          source != IngestSource.mediastore || mediaStoreId != null,
          'MediaStore tracks require a mediaStoreId',
@@ -115,6 +177,7 @@ final class IngestTrack {
   final int? discNumber;
   final int? dateAddedSec;
   final int? sizeBytes;
+  final ReplayGainInfo? replayGain;
 
   String get identityKey =>
       source == IngestSource.mediastore ? 'ms:$mediaStoreId' : 'h:$contentHash';

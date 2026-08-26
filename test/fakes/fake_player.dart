@@ -63,5 +63,11 @@ class FakePlayerController implements PlayerController {
   Future<void> setRepeat(RepeatMode mode) async {}
 
   @override
+  ReplayGainMode get replayGainMode => ReplayGainMode.off;
+
+  @override
+  Future<void> setReplayGainMode(ReplayGainMode mode) async {}
+
+  @override
   Future<void> dispose() async {}
 }

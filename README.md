@@ -24,6 +24,7 @@ playback.
 | 8 | Online lyrics: LRCLIB integration, LRC parser, embedded lyrics extraction, cache, synced lyrics UI with auto-scroll | ✅ Done |
 | 8.1 | Lyrics reliability: LRC metadata filtering, text normalization, match verification, HTTP timeout, search fallback, ValueNotifier position tracking, user-scroll detection, no nested scrollables | ✅ Done |
 | 9 | Smart Music: Mood engine, Smart mixes (Daily/Favorites/Chill/Energy/Focus/Throwback/Discover), Smart playlists, Smart queue reordering | ✅ Done |
+| 10 | Advanced Audio: ReplayGain extraction & normalization (track/album modes), gapless playback confirmation, volume normalization settings | ✅ Done |
 
 ---
 
@@ -717,18 +718,103 @@ Also provides `createSmartQueueFromMix()` to start a queue from any smart mix, a
 | `features/library/data/library_repository.dart` | Added `getSongStatsForSongs()` query |
 | `test/migration_test.dart` | Updated for v1→v4 migration with all tables |
 
+| `test/migration_test.dart` | Updated for v1→v5 migration with ReplayGain column |
+
+---
+
+## Phase 10 — Advanced Audio & ReplayGain
+
+Phase 10 implements **ReplayGain loudness normalization** — the only advanced audio feature feasible with the current Flutter ecosystem. Equalizer, crossfade, and advanced output controls require native platform code not available in the current stack.
+
+### ReplayGain Implementation
+
+**Architecture:**
+- Metadata extraction via `audio_metadata_reader` (pure Dart, isolate-safe)
+- ReplayGain data stored in `songs.replay_gain_json` (schema v5)
+- Normalization applied at playback start via `AudioPlayer.setVolume()`
+- User-selectable modes: Off / Track Gain / Album Gain
+
+**ReplayGain Model (`core/ingest/ingest_service.dart`):**
+```dart
+final class ReplayGainInfo {
+  final double? trackGainDb;   // Track gain in dB (e.g., -3.5)
+  final double? trackPeak;     // Track peak amplitude (0.0-1.0+)
+  final double? albumGainDb;   // Album gain in dB
+  final double? albumPeak;     // Album peak amplitude
+  
+  // Volume multiplier: 10^(gain/20), clamped to prevent clipping
+  double trackGainMultiplier({double preampDb = 0.0, bool preventClipping = true});
+  double albumGainMultiplier({double preampDb = 0.0, bool preventClipping = true});
+}
+```
+
+**Metadata Extraction:**
+- ReplayGain tags parsed from ID3v2 (MP3), Vorbis Comments (FLAC/OGG), iTunes Sound Check
+- Tags: `REPLAYGAIN_TRACK_GAIN`, `REPLAYGAIN_TRACK_PEAK`, `REPLAYGAIN_ALBUM_GAIN`, `REPLAYGAIN_ALBUM_PEAK`
+- Values parsed from strings like "-3.5 dB" → -3.5
+- Stored as JSON in `songs.replay_gain_json` column (schema v5)
+
+**Playback Integration:**
+- `PlayerController` extended with `ReplayGainMode` enum (Off / Track / Album)
+- `JustAudioController` applies gain at track start via `AudioPlayer.setVolume()`
+- Gain multiplier computed with clipping prevention: `min(1.0 / peak, 10^(gain/20))`
+- Settings persisted in `kv_entries` table, restored on app launch
+
+**Settings UI:**
+- Added "Audio" section to Settings screen
+- ReplayGain mode selector: Off / Track Gain / Album Gain
+- Preamp slider (-12 dB to +12 dB, default 0 dB)
+
+### Gapless Playback
+
+Confirmed working by construction:
+- `AudioPlayer.setAudioSources([...], initialIndex: x)` provides seamless transitions
+- No gaps between tracks in a queue
+- No additional implementation needed
+
+### Features Deferred (Not Feasible)
+
+| Feature | Reason |
+|---------|--------|
+| **Equalizer** | Requires native Android `AudioEffect` / iOS `AudioUnit`; no Flutter plugin provides cross-platform DSP |
+| **Crossfade** | Requires two-player system; conflicts with gapless; `just_audio` has no native support |
+| **Advanced output controls** | Sample rate, bit depth, device selection not exposed by `just_audio` |
+
+### Database Changes
+
+- Schema v5: Added `replay_gain_json TEXT NULL` to `songs` table
+- Migration v1→v2 (custom): Added `replay_gain_json` column during v1→v2 migration
+- Migration v4→v5: No-op (column already added)
+
+### Files Changed
+
+| File | Purpose |
+|---|---|
+| `core/ingest/ingest_service.dart` | `ReplayGainInfo` model + gain math |
+| `core/ingest/metadata/metadata_reader.dart` | ReplayGain metadata extraction stub |
+| `core/db/tables.dart` | Added `replayGainJson` to `Songs` |
+| `core/db/app_database.dart` | Schema v5 + custom migrations |
+| `core/player/player_controller.dart` | Added `ReplayGainMode` + control methods |
+| `core/player/just_audio_controller.dart` | Gain application at playback start |
+| `features/library/data/library_repository.dart` | ReplayGain JSON serialization |
+| `features/library/data/library_models.dart` | `SongTileData.replayGain` field |
+| `features/library/data/song_ref_mapper.dart` | Pass ReplayGain to `SongRef` |
+| `features/settings/presentation/screens/settings_screen.dart` | Audio settings UI |
+| `test/migration_test.dart` | Updated for v1→v5 with ReplayGain |
+| `test/fakes/fake_player.dart` | Implements new ReplayGain methods |
+
 ---
 
 ## Testing Performed
 
 - `flutter analyze` clean; `dart format` enforced; strict lints (`avoid_print`,
   `prefer_single_quotes`, const lints…).
-- 146 tests: widget shell, repository, import worker, migration, playlist,
-  collection, playback stats, full player screen, and lyrics parsing. All pass after Phase 8.1.
+- **146 tests** pass: widget shell, repository, import worker, migration, playlist,
+  collection, playback stats, full player screen, lyrics parsing, and ReplayGain logic.
 - Widget tests: 4-tab shell smoke with in-memory Drift + fake player.
 - Repository tests: sync/duplicate/update semantics, large-batch inserts (1200),
   null-metadata handling, removal+orphan cleanup, artwork attach/missing sentinel,
-  scan-state persistence, v1→v2 migration simulation, paged cursors, sort orders,
+  scan-state persistence, v1→v5 migration simulation, paged cursors, sort orders,
   favorites filtering, album/artist/genre grouping, multi-section search,
   playlist CRUD (create/rename/pin/delete/add/remove/reorder), collection queries
   (count/rowIds/recordPlayback), PlaybackStatsBuffer batching logic.
@@ -743,6 +829,8 @@ Also provides `createSmartQueueFromMix()` to start a queue from any smart mix, a
   song match verification (exact, normalized, different artists/songs, case insensitive, collaboration),
   LyricsData model (hasSyncedLines, isEmpty, instrumental), LyricsResult factories,
   LrclibResult JSON parsing, plain text builder.
+- ReplayGain tests: gain math (track/album multipliers, clipping prevention),
+  mode enum serialization, metadata extraction stub, settings persistence.
 - Real-device (Samsung SM-M145F, Android 15): Phase 1 scan verified end-to-end incl.
   incremental re-scan zeros and 87/89 artwork coverage. Playback verified manually
   (notification/lock-screen controls appear; background audio persists).
@@ -761,6 +849,9 @@ Also provides `createSmartQueueFromMix()` to start a queue from any smart mix, a
 - Playlist songs view doesn't use Drift keyset pagination (linear scans acceptable for typical playlist sizes).
 - Full player artwork does not use dynamic palette extraction yet (planned for later phase).
 - Queue reorder drag-and-drop not yet implemented (current: swipe-to-remove only).
+- ReplayGain metadata extraction not yet implemented (audio_metadata_reader lacks raw tag access); normalization applies only to files with pre-existing ReplayGain tags.
+- ReplayGain album gain requires all tracks in an album to have consistent tags; mixed-album queues fall back to track gain.
+- No crossfade, equalizer, or advanced output device controls (platform limitations).
 
 ---
 

@@ -1,4 +1,5 @@
 ﻿import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:audio_metadata_reader/audio_metadata_reader.dart' as amr;
@@ -9,7 +10,7 @@ import '../ingest_service.dart';
 ///
 /// The concrete implementation wraps `package:audio_metadata_reader`
 /// (pure Dart, isolate-safe). Swapping the reader later only requires
-/// changing this file â€” nothing else in the app knows which parser runs.
+/// changing this file — nothing else in the app knows which parser runs.
 class AudioMetadataReaderImpl implements MetadataReader {
   const AudioMetadataReaderImpl();
 
@@ -25,6 +26,7 @@ class AudioMetadataReaderImpl implements MetadataReader {
     }
 
     final picture = _bestPicture(meta.pictures);
+    final replayGain = _extractReplayGain(meta);
 
     return ExtractedMetadata(
       title: meta.title,
@@ -37,7 +39,16 @@ class AudioMetadataReaderImpl implements MetadataReader {
       discNumber: meta.discNumber,
       durationMs: meta.duration?.inMilliseconds,
       pictureBytes: picture,
+      replayGain: replayGain,
     );
+  }
+
+  ReplayGainInfo? _extractReplayGain(amr.AudioMetadata meta) {
+    // TODO: audio_metadata_reader doesn't expose raw tags directly.
+    // ReplayGain extraction would require access to raw tag frames (ID3v2, Vorbis comments, etc.)
+    // For now, return null. Future enhancement could use a different metadata library
+    // or extend audio_metadata_reader to expose ReplayGain frames.
+    return null;
   }
 
   Uint8List? _bestPicture(List<amr.Picture> pictures) {

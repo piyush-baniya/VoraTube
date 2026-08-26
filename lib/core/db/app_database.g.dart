@@ -1031,6 +1031,17 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _replayGainJsonMeta = const VerificationMeta(
+    'replayGainJson',
+  );
+  @override
+  late final GeneratedColumn<String> replayGainJson = GeneratedColumn<String>(
+    'replay_gain_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1055,6 +1066,7 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
     dateAddedSec,
     sizeBytes,
     format,
+    replayGainJson,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1234,6 +1246,15 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
         format.isAcceptableOrUnknown(data['format']!, _formatMeta),
       );
     }
+    if (data.containsKey('replay_gain_json')) {
+      context.handle(
+        _replayGainJsonMeta,
+        replayGainJson.isAcceptableOrUnknown(
+          data['replay_gain_json']!,
+          _replayGainJsonMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1331,6 +1352,10 @@ class $SongsTable extends Songs with TableInfo<$SongsTable, Song> {
         DriftSqlType.string,
         data['${effectivePrefix}format'],
       ),
+      replayGainJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}replay_gain_json'],
+      ),
     );
   }
 
@@ -1363,6 +1388,7 @@ class Song extends DataClass implements Insertable<Song> {
   final int? dateAddedSec;
   final int? sizeBytes;
   final String? format;
+  final String? replayGainJson;
   const Song({
     required this.id,
     this.mediaStoreId,
@@ -1386,6 +1412,7 @@ class Song extends DataClass implements Insertable<Song> {
     this.dateAddedSec,
     this.sizeBytes,
     this.format,
+    this.replayGainJson,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1442,6 +1469,9 @@ class Song extends DataClass implements Insertable<Song> {
     if (!nullToAbsent || format != null) {
       map['format'] = Variable<String>(format);
     }
+    if (!nullToAbsent || replayGainJson != null) {
+      map['replay_gain_json'] = Variable<String>(replayGainJson);
+    }
     return map;
   }
 
@@ -1495,6 +1525,9 @@ class Song extends DataClass implements Insertable<Song> {
       format: format == null && nullToAbsent
           ? const Value.absent()
           : Value(format),
+      replayGainJson: replayGainJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(replayGainJson),
     );
   }
 
@@ -1526,6 +1559,7 @@ class Song extends DataClass implements Insertable<Song> {
       dateAddedSec: serializer.fromJson<int?>(json['dateAddedSec']),
       sizeBytes: serializer.fromJson<int?>(json['sizeBytes']),
       format: serializer.fromJson<String?>(json['format']),
+      replayGainJson: serializer.fromJson<String?>(json['replayGainJson']),
     );
   }
   @override
@@ -1554,6 +1588,7 @@ class Song extends DataClass implements Insertable<Song> {
       'dateAddedSec': serializer.toJson<int?>(dateAddedSec),
       'sizeBytes': serializer.toJson<int?>(sizeBytes),
       'format': serializer.toJson<String?>(format),
+      'replayGainJson': serializer.toJson<String?>(replayGainJson),
     };
   }
 
@@ -1580,6 +1615,7 @@ class Song extends DataClass implements Insertable<Song> {
     Value<int?> dateAddedSec = const Value.absent(),
     Value<int?> sizeBytes = const Value.absent(),
     Value<String?> format = const Value.absent(),
+    Value<String?> replayGainJson = const Value.absent(),
   }) => Song(
     id: id ?? this.id,
     mediaStoreId: mediaStoreId.present ? mediaStoreId.value : this.mediaStoreId,
@@ -1603,6 +1639,9 @@ class Song extends DataClass implements Insertable<Song> {
     dateAddedSec: dateAddedSec.present ? dateAddedSec.value : this.dateAddedSec,
     sizeBytes: sizeBytes.present ? sizeBytes.value : this.sizeBytes,
     format: format.present ? format.value : this.format,
+    replayGainJson: replayGainJson.present
+        ? replayGainJson.value
+        : this.replayGainJson,
   );
   Song copyWithCompanion(SongsCompanion data) {
     return Song(
@@ -1652,6 +1691,9 @@ class Song extends DataClass implements Insertable<Song> {
           : this.dateAddedSec,
       sizeBytes: data.sizeBytes.present ? data.sizeBytes.value : this.sizeBytes,
       format: data.format.present ? data.format.value : this.format,
+      replayGainJson: data.replayGainJson.present
+          ? data.replayGainJson.value
+          : this.replayGainJson,
     );
   }
 
@@ -1679,7 +1721,8 @@ class Song extends DataClass implements Insertable<Song> {
           ..write('dateModifiedSec: $dateModifiedSec, ')
           ..write('dateAddedSec: $dateAddedSec, ')
           ..write('sizeBytes: $sizeBytes, ')
-          ..write('format: $format')
+          ..write('format: $format, ')
+          ..write('replayGainJson: $replayGainJson')
           ..write(')'))
         .toString();
   }
@@ -1708,6 +1751,7 @@ class Song extends DataClass implements Insertable<Song> {
     dateAddedSec,
     sizeBytes,
     format,
+    replayGainJson,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1734,7 +1778,8 @@ class Song extends DataClass implements Insertable<Song> {
           other.dateModifiedSec == this.dateModifiedSec &&
           other.dateAddedSec == this.dateAddedSec &&
           other.sizeBytes == this.sizeBytes &&
-          other.format == this.format);
+          other.format == this.format &&
+          other.replayGainJson == this.replayGainJson);
 }
 
 class SongsCompanion extends UpdateCompanion<Song> {
@@ -1760,6 +1805,7 @@ class SongsCompanion extends UpdateCompanion<Song> {
   final Value<int?> dateAddedSec;
   final Value<int?> sizeBytes;
   final Value<String?> format;
+  final Value<String?> replayGainJson;
   const SongsCompanion({
     this.id = const Value.absent(),
     this.mediaStoreId = const Value.absent(),
@@ -1783,6 +1829,7 @@ class SongsCompanion extends UpdateCompanion<Song> {
     this.dateAddedSec = const Value.absent(),
     this.sizeBytes = const Value.absent(),
     this.format = const Value.absent(),
+    this.replayGainJson = const Value.absent(),
   });
   SongsCompanion.insert({
     this.id = const Value.absent(),
@@ -1807,6 +1854,7 @@ class SongsCompanion extends UpdateCompanion<Song> {
     this.dateAddedSec = const Value.absent(),
     this.sizeBytes = const Value.absent(),
     this.format = const Value.absent(),
+    this.replayGainJson = const Value.absent(),
   }) : contentUri = Value(contentUri),
        title = Value(title),
        titleSearch = Value(titleSearch),
@@ -1835,6 +1883,7 @@ class SongsCompanion extends UpdateCompanion<Song> {
     Expression<int>? dateAddedSec,
     Expression<int>? sizeBytes,
     Expression<String>? format,
+    Expression<String>? replayGainJson,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -1859,6 +1908,7 @@ class SongsCompanion extends UpdateCompanion<Song> {
       if (dateAddedSec != null) 'date_added_sec': dateAddedSec,
       if (sizeBytes != null) 'size_bytes': sizeBytes,
       if (format != null) 'format': format,
+      if (replayGainJson != null) 'replay_gain_json': replayGainJson,
     });
   }
 
@@ -1885,6 +1935,7 @@ class SongsCompanion extends UpdateCompanion<Song> {
     Value<int?>? dateAddedSec,
     Value<int?>? sizeBytes,
     Value<String?>? format,
+    Value<String?>? replayGainJson,
   }) {
     return SongsCompanion(
       id: id ?? this.id,
@@ -1909,6 +1960,7 @@ class SongsCompanion extends UpdateCompanion<Song> {
       dateAddedSec: dateAddedSec ?? this.dateAddedSec,
       sizeBytes: sizeBytes ?? this.sizeBytes,
       format: format ?? this.format,
+      replayGainJson: replayGainJson ?? this.replayGainJson,
     );
   }
 
@@ -1981,6 +2033,9 @@ class SongsCompanion extends UpdateCompanion<Song> {
     if (format.present) {
       map['format'] = Variable<String>(format.value);
     }
+    if (replayGainJson.present) {
+      map['replay_gain_json'] = Variable<String>(replayGainJson.value);
+    }
     return map;
   }
 
@@ -2008,7 +2063,8 @@ class SongsCompanion extends UpdateCompanion<Song> {
           ..write('dateModifiedSec: $dateModifiedSec, ')
           ..write('dateAddedSec: $dateAddedSec, ')
           ..write('sizeBytes: $sizeBytes, ')
-          ..write('format: $format')
+          ..write('format: $format, ')
+          ..write('replayGainJson: $replayGainJson')
           ..write(')'))
         .toString();
   }
@@ -4667,6 +4723,7 @@ typedef $$SongsTableCreateCompanionBuilder = SongsCompanion Function({
   Value<int?> dateAddedSec,
   Value<int?> sizeBytes,
   Value<String?> format,
+  Value<String?> replayGainJson,
 });
 typedef $$SongsTableUpdateCompanionBuilder = SongsCompanion Function({
   Value<int> id,
@@ -4691,6 +4748,7 @@ typedef $$SongsTableUpdateCompanionBuilder = SongsCompanion Function({
   Value<int?> dateAddedSec,
   Value<int?> sizeBytes,
   Value<String?> format,
+  Value<String?> replayGainJson,
 });
 
 final class $$SongsTableReferences
@@ -4855,6 +4913,11 @@ class $$SongsTableFilterComposer extends Composer<_$AppDatabase, $SongsTable> {
 
   ColumnFilters<String> get format => $composableBuilder(
     column: $table.format,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get replayGainJson => $composableBuilder(
+    column: $table.replayGainJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5039,6 +5102,11 @@ class $$SongsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get replayGainJson => $composableBuilder(
+    column: $table.replayGainJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$AlbumsTableOrderingComposer get albumRowId {
     final $$AlbumsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -5175,6 +5243,11 @@ class $$SongsTableAnnotationComposer
   GeneratedColumn<String> get format =>
       $composableBuilder(column: $table.format, builder: (column) => column);
 
+  GeneratedColumn<String> get replayGainJson => $composableBuilder(
+    column: $table.replayGainJson,
+    builder: (column) => column,
+  );
+
   $$AlbumsTableAnnotationComposer get albumRowId {
     final $$AlbumsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -5301,6 +5374,7 @@ class $$SongsTableTableManager
                 Value<int?> dateAddedSec = const Value.absent(),
                 Value<int?> sizeBytes = const Value.absent(),
                 Value<String?> format = const Value.absent(),
+                Value<String?> replayGainJson = const Value.absent(),
               }) => SongsCompanion(
                 id: id,
                 mediaStoreId: mediaStoreId,
@@ -5324,6 +5398,7 @@ class $$SongsTableTableManager
                 dateAddedSec: dateAddedSec,
                 sizeBytes: sizeBytes,
                 format: format,
+                replayGainJson: replayGainJson,
               ),
           createCompanionCallback:
               ({
@@ -5349,6 +5424,7 @@ class $$SongsTableTableManager
                 Value<int?> dateAddedSec = const Value.absent(),
                 Value<int?> sizeBytes = const Value.absent(),
                 Value<String?> format = const Value.absent(),
+                Value<String?> replayGainJson = const Value.absent(),
               }) => SongsCompanion.insert(
                 id: id,
                 mediaStoreId: mediaStoreId,
@@ -5372,6 +5448,7 @@ class $$SongsTableTableManager
                 dateAddedSec: dateAddedSec,
                 sizeBytes: sizeBytes,
                 format: format,
+                replayGainJson: replayGainJson,
               ),
           withReferenceMapper: (p0) => p0
               .map(

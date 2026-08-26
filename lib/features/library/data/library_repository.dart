@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 
 import '../../../core/db/app_database.dart';
@@ -132,6 +134,9 @@ class LibraryRepository {
         );
 
         final title = _resolveTitle(track);
+        final replayGainJson = track.replayGain != null
+            ? _replayGainToJson(track.replayGain!)
+            : null;
         final companion =
             SongsCompanion.insert(
               contentUri: track.contentUri,
@@ -156,6 +161,7 @@ class LibraryRepository {
             ).copyWith(
               albumRowId: Value(albumRowId),
               artistRowId: Value(artistRowId),
+              replayGainJson: Value(replayGainJson),
             );
 
         final existing = songByIdentityKey[track.identityKey];
@@ -831,6 +837,7 @@ extension FilteredSongQueries on LibraryRepository {
         SongTileData(
           song: r,
           artPath: r.albumRowId == null ? null : artById[r.albumRowId!],
+          replayGain: _replayGainFromJson(r.replayGainJson),
         ),
     ];
   }
@@ -985,5 +992,29 @@ extension CollectionQueries on LibraryRepository {
     final query = _db.select(stats)..where((tbl) => tbl.songId.isIn(songIds));
     final rows = await query.get();
     return {for (final r in rows) r.songId: r};
+  }
+}
+
+String _replayGainToJson(ReplayGainInfo rg) {
+  final map = <String, double>{};
+  if (rg.trackGainDb != null) map['trackGainDb'] = rg.trackGainDb!;
+  if (rg.trackPeak != null) map['trackPeak'] = rg.trackPeak!;
+  if (rg.albumGainDb != null) map['albumGainDb'] = rg.albumGainDb!;
+  if (rg.albumPeak != null) map['albumPeak'] = rg.albumPeak!;
+  return jsonEncode(map);
+}
+
+ReplayGainInfo? _replayGainFromJson(String? json) {
+  if (json == null || json.isEmpty || json == '{}') return null;
+  try {
+    final map = jsonDecode(json) as Map<String, dynamic>;
+    return ReplayGainInfo(
+      trackGainDb: (map['trackGainDb'] as num?)?.toDouble(),
+      trackPeak: (map['trackPeak'] as num?)?.toDouble(),
+      albumGainDb: (map['albumGainDb'] as num?)?.toDouble(),
+      albumPeak: (map['albumPeak'] as num?)?.toDouble(),
+    );
+  } catch (_) {
+    return null;
   }
 }

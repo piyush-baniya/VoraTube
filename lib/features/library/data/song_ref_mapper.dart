@@ -26,6 +26,7 @@ SongRef songTileToRef(SongTileData tile) {
     album: song.albumName,
     artPath: tile.artPath,
     durationMs: song.durationMs,
+    replayGain: tile.replayGain,
   );
 }
 
