@@ -1,5 +1,5 @@
 name: vora_tube
-description: "A new Flutter project."
+description: "VoraTube - a modern, privacy-friendly, local-first music player."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -34,6 +34,16 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  flutter_riverpod: ^2.6.1
+  drift: ^2.34.3
+  drift_flutter: ^0.3.1
+  just_audio: ^0.10.6
+  audio_service: ^0.18.19
+  audio_session: ^0.2.4
+  permission_handler: ^13.0.1
+  file_picker: ^12.1.1
+  path_provider: ^2.1.6
+  animations: ^3.0.0
 
 dev_dependencies:
   flutter_test:
@@ -45,6 +55,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  drift_dev: ^2.34.5
+  build_runner: ^2.16.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
