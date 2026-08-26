@@ -978,4 +978,12 @@ extension CollectionQueries on LibraryRepository {
         return row.read(countExp) ?? 0;
     }
   }
+
+  Future<Map<int, SongStat>> getSongStatsForSongs(Set<int> songIds) async {
+    if (songIds.isEmpty) return {};
+    final stats = _db.songStats;
+    final query = _db.select(stats)..where((tbl) => tbl.songId.isIn(songIds));
+    final rows = await query.get();
+    return {for (final r in rows) r.songId: r};
+  }
 }

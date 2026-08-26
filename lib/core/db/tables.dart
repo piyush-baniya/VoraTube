@@ -73,7 +73,8 @@ class SongStats extends Table {
   IntColumn get songId => integer()();
   BoolColumn get isFavorite => boolean().withDefault(const Constant(false))();
   IntColumn get playCount => integer().withDefault(const Constant(0))();
-  DateTimeColumn get lastPlayedAt => dateTime().nullable()();
+  IntColumn get lastPlayedAt => integer().nullable()();
+  TextColumn get mood => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {songId};

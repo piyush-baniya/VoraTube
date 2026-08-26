@@ -2060,11 +2060,20 @@ class $SongStatsTable extends SongStats
     'lastPlayedAt',
   );
   @override
-  late final GeneratedColumn<DateTime> lastPlayedAt = GeneratedColumn<DateTime>(
+  late final GeneratedColumn<int> lastPlayedAt = GeneratedColumn<int>(
     'last_played_at',
     aliasedName,
     true,
-    type: DriftSqlType.dateTime,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _moodMeta = const VerificationMeta('mood');
+  @override
+  late final GeneratedColumn<String> mood = GeneratedColumn<String>(
+    'mood',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
   @override
@@ -2073,6 +2082,7 @@ class $SongStatsTable extends SongStats
     isFavorite,
     playCount,
     lastPlayedAt,
+    mood,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2113,6 +2123,12 @@ class $SongStatsTable extends SongStats
         ),
       );
     }
+    if (data.containsKey('mood')) {
+      context.handle(
+        _moodMeta,
+        mood.isAcceptableOrUnknown(data['mood']!, _moodMeta),
+      );
+    }
     return context;
   }
 
@@ -2135,8 +2151,12 @@ class $SongStatsTable extends SongStats
         data['${effectivePrefix}play_count'],
       )!,
       lastPlayedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
+        DriftSqlType.int,
         data['${effectivePrefix}last_played_at'],
+      ),
+      mood: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mood'],
       ),
     );
   }
@@ -2151,12 +2171,14 @@ class SongStat extends DataClass implements Insertable<SongStat> {
   final int songId;
   final bool isFavorite;
   final int playCount;
-  final DateTime? lastPlayedAt;
+  final int? lastPlayedAt;
+  final String? mood;
   const SongStat({
     required this.songId,
     required this.isFavorite,
     required this.playCount,
     this.lastPlayedAt,
+    this.mood,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2165,7 +2187,10 @@ class SongStat extends DataClass implements Insertable<SongStat> {
     map['is_favorite'] = Variable<bool>(isFavorite);
     map['play_count'] = Variable<int>(playCount);
     if (!nullToAbsent || lastPlayedAt != null) {
-      map['last_played_at'] = Variable<DateTime>(lastPlayedAt);
+      map['last_played_at'] = Variable<int>(lastPlayedAt);
+    }
+    if (!nullToAbsent || mood != null) {
+      map['mood'] = Variable<String>(mood);
     }
     return map;
   }
@@ -2178,6 +2203,7 @@ class SongStat extends DataClass implements Insertable<SongStat> {
       lastPlayedAt: lastPlayedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(lastPlayedAt),
+      mood: mood == null && nullToAbsent ? const Value.absent() : Value(mood),
     );
   }
 
@@ -2190,7 +2216,8 @@ class SongStat extends DataClass implements Insertable<SongStat> {
       songId: serializer.fromJson<int>(json['songId']),
       isFavorite: serializer.fromJson<bool>(json['isFavorite']),
       playCount: serializer.fromJson<int>(json['playCount']),
-      lastPlayedAt: serializer.fromJson<DateTime?>(json['lastPlayedAt']),
+      lastPlayedAt: serializer.fromJson<int?>(json['lastPlayedAt']),
+      mood: serializer.fromJson<String?>(json['mood']),
     );
   }
   @override
@@ -2200,7 +2227,8 @@ class SongStat extends DataClass implements Insertable<SongStat> {
       'songId': serializer.toJson<int>(songId),
       'isFavorite': serializer.toJson<bool>(isFavorite),
       'playCount': serializer.toJson<int>(playCount),
-      'lastPlayedAt': serializer.toJson<DateTime?>(lastPlayedAt),
+      'lastPlayedAt': serializer.toJson<int?>(lastPlayedAt),
+      'mood': serializer.toJson<String?>(mood),
     };
   }
 
@@ -2208,12 +2236,14 @@ class SongStat extends DataClass implements Insertable<SongStat> {
     int? songId,
     bool? isFavorite,
     int? playCount,
-    Value<DateTime?> lastPlayedAt = const Value.absent(),
+    Value<int?> lastPlayedAt = const Value.absent(),
+    Value<String?> mood = const Value.absent(),
   }) => SongStat(
     songId: songId ?? this.songId,
     isFavorite: isFavorite ?? this.isFavorite,
     playCount: playCount ?? this.playCount,
     lastPlayedAt: lastPlayedAt.present ? lastPlayedAt.value : this.lastPlayedAt,
+    mood: mood.present ? mood.value : this.mood,
   );
   SongStat copyWithCompanion(SongStatsCompanion data) {
     return SongStat(
@@ -2225,6 +2255,7 @@ class SongStat extends DataClass implements Insertable<SongStat> {
       lastPlayedAt: data.lastPlayedAt.present
           ? data.lastPlayedAt.value
           : this.lastPlayedAt,
+      mood: data.mood.present ? data.mood.value : this.mood,
     );
   }
 
@@ -2234,13 +2265,15 @@ class SongStat extends DataClass implements Insertable<SongStat> {
           ..write('songId: $songId, ')
           ..write('isFavorite: $isFavorite, ')
           ..write('playCount: $playCount, ')
-          ..write('lastPlayedAt: $lastPlayedAt')
+          ..write('lastPlayedAt: $lastPlayedAt, ')
+          ..write('mood: $mood')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(songId, isFavorite, playCount, lastPlayedAt);
+  int get hashCode =>
+      Object.hash(songId, isFavorite, playCount, lastPlayedAt, mood);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2248,37 +2281,43 @@ class SongStat extends DataClass implements Insertable<SongStat> {
           other.songId == this.songId &&
           other.isFavorite == this.isFavorite &&
           other.playCount == this.playCount &&
-          other.lastPlayedAt == this.lastPlayedAt);
+          other.lastPlayedAt == this.lastPlayedAt &&
+          other.mood == this.mood);
 }
 
 class SongStatsCompanion extends UpdateCompanion<SongStat> {
   final Value<int> songId;
   final Value<bool> isFavorite;
   final Value<int> playCount;
-  final Value<DateTime?> lastPlayedAt;
+  final Value<int?> lastPlayedAt;
+  final Value<String?> mood;
   const SongStatsCompanion({
     this.songId = const Value.absent(),
     this.isFavorite = const Value.absent(),
     this.playCount = const Value.absent(),
     this.lastPlayedAt = const Value.absent(),
+    this.mood = const Value.absent(),
   });
   SongStatsCompanion.insert({
     this.songId = const Value.absent(),
     this.isFavorite = const Value.absent(),
     this.playCount = const Value.absent(),
     this.lastPlayedAt = const Value.absent(),
+    this.mood = const Value.absent(),
   });
   static Insertable<SongStat> custom({
     Expression<int>? songId,
     Expression<bool>? isFavorite,
     Expression<int>? playCount,
-    Expression<DateTime>? lastPlayedAt,
+    Expression<int>? lastPlayedAt,
+    Expression<String>? mood,
   }) {
     return RawValuesInsertable({
       if (songId != null) 'song_id': songId,
       if (isFavorite != null) 'is_favorite': isFavorite,
       if (playCount != null) 'play_count': playCount,
       if (lastPlayedAt != null) 'last_played_at': lastPlayedAt,
+      if (mood != null) 'mood': mood,
     });
   }
 
@@ -2286,13 +2325,15 @@ class SongStatsCompanion extends UpdateCompanion<SongStat> {
     Value<int>? songId,
     Value<bool>? isFavorite,
     Value<int>? playCount,
-    Value<DateTime?>? lastPlayedAt,
+    Value<int?>? lastPlayedAt,
+    Value<String?>? mood,
   }) {
     return SongStatsCompanion(
       songId: songId ?? this.songId,
       isFavorite: isFavorite ?? this.isFavorite,
       playCount: playCount ?? this.playCount,
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
+      mood: mood ?? this.mood,
     );
   }
 
@@ -2309,7 +2350,10 @@ class SongStatsCompanion extends UpdateCompanion<SongStat> {
       map['play_count'] = Variable<int>(playCount.value);
     }
     if (lastPlayedAt.present) {
-      map['last_played_at'] = Variable<DateTime>(lastPlayedAt.value);
+      map['last_played_at'] = Variable<int>(lastPlayedAt.value);
+    }
+    if (mood.present) {
+      map['mood'] = Variable<String>(mood.value);
     }
     return map;
   }
@@ -2320,7 +2364,8 @@ class SongStatsCompanion extends UpdateCompanion<SongStat> {
           ..write('songId: $songId, ')
           ..write('isFavorite: $isFavorite, ')
           ..write('playCount: $playCount, ')
-          ..write('lastPlayedAt: $lastPlayedAt')
+          ..write('lastPlayedAt: $lastPlayedAt, ')
+          ..write('mood: $mood')
           ..write(')'))
         .toString();
   }
@@ -5439,13 +5484,15 @@ typedef $$SongStatsTableCreateCompanionBuilder = SongStatsCompanion Function({
   Value<int> songId,
   Value<bool> isFavorite,
   Value<int> playCount,
-  Value<DateTime?> lastPlayedAt,
+  Value<int?> lastPlayedAt,
+  Value<String?> mood,
 });
 typedef $$SongStatsTableUpdateCompanionBuilder = SongStatsCompanion Function({
   Value<int> songId,
   Value<bool> isFavorite,
   Value<int> playCount,
-  Value<DateTime?> lastPlayedAt,
+  Value<int?> lastPlayedAt,
+  Value<String?> mood,
 });
 
 class $$SongStatsTableFilterComposer
@@ -5472,8 +5519,13 @@ class $$SongStatsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<DateTime> get lastPlayedAt => $composableBuilder(
+  ColumnFilters<int> get lastPlayedAt => $composableBuilder(
     column: $table.lastPlayedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mood => $composableBuilder(
+    column: $table.mood,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5502,8 +5554,13 @@ class $$SongStatsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<DateTime> get lastPlayedAt => $composableBuilder(
+  ColumnOrderings<int> get lastPlayedAt => $composableBuilder(
     column: $table.lastPlayedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mood => $composableBuilder(
+    column: $table.mood,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -5528,10 +5585,13 @@ class $$SongStatsTableAnnotationComposer
   GeneratedColumn<int> get playCount =>
       $composableBuilder(column: $table.playCount, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get lastPlayedAt => $composableBuilder(
+  GeneratedColumn<int> get lastPlayedAt => $composableBuilder(
     column: $table.lastPlayedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get mood =>
+      $composableBuilder(column: $table.mood, builder: (column) => column);
 }
 
 class $$SongStatsTableTableManager
@@ -5565,24 +5625,28 @@ class $$SongStatsTableTableManager
                 Value<int> songId = const Value.absent(),
                 Value<bool> isFavorite = const Value.absent(),
                 Value<int> playCount = const Value.absent(),
-                Value<DateTime?> lastPlayedAt = const Value.absent(),
+                Value<int?> lastPlayedAt = const Value.absent(),
+                Value<String?> mood = const Value.absent(),
               }) => SongStatsCompanion(
                 songId: songId,
                 isFavorite: isFavorite,
                 playCount: playCount,
                 lastPlayedAt: lastPlayedAt,
+                mood: mood,
               ),
           createCompanionCallback:
               ({
                 Value<int> songId = const Value.absent(),
                 Value<bool> isFavorite = const Value.absent(),
                 Value<int> playCount = const Value.absent(),
-                Value<DateTime?> lastPlayedAt = const Value.absent(),
+                Value<int?> lastPlayedAt = const Value.absent(),
+                Value<String?> mood = const Value.absent(),
               }) => SongStatsCompanion.insert(
                 songId: songId,
                 isFavorite: isFavorite,
                 playCount: playCount,
                 lastPlayedAt: lastPlayedAt,
+                mood: mood,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

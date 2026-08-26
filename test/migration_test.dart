@@ -7,7 +7,7 @@ import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/ingest/ingest_service.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
 
-/// Simulates upgrading a real Phase-1 (schema v1) database file to v2 and
+/// Simulates upgrading a real Phase-1 (schema v1) database file to v4 and
 /// verifies user data plus identity-key backfilling survive the trip.
 void main() {
   late File dbFile;
@@ -36,9 +36,14 @@ void main() {
     await bootstrap.customStatement('DROP INDEX IF EXISTS albums_album_key');
     await bootstrap.customStatement('DROP INDEX IF EXISTS artists_artist_key');
 
-    await bootstrap.customStatement('DROP TABLE songs');
-    await bootstrap.customStatement('DROP TABLE albums');
-    await bootstrap.customStatement('DROP TABLE artists');
+    await bootstrap.customStatement('DROP TABLE IF EXISTS songs');
+    await bootstrap.customStatement('DROP TABLE IF EXISTS albums');
+    await bootstrap.customStatement('DROP TABLE IF EXISTS artists');
+    await bootstrap.customStatement('DROP TABLE IF EXISTS song_stats');
+    await bootstrap.customStatement('DROP TABLE IF EXISTS playlists');
+    await bootstrap.customStatement('DROP TABLE IF EXISTS playlist_songs');
+    await bootstrap.customStatement('DROP TABLE IF EXISTS kv_entries');
+    await bootstrap.customStatement('DROP TABLE IF EXISTS scan_states');
 
     await bootstrap.customStatement('''
       CREATE TABLE albums (
@@ -81,15 +86,55 @@ void main() {
         format TEXT NULL
       )
     ''');
+    await bootstrap.customStatement('''
+      CREATE TABLE song_stats (
+        song_id INTEGER PRIMARY KEY,
+        is_favorite INTEGER NOT NULL DEFAULT 0,
+        play_count INTEGER NOT NULL DEFAULT 0,
+        last_played_at INTEGER NULL
+      )
+    ''');
+    await bootstrap.customStatement('''
+      CREATE TABLE playlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+        updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+      )
+    ''');
+    await bootstrap.customStatement('''
+      CREATE TABLE playlist_songs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        playlist_id INTEGER NOT NULL REFERENCES playlists(id),
+        song_row_id INTEGER NOT NULL,
+        position INTEGER NOT NULL,
+        UNIQUE(playlist_id, position)
+      )
+    ''');
+    await bootstrap.customStatement('''
+      CREATE TABLE kv_entries (
+        key TEXT PRIMARY KEY,
+        value_text TEXT NULL
+      )
+    ''');
+    await bootstrap.customStatement('''
+      CREATE TABLE scan_states (
+        source TEXT PRIMARY KEY,
+        last_completed_at INTEGER NULL,
+        total_songs INTEGER NULL,
+        schema_version INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
 
     await bootstrap.customStatement('''
       INSERT INTO albums (id, media_store_album_id, name, artist_name)
       VALUES (1, 555, 'Legacy Album', 'Legacy Artist')
-''');
+    ''');
     await bootstrap.customStatement('''
       INSERT INTO artists (id, media_store_artist_id, name)
       VALUES (1, 777, 'Legacy Artist')
-''');
+    ''');
     await bootstrap.customStatement('''
       INSERT INTO songs (
         id, media_store_id, content_uri, path, title, title_search,
@@ -102,7 +147,7 @@ void main() {
         'Legacy Artist', 'legacy artist', 'Legacy Album', 1, 1,
         'Rock', 1999, 3, NULL, 240000, 111, 100, 8000000, 'mp3'
       )
-''');
+    ''');
     await bootstrap.customStatement('PRAGMA user_version = 1');
     await bootstrap.close();
 

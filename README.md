@@ -23,7 +23,7 @@ playback.
 | 7 | Visual polish & design system: tokens, premium component redesign, smooth animations, consistent spacing/typography, PressableScale, refined empty states | ✅ Done |
 | 8 | Online lyrics: LRCLIB integration, LRC parser, embedded lyrics extraction, cache, synced lyrics UI with auto-scroll | ✅ Done |
 | 8.1 | Lyrics reliability: LRC metadata filtering, text normalization, match verification, HTTP timeout, search fallback, ValueNotifier position tracking, user-scroll detection, no nested scrollables | ✅ Done |
-| Next | Smart mixes, settings redesign, lyrics polish | Planned |
+| 9 | Smart Music: Mood engine, Smart mixes (Daily/Favorites/Chill/Energy/Focus/Throwback/Discover), Smart playlists, Smart queue reordering | ✅ Done |
 
 ---
 
@@ -622,6 +622,100 @@ Fixes critical bugs identified during Phase 8 codebase inspection.
 | `features/lyrics/presentation/widgets/lyrics_view.dart` | User-scroll detection, no nested scrollables, post-frame scroll |
 | `features/player/presentation/screens/full_player_screen.dart` | Lyrics panel outside scroll view, separate layout modes |
 | `test/lyrics_test.dart` | 49 tests covering LRC parsing, normalization, match verification, models |
+
+---
+
+## Phase 9 — Smart Music
+
+Phase 9 implements the **Smart Music** features from the roadmap: mood engine, smart mixes, smart playlists, and smart queue. All processing is local with no network dependency.
+
+### Mood Engine
+
+The `MoodEngine` classifies each song into one of six moods using only local metadata:
+
+| Mood | Keywords | Genre hints |
+|---|---|---|
+| **Happy** 😊 | party, dance, celebrate, upbeat, cheerful | pop, dance, disco, funk, reggae |
+| **Chill** 😌 | relax, ambient, downtempo, lo-fi, study | ambient, lo-fi, chillhop, deep house |
+| **Energetic** ⚡ | workout, intense, driving, pumping, adrenaline | rock, metal, edm, hip hop, trap |
+| **Sad** 😢 | melancholy, heartbreak, lonely, tears, grief | sadcore, doom metal, emo, post-punk |
+| **Romantic** ❤️ | love, passion, kiss, tender, intimate | r&b, soul, ballad, bolero |
+| **Focus** 🎯 | concentration, study, instrumental, minimal | ambient, drone, neoclassical, soundtrack |
+
+Classification uses:
+- Keyword matching in title/artist/album/genre
+- Genre-to-mood mapping
+- Duration heuristics (short = energetic, long = chill/focus)
+- Year heuristics (older = chill/sad, newer = energetic/happy)
+
+Mood is stored in the `song_stats.mood` column (added in schema v4) and used by smart mixes and smart playlists.
+
+### Smart Mixes
+
+Seven algorithmically curated mixes generated on-demand from local listening data:
+
+| Mix | Description | Algorithm |
+|---|---|---|
+| **Daily Mix** | Personalized blend of favorites + discovery | 40% favorites, 30% recent, 30% discovery |
+| **Favorites Mix** | All favorited tracks, shuffled | Random shuffle of favorites |
+| **Chill Mix** | Relaxing tracks for unwinding | Mood = chill, confidence > 0.3 |
+| **Energy Mix** | High-energy tracks for workouts | Mood = energetic, confidence > 0.3 |
+| **Focus Mix** | Instrumental/ambient for deep work | Mood = focus, confidence > 0.3 |
+| **Throwback Mix** | Most-played tracks from 10+ years ago | Year < (now - 10), weighted by play count |
+| **Discover Mix** | Unheard/rarely played hidden gems | Play count = 0 or ≤ 2 |
+
+Each mix contains up to 30 tracks. Artist variety is enforced via round-robin scheduling to avoid consecutive tracks by the same artist. Mixes are computed asynchronously and cached per session.
+
+### Smart Playlists
+
+Ten built-in rule-based playlist templates:
+
+- **Recent Favorites** — Favorites added in last 30 days
+- **Top Rated** — Tracks with 5+ plays
+- **Unheard Gems** — Tracks with 0 plays
+- **Short & Sweet** — Tracks under 3 minutes
+- **Epic Tracks** — Tracks over 7 minutes
+- **90s Throwback** — Tracks from 1990–1999
+- **2000s Throwback** — Tracks from 2000–2009
+- **Chill Vibes** — Tracks classified as chill mood
+- **Energy Boost** — Tracks classified as energetic mood
+- **Focus Session** — Tracks classified as focus mood
+
+Templates are defined declaratively with rule types: genre, artist, year range, play count, favorite, mood, duration, date added. The engine evaluates rules asynchronously against the library.
+
+### Smart Queue
+
+The `SmartQueueService` provides three reordering strategies:
+
+1. **Artist Variety** — Round-robin by artist (max 2 consecutive same artist)
+2. **Mood Flow** — Smooth mood transitions (energetic → happy → romantic → chill → focus → sad)
+3. **Smart Shuffle** — Blends artist variety (70%) with mood flow (30%)
+
+Also provides `createSmartQueueFromMix()` to start a queue from any smart mix, and `getRecommendations()` to suggest next tracks avoiding current artists.
+
+### Database Changes
+
+- Schema v4: Added `mood TEXT NULL` column to `song_stats` table
+- Migration v3→v4: `ALTER TABLE song_stats ADD COLUMN mood TEXT NULL`
+
+### Files Changed
+
+| File | Purpose |
+|---|---|
+| `core/db/tables.dart` | Added `mood` column to `SongStats` |
+| `core/db/app_database.dart` | Schema v4 + migration v3→v4 |
+| `features/smart_music/data/mood_engine.dart` | Mood classification logic |
+| `features/smart_music/data/smart_mix_service.dart` | 7 mix generators with artist variety |
+| `features/smart_music/data/smart_playlist_service.dart` | 10 rule-based playlist templates |
+| `features/smart_music/data/smart_queue_service.dart` | 3 reordering strategies + recommendations |
+| `features/smart_music/domain/models.dart` | Exports all smart music types |
+| `features/smart_music/presentation/providers/smart_music_providers.dart` | Riverpod providers for all services |
+| `features/smart_music/presentation/screens/smart_mixes_screen.dart` | Mix browser with skeleton loading |
+| `features/smart_music/presentation/screens/smart_mix_detail_screen.dart` | Mix detail with play/shuffle + song list |
+| `features/smart_music/presentation/widgets/mix_card.dart` | Gradient mix card with play/shuffle actions |
+| `features/smart_music/presentation/widgets/mood_selector.dart` | Horizontal mood filter chips |
+| `features/library/data/library_repository.dart` | Added `getSongStatsForSongs()` query |
+| `test/migration_test.dart` | Updated for v1→v4 migration with all tables |
 
 ---
 
