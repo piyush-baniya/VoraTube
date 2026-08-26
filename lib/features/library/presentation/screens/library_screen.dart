@@ -1,10 +1,11 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/screen_header.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../collections/presentation/widgets/collections_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
 import '../../data/song_ref_mapper.dart';
@@ -119,67 +120,71 @@ class _SongsViewState extends ConsumerState<_SongsView> {
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(pagedSongsProvider);
+    final asyncValue = ref.watch(pagedSongsProvider);
 
-    return AsyncValueSwitcher<List<SongTileData>>(
-      value: async,
-      loading: const SkeletonList(rows: 10),
-      errorBuilder: (e, _) => _LibraryError(
-        retry: () {
-          ref.invalidate(pagedSongsProvider);
-        },
-      ),
-      data: (tiles) {
-        if (tiles.isEmpty) {
-          final favoritesOnly = ref.watch(favoritesOnlyProvider);
-          return EmptyState(
-            icon: favoritesOnly
-                ? Icons.favorite_border_rounded
-                : Icons.library_music_rounded,
-            title: favoritesOnly ? 'No favorites yet' : 'Nothing here yet',
-            message: favoritesOnly
-                ? 'Tap the heart on any song to keep it close.'
-                : 'Scan or import music to fill your library.',
-          );
-        }
-        return ListView.separated(
-          controller: _controller,
-          physics: const AlwaysScrollableScrollPhysics(),
-          itemCount:
-              tiles.length +
-              (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
-          separatorBuilder: (_, i) => i == tiles.length - 1
-              ? const SizedBox.shrink()
-              : const Divider(height: 1, indent: 78),
-          itemBuilder: (context, index) {
-            if (index >= tiles.length) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                child: Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2.2),
-                  ),
-                ),
+    return Column(
+      children: [
+        const CollectionsStrip(),
+        Expanded(
+          child: AsyncValueSwitcher<List<SongTileData>>(
+            value: asyncValue,
+            loading: const SkeletonList(rows: 10),
+            errorBuilder: (e, _) =>
+                _LibraryError(retry: () => ref.invalidate(pagedSongsProvider)),
+            data: (tiles) {
+              if (tiles.isEmpty) {
+                final favoritesOnly = ref.watch(favoritesOnlyProvider);
+                return EmptyState(
+                  icon: favoritesOnly
+                      ? Icons.favorite_border_rounded
+                      : Icons.library_music_rounded,
+                  title: favoritesOnly
+                      ? 'No favorites yet'
+                      : 'Nothing here yet',
+                  message: favoritesOnly
+                      ? 'Tap the heart on any song to keep it close.'
+                      : 'Scan or import music to fill your library.',
+                );
+              }
+              return ListView.separated(
+                controller: _controller,
+                physics: const AlwaysScrollableScrollPhysics(),
+                itemCount:
+                    tiles.length +
+                    (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
+                separatorBuilder: (_, i) => i == tiles.length - 1
+                    ? const SizedBox.shrink()
+                    : const Divider(height: 1, indent: 78),
+                itemBuilder: (context, index) {
+                  if (index >= tiles.length) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18),
+                      child: Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                        ),
+                      ),
+                    );
+                  }
+                  return SongTile(
+                    tile: tiles[index],
+                    index: index,
+                    onPlay: (_) => _playFrom(tiles, index),
+                  );
+                },
               );
-            }
-            return SongTile(
-              tile: tiles[index],
-              index: index,
-              onPlay: (_) => _playFrom(tiles, index),
-            );
-          },
-        );
-      },
+            },
+          ),
+        ),
+      ],
     );
   }
 
   void _playFrom(List<SongTileData> tiles, int startIndex) {
-    final context = playContextFromTiles(tiles, startIndex);
-    ref
-        .read(playerProvider)
-        .playQueue(context.refs, startIndex: context.startIndex);
+    final ctx = playContextFromTiles(tiles, startIndex);
+    ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
   }
 }
 

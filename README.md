@@ -18,7 +18,8 @@ playback.
 | 2 | iOS import pipeline: file_picker → sandbox copy → metadata/artwork extraction → Drift; duplicate prevention; reconciliation | ✅ Done (code + unit-tested; needs Mac/device run) |
 | 3 | Playback foundation: `PlayerController` abstraction, `just_audio` + `audio_service` + `audio_session`, background/lock-screen/BT controls, queue persistence, gapless queue engine | ✅ Done |
 | 4 | Library experience & local search: Songs/Albums/Artists/Genres browsing, favorites, sorting, pagination, debounced local search, visual identity rework | ✅ Done |
-| Next | Full player UI, playlists UI, collections polish, lyrics, smart mixes | Planned |
+| 5 | Playlists & collections: full CRUD, playlist detail, add-to-playlist sheet, song-tile menu, collections strip (Favorites/Recently Added/Most Played/Recently Played), playback stats recording | ✅ Done |
+| Next | Full player UI, lyrics, smart mixes, settings | Planned |
 
 ---
 
@@ -55,15 +56,19 @@ lib/
 │   │   └── permission_service.dart             # READ_MEDIA_AUDIO / legacy storage mapping
 │   ├── player/
 │   │   ├── player_controller.dart              # PlayerController iface, SongRef, PlayerSnapshot,
-│   │   │                                       #   QueueSnapshot JSON, RepeatMode, persistence iface
-│   │   └── just_audio_controller.dart          # BaseAudioHandler impl (the entire audio engine)
+│   │   │                                       #   QueueSnapshot JSON, RepeatMode, persistence iface,
+│   │   │                                       #   playNext(), PlaybackStatsSink typedef
+│   │   └── just_audio_controller.dart          # BaseAudioHandler impl (the entire audio engine);
+│   │                                           #   stats batch recording (20-stat/5s threshold)
 │   └── utils/
 │       └── string_utils.dart                   # filename-title fallback, format detection
 ├── features/
 │   ├── library/
 │   │   ├── data/
 │   │   │   ├── library_repository.dart         # ONLY Drift accessor: sync, pages, overviews,
-│   │   │   │                                   #   favorites, search, KV, reconciliation
+│   │   │   │                                   #   favorites, search, KV, reconciliation,
+│   │   │   │                                   #   CollectionQueries (collectionSongs, count,
+│   │   │   │                                   #   rowIdsByIdentityKeys, recordPlayback)
 │   │   │   ├── library_scanner.dart            # Pull-scan orchestrator (MediaStore flow)
 │   │   │   ├── library_models.dart             # SongPage/SongTileData/AlbumSummary/etc.
 │   │   │   └── song_ref_mapper.dart            # Drift rows → SongRef / PlayContext
@@ -71,22 +76,45 @@ lib/
 │   │       ├── providers/
 │   │       │   ├── library_providers.dart      # DB/repo/scanner providers, ScanController state
 │   │       │   └── library_view_providers.dart # Section/sort/filters, PagedSongsController,
-│   │       │                                   #   favorite ids, overview providers, refresh tick
+│   │       │                                   #   favorite ids, overview providers, refresh tick,
+│   │       │                                   #   pagedSongsForCollection (collection drill-down)
 │   │       ├── screens/
 │   │       │   ├── library_screen.dart         # Section pills + Songs/Albums/Artists/Genres views
-│   │       │   └── filtered_songs_screen.dart  # Album/artist drill-down with Play-all
+│   │       │   │                               #   + CollectionsStrip at top of Songs view
+│   │       │   └── filtered_songs_screen.dart  # Album/artist/collection drill-down with Play-all
 │   │       └── widgets/                        # song_tile, section_selector, library_tiles,
 │   │                                           #   sort_sheet
 │   ├── player/presentation/
 │   │   ├── providers/player_providers.dart     # playerProvider (override-injected), snapshot &
-│   │   │                                       #   position streams, DriftPlayerPersistence
+│   │   │                                       #   position streams, DriftPlayerPersistence,
+│   │   │                                       #   PlaybackStatsBuffer (batched flush, 20/5s)
 │   │   └── widgets/mini_player.dart            # Compact now-playing bar above bottom nav
 │   ├── search/presentation/
 │   │   ├── providers/search_providers.dart     # Debounced query (250 ms) + results provider
-│   │   └── screens/search_screen.dart          # Local grouped results across all entities
-│   ├── playlists/presentation/                 # Shell only (Phase 6)
+│   │   └── screens/search_screen.dart          # Local grouped results incl. playlist taps
+│   ├── playlists/
+│   │   ├── data/
+│   │   │   ├── playlist_models.dart            # PlaylistSummary, exception types
+│   │   │   └── playlist_repository.dart        # PlaylistRepository: CRUD, songsOf, covers,
+│   │   │                                       #   reorder, max-position, batch removal
+│   │   └── presentation/
+│   │       ├── providers/
+│   │       │   └── playlist_providers.dart      # PlaylistRepository, playlistSummariesProvider,
+│   │       │                                   #   PlaylistDetailController (AsyncNotifier)
+│   │       ├── screens/
+│   │       │   ├── playlists_screen.dart        # Overview: pinned/unpinned, create, swipe-delete
+│   │       │   └── playlist_detail_screen.dart  # Header, songs, play/shuffle/reorder/pin/delete
+│   │       └── widgets/
+│   │           ├── add_to_playlist_sheet.dart   # Bottom sheet: membership check, toggle, create
+│   │           └── playlist_collage.dart        # 1/2/3/4 mosaic artwork grid
 │   ├── settings/presentation/                  # Shell only
-│   └── collections/presentation/               # Reserved
+│   └── collections/presentation/
+│       ├── providers/
+│       │   └── collections_providers.dart       # CollectionSummary, collectionSummariesProvider,
+│       │                                       #   collectionSongsProvider, Collections class
+│       └── widgets/
+│           └── collections_strip.dart           # Horizontal card strip (Favorites, Recently Added,
+│                                               #   Most Played, Recently Played)
 └── shared/
     └── widgets/                                # empty_state, screen_header, artwork_view,
                                                 #   skeleton_list, transitions
@@ -150,8 +178,10 @@ UI ──▶ PlayerController (interface)
               │   becoming-noisy pause
               ├─ audio_service: MediaItem/queue/playbackState broadcast
               │   ⇒ notification · lock screen · Bluetooth · wearables
-              └─ persistence: debounced QueueSnapshot JSON → kv table
-                  (restored paused at last index+position on next launch)
+              ├─ persistence: debounced QueueSnapshot JSON → kv table
+              │   (restored paused at last index+position on next launch)
+              └─ stats: onCurrentIndexChanged → PlaybackStatsBuffer batch
+                  (20 events or 5s interval → libraryRepository.recordPlayback)
 ```
 
 Position updates travel on a dedicated throttled stream
@@ -205,6 +235,7 @@ indexed fields — no FTS5 (re-evaluate only if profiling demands it):
 |---|---|
 | `appDatabaseProvider` | Owns `AppDatabase`; closed on dispose; overridden at bootstrap |
 | `libraryRepositoryProvider` | Single repository instance (only Drift caller) |
+| `playlistRepositoryProvider` | Single PlaylistRepository instance |
 | `ingestServiceProvider` | Android or iOS `IngestService` selection |
 | `libraryScannerProvider` | Pull-scan orchestrator |
 | `scanControllerProvider` | Android scan UI state machine (permission→ready→running→done/fail) |
@@ -216,6 +247,11 @@ indexed fields — no FTS5 (re-evaluate only if profiling demands it):
 | `pagedSongsProvider` | Accumulating paginated songs (`loadMore()` on scroll threshold) |
 | `albumsOverviewProvider` etc. | Grouped browses; invalidated via `libraryRefreshTickProvider` |
 | `favoriteIdsProvider` | Fine-grained favorite set → heart taps repaint one tile |
+| `playlistSummariesProvider` | Playlist summaries ordered by pin+name; auto-invalidated on write |
+| `playlistDetailProvider` | Playlist detail + songs; invalidated on add/remove/reorder |
+| `playlistDetailControllerProvider` | AsyncNotifier: play/shuffle, reorder, rename, pin, delete |
+| `collectionSummariesProvider` | Collection card counts (Favorites/Added/Most Played/Recent) |
+| `collectionSongsProvider` | Songs inside a collection (family by CollectionKind) |
 
 High-frequency isolation rule: nothing in the library tree listens to
 `playbackPositionProvider`.
@@ -276,7 +312,9 @@ Both implement the single `IngestService` contract; nothing downstream knows the
 - Repository tests: sync/duplicate/update semantics, large-batch inserts (1200),
   null-metadata handling, removal+orphan cleanup, artwork attach/missing sentinel,
   scan-state persistence, v1→v2 migration simulation, paged cursors, sort orders,
-  favorites filtering, album/artist/genre grouping, multi-section search.
+  favorites filtering, album/artist/genre grouping, multi-section search,
+  playlist CRUD (create/rename/pin/delete/add/remove/reorder), collection queries
+  (count/rowIds/recordPlayback), PlaybackStatsBuffer batching logic.
 - Import-worker tests (pure Dart): copy+hash identity, filename fallback, unsupported-format
   rejection, per-file failure isolation incl. cleanup, artwork surfacing, null-key safety.
 - Real-device (Samsung SM-M145F, Android 15): Phase 1 scan verified end-to-end incl.
@@ -290,9 +328,11 @@ Both implement the single `IngestService` contract; nothing downstream knows the
 - iOS code paths compile but require macOS/Xcode to build/run; not yet exercised on device.
 - Album identity trusts MediaStore album IDs; OEM tag quality varies (genre/albumArtist often absent → stored null).
 - Search is substring-prefix based; no ranking/typo tolerance (FTS5 deferred by design).
-- Playlists have schema + search presence but no management UI yet.
 - Orphaned thumbnail files are not garbage-collected after deletions yet.
 - Large-library paging uses offset pagination beyond first page (fine ≤50k; keyset later if needed).
+- Play count incremented on track-change, not on full-listen completion (intentional simplicity trade-off).
+- Collection songs are not paginated yet (full list per collection); fine ≤5k per collection.
+- Playlist songs view doesn't use Drift keyset pagination (linear scans acceptable for typical playlist sizes).
 
 ---
 

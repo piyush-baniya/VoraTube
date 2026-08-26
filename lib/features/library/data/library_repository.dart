@@ -1,4 +1,4 @@
-﻿import 'package:drift/drift.dart';
+import 'package:drift/drift.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../../core/ingest/ingest_service.dart';
@@ -350,6 +350,10 @@ class LibraryRepository {
     await _db.customStatement(
       'DELETE FROM artists WHERE id NOT IN '
       '(SELECT DISTINCT artist_row_id FROM songs WHERE artist_row_id IS NOT NULL)',
+    );
+    await _db.customStatement(
+      'DELETE FROM playlist_songs WHERE song_row_id NOT IN '
+      '(SELECT id FROM songs)',
     );
   }
 
@@ -829,5 +833,149 @@ extension FilteredSongQueries on LibraryRepository {
           artPath: r.albumRowId == null ? null : artById[r.albumRowId!],
         ),
     ];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Collections + playback statistics (read-side; writes via recordPlayback).
+// ---------------------------------------------------------------------------
+
+enum CollectionKind { recentlyAdded, favorites, mostPlayed, recentlyPlayed }
+
+extension CollectionQueries on LibraryRepository {
+  Future<List<SongTileData>> collectionSongs(
+    CollectionKind kind, {
+    int limit = 300,
+  }) async {
+    final stats = _db.songStats;
+    switch (kind) {
+      case CollectionKind.recentlyAdded:
+        final rows =
+            await (_db.select(_db.songs)
+                  ..orderBy([
+                    (t) => OrderingTerm.desc(t.dateAddedSec),
+                    (t) => OrderingTerm.desc(t.id),
+                  ])
+                  ..limit(limit))
+                .get();
+        return _decorate(rows);
+      case CollectionKind.favorites:
+        return _collectionJoined(
+          where: (songsTbl, st) => st.isFavorite.equals(true),
+          orderTerms: [OrderingTerm.desc(_db.songs.dateAddedSec)],
+          limit: limit,
+        );
+      case CollectionKind.mostPlayed:
+        return _collectionJoined(
+          where: (songsTbl, st) => st.playCount.isBiggerThanValue(0),
+          orderTerms: [
+            OrderingTerm.desc(stats.playCount),
+            OrderingTerm.desc(stats.lastPlayedAt),
+          ],
+          limit: limit,
+        );
+      case CollectionKind.recentlyPlayed:
+        return _collectionJoined(
+          where: (songsTbl, st) => st.lastPlayedAt.isNotNull(),
+          orderTerms: [OrderingTerm.desc(stats.lastPlayedAt)],
+          limit: limit,
+        );
+    }
+  }
+
+  Future<List<SongTileData>> _collectionJoined({
+    required Expression<bool> Function($SongsTable, $SongStatsTable) where,
+    required List<OrderingTerm> orderTerms,
+    required int limit,
+  }) async {
+    final stats = _db.songStats;
+    final query = _db.select(_db.songs).join([
+      innerJoin(stats, stats.songId.equalsExp(_db.songs.id)),
+    ]);
+    query.where(where(_db.songs, stats));
+    query.orderBy(orderTerms);
+    query.limit(limit);
+    final rows = await query.get();
+    return _decorate(rows.map((r) => r.readTable(_db.songs)).toList());
+  }
+
+  Future<Map<String, int>> rowIdsByIdentityKeys(Set<String> keys) async {
+    if (keys.isEmpty) {
+      return const {};
+    }
+    final rows = await (_db.select(_db.songs)..limit(5000)).get();
+    final out = <String, int>{};
+    for (final r in rows) {
+      final key = r.source == IngestSource.mediastore.name
+          ? 'ms:${r.mediaStoreId}'
+          : 'h:${r.contentHash}';
+      if (keys.contains(key)) {
+        out[key] = r.id;
+      }
+    }
+    return out;
+  }
+
+  /// Increments play_count and stamps last_played_at per song. Creates the
+  /// stats row when absent.
+  Future<void> recordPlayback(List<int> songRowIds, DateTime at) async {
+    if (songRowIds.isEmpty) {
+      return;
+    }
+    final millis = at.millisecondsSinceEpoch;
+    await _db.batch((b) {
+      for (final id in songRowIds) {
+        b.customStatement(
+          'INSERT INTO song_stats (song_id, play_count, last_played_at) '
+          'VALUES (?, 1, ?) '
+          'ON CONFLICT(song_id) DO UPDATE SET '
+          'play_count = play_count + 1, last_played_at = excluded.last_played_at',
+          [id, millis],
+        );
+      }
+    });
+  }
+
+  Future<Set<int>> favoritesSongRowIds() async {
+    final rows = await (_db.select(
+      _db.songStats,
+    )..where((tbl) => tbl.isFavorite.equals(true))).get();
+    return rows.map((r) => r.songId).toSet();
+  }
+
+  Future<int> countCollection(CollectionKind kind) async {
+    final stats = _db.songStats;
+    switch (kind) {
+      case CollectionKind.recentlyAdded:
+        final countExp = _db.songs.id.count();
+        final row = await (_db.selectOnly(
+          _db.songs,
+        )..addColumns([countExp])).getSingle();
+        return row.read(countExp) ?? 0;
+      case CollectionKind.favorites:
+        final countExp = stats.songId.count();
+        final row =
+            await (_db.selectOnly(stats)
+                  ..addColumns([countExp])
+                  ..where(stats.isFavorite.equals(true)))
+                .getSingle();
+        return row.read(countExp) ?? 0;
+      case CollectionKind.mostPlayed:
+        final countExp = stats.songId.count();
+        final row =
+            await (_db.selectOnly(stats)
+                  ..addColumns([countExp])
+                  ..where(stats.playCount.isBiggerThanValue(0)))
+                .getSingle();
+        return row.read(countExp) ?? 0;
+      case CollectionKind.recentlyPlayed:
+        final countExp = stats.songId.count();
+        final row =
+            await (_db.selectOnly(stats)
+                  ..addColumns([countExp])
+                  ..where(stats.lastPlayedAt.isNotNull()))
+                .getSingle();
+        return row.read(countExp) ?? 0;
+    }
   }
 }

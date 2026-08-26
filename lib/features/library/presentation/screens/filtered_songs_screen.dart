@@ -1,8 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
+import '../../../collections/presentation/providers/collections_providers.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
 import '../../data/library_repository.dart';
@@ -10,18 +11,28 @@ import '../../data/song_ref_mapper.dart';
 import '../providers/library_providers.dart';
 import '../widgets/song_tile.dart';
 
-/// Songs of one album or artist Ã¢â‚¬â€ the drill-down target from the library
-/// grids/lists. Loads once; supports play-all in context.
+/// Songs of one album, artist, or collection — the drill-down target from the
+/// library grids/lists. Loads once; supports play-all in context.
 class FilteredSongsScreen extends ConsumerStatefulWidget {
-  const FilteredSongsScreen({super.key, this.album, this.artist});
+  const FilteredSongsScreen({
+    super.key,
+    this.album,
+    this.artist,
+    this.collectionKind,
+    this.collectionLabel,
+  });
 
   factory FilteredSongsScreen.album(AlbumSummary album) =>
       FilteredSongsScreen(album: album);
   factory FilteredSongsScreen.artist(ArtistSummary artist) =>
       FilteredSongsScreen(artist: artist);
+  factory FilteredSongsScreen.collection(CollectionKind kind, String label) =>
+      FilteredSongsScreen(collectionKind: kind, collectionLabel: label);
 
   final AlbumSummary? album;
   final ArtistSummary? artist;
+  final CollectionKind? collectionKind;
+  final String? collectionLabel;
 
   @override
   ConsumerState<FilteredSongsScreen> createState() =>
@@ -32,6 +43,11 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
   late final Future<List<SongTileData>> _future = _load();
 
   Future<List<SongTileData>> _load() {
+    final collectionKind = widget.collectionKind;
+    if (collectionKind != null) {
+      final collections = ref.read(collectionsProvider);
+      return collections.songsOf(collectionKind);
+    }
     final repository = ref.read(libraryRepositoryProvider);
     final album = widget.album;
     if (album != null) {
@@ -43,7 +59,11 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final title = widget.album?.name ?? widget.artist?.name ?? 'Songs';
+    final title =
+        widget.collectionLabel ??
+        widget.album?.name ??
+        widget.artist?.name ??
+        'Songs';
     final subtitle =
         widget.album?.artistName ??
         (widget.artist != null ? '${widget.artist!.songCount} songs' : null);

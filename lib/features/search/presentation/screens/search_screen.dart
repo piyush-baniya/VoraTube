@@ -7,6 +7,7 @@ import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/screen_header.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../playlists/presentation/screens/playlist_detail_screen.dart';
 
 import 'package:vora_tube/features/library/data/library_models.dart';
 import 'package:vora_tube/features/library/presentation/screens/filtered_songs_screen.dart';
@@ -157,7 +158,15 @@ class _Results extends ConsumerWidget {
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: const Text('Playlist'),
-          onTap: () {},
+          onTap: () => Navigator.of(context).push(
+            pushSharedAxis<void>(
+              context,
+              PlaylistDetailScreen(
+                playlistId: playlist.id,
+                name: playlist.name,
+              ),
+            ),
+          ),
         ),
     ];
 

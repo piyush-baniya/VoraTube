@@ -1,4 +1,6 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
 import '../../../library/data/library_repository.dart';
@@ -13,13 +15,12 @@ final playerProvider = Provider<PlayerController>(
 );
 
 /// Coarse playback state: play/pause, current track, queue info, modes.
-/// Emits only on meaningful changes.
 final playbackSnapshotProvider = StreamProvider<PlayerSnapshot>(
   (ref) => ref.watch(playerProvider).snapshot,
 );
 
 /// High-frequency position stream. ONLY progress-rendering widgets should
-/// watch this â€” it fires many times per second by design.
+/// watch this — it fires many times per second by design.
 final playbackPositionProvider = StreamProvider<Duration>(
   (ref) => ref.watch(playerProvider).positions,
 );
@@ -36,6 +37,57 @@ final class DriftPlayerPersistence implements PlayerPersistence {
 
   @override
   Future<void> write(String key, String value) => _repository.kvSet(key, value);
+}
+
+/// Buffers engine track-start events and flushes them into
+/// [LibraryRepository.recordPlayback] in batches, so rapid skipping never
+/// hammers SQLite with single-row writes.
+class PlaybackStatsBuffer {
+  PlaybackStatsBuffer(
+    this._repository, {
+    int flushThreshold = 20,
+    Duration flushInterval = const Duration(seconds: 5),
+  }) : _flushThreshold = flushThreshold,
+       _flushInterval = flushInterval;
+
+  final LibraryRepository _repository;
+  final int _flushThreshold;
+  final Duration _flushInterval;
+
+  final Set<String> _pending = {};
+  Timer? _timer;
+
+  int get pendingCount => _pending.length;
+
+  void add(String identityKey) {
+    if (!_pending.add(identityKey)) {
+      return;
+    }
+    if (_pending.length >= _flushThreshold) {
+      unawaited(flush());
+      return;
+    }
+    _timer ??= Timer(_flushInterval, () => unawaited(flush()));
+  }
+
+  Future<void> flush() async {
+    _timer?.cancel();
+    _timer = null;
+    if (_pending.isEmpty) {
+      return;
+    }
+    final keys = Set<String>.from(_pending);
+    _pending.clear();
+    try {
+      final keyToRow = await _repository.rowIdsByIdentityKeys(keys);
+      final rowIds = keyToRow.values.toList(growable: false);
+      if (rowIds.isNotEmpty) {
+        await _repository.recordPlayback(rowIds, DateTime.now());
+      }
+    } catch (_) {
+      // Stats are best-effort; failures must never surface to playback.
+    }
+  }
 }
 
 Future<void> startPlaybackOfWholeLibrary(WidgetRef ref) async {

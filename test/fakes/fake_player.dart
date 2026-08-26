@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:vora_tube/core/player/player_controller.dart';
 
@@ -40,6 +40,9 @@ class FakePlayerController implements PlayerController {
 
   @override
   Future<void> enqueue(SongRef song) async {}
+
+  @override
+  Future<void> playNext(SongRef song) async {}
 
   @override
   Future<void> removeAt(int index) async {}

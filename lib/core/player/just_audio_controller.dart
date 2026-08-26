@@ -18,8 +18,10 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     required PlayerPersistence playbackStorage,
     required Future<List<SongRef>> Function(List<String>) songResolver,
     AudioPlayer? player,
+    PlaybackStatsSink? onTrackStarted,
   }) : _persistence = playbackStorage,
        _resolveSongs = songResolver,
+       _onTrackStarted = onTrackStarted,
        _player = player ?? AudioPlayer() {
     unawaited(_init());
   }
@@ -28,11 +30,13 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   static Future<JustAudioController> create({
     required PlayerPersistence persistence,
     required Future<List<SongRef>> Function(List<String>) resolveSongs,
+    PlaybackStatsSink? onTrackStarted,
   }) async {
     return AudioService.init(
       builder: () => JustAudioController(
         playbackStorage: persistence,
         songResolver: resolveSongs,
+        onTrackStarted: onTrackStarted,
       ),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'voratube.playback',
@@ -44,6 +48,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   }
 
   final PlayerPersistence _persistence;
+  final PlaybackStatsSink? _onTrackStarted;
   final Future<List<SongRef>> Function(List<String>) _resolveSongs;
   final AudioPlayer _player;
 
@@ -57,6 +62,8 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   Timer? _persistDebounce;
   bool _restored = false;
   bool _disposed = false;
+  bool _suppressStats = true;
+  String? _statLastKey;
   bool _pausedByInterruption = false;
 
   // -------------------------------------------------------------------------
@@ -79,7 +86,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     _player.loopModeStream.listen((_) => _emit());
     _player.shuffleModeEnabledStream.listen((_) => _emit());
     _player.durationStream.listen((_) => _emit());
-    _player.currentIndexStream.listen((_) => _syncCurrentMediaItem());
+    _player.currentIndexStream.listen((_) => _onCurrentIndexChanged());
 
     _positionSub = _player
         .createPositionStream(
@@ -95,6 +102,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
         });
 
     await _restoreIfNeeded();
+    _suppressStats = false;
     _emit();
   }
 
@@ -146,6 +154,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     _queueRefs = List.unmodifiable(songs);
     await _syncQueueMetadata();
     await _player.play();
+    _maybeRecordStat(_currentRef());
     _schedulePersist(immediate: true);
   }
 
@@ -179,6 +188,18 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   Future<void> enqueue(SongRef song) async {
     await _player.addAudioSource(_sourceFor(song));
     _queueRefs = [..._queueRefs, song];
+    await _syncQueueMetadata();
+    _schedulePersist(immediate: true);
+  }
+
+  @override
+  Future<void> playNext(SongRef song) async {
+    final index = _player.sequenceState.currentIndex ?? -1;
+    final insertAt = (index + 1).clamp(0, _player.sequence.length);
+    await _player.insertAudioSource(insertAt, _sourceFor(song));
+    final updated = [..._queueRefs];
+    updated.insert(insertAt.clamp(0, updated.length), song);
+    _queueRefs = List.unmodifiable(updated);
     await _syncQueueMetadata();
     _schedulePersist(immediate: true);
   }
@@ -261,6 +282,24 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     final items = [for (final s in _queueRefs) _mediaItemFor(s)];
     queue.add(items);
     await _syncCurrentMediaItem();
+  }
+
+  void _onCurrentIndexChanged() {
+    _syncCurrentMediaItem();
+    _maybeRecordStat(_currentRef());
+  }
+
+  /// Records a play when a *distinct* track starts. Suppressed while the
+  /// persisted queue is being restored so launches never inflate counts.
+  void _maybeRecordStat(SongRef? ref) {
+    if (ref == null || _suppressStats) {
+      return;
+    }
+    if (_statLastKey == ref.identityKey) {
+      return;
+    }
+    _statLastKey = ref.identityKey;
+    _onTrackStarted?.call(ref.identityKey);
   }
 
   Future<void> _syncCurrentMediaItem() async {
@@ -451,6 +490,10 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       await _player.setShuffleModeEnabled(saved.shuffleEnabled);
       await setRepeat(saved.repeatMode);
       await _syncQueueMetadata();
+      final restoredRef = index < ordered.length ? ordered[index] : null;
+      if (restoredRef != null) {
+        _statLastKey = restoredRef.identityKey;
+      }
       debugPrint(
         'VoraTube restored queue (${ordered.length} tracks @ '
         '${saved.positionMs}ms)',

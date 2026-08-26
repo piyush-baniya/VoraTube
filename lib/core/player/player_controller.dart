@@ -165,6 +165,13 @@ abstract interface class PlayerPersistence {
   Future<void> write(String key, String value);
 }
 
+/// Fired by the engine whenever a distinct track starts playing.
+///
+/// The payload is the [SongRef.identityKey] — deliberately storage-free so
+/// `core/player` never depends on Drift. The host app adapts keys to
+/// whatever persistence it wants (VoraTube records play-count stats).
+typedef PlaybackStatsSink = void Function(String identityKey);
+
 /// VoraTube's public playback contract.
 ///
 /// Feature/UI code depends ONLY on this interface — never on just_audio,
@@ -194,6 +201,9 @@ abstract class PlayerController {
   Future<void> jumpTo(int index);
 
   Future<void> enqueue(SongRef song);
+
+  /// Inserts [song] immediately after the currently playing track.
+  Future<void> playNext(SongRef song);
 
   Future<void> removeAt(int index);
 
