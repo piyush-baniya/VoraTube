@@ -20,7 +20,8 @@ playback.
 | 4 | Library experience & local search: Songs/Albums/Artists/Genres browsing, favorites, sorting, pagination, debounced local search, visual identity rework | ✅ Done |
 | 5 | Playlists & collections: full CRUD, playlist detail, add-to-playlist sheet, song-tile menu, collections strip (Favorites/Recently Added/Most Played/Recently Played), playback stats recording | ✅ Done |
 | 6 | Full-screen player: premium immersive UI, large artwork with Hero transitions, progress slider, playback controls, queue bottom sheet, favorite toggle, MiniPlayer navigation | ✅ Done |
-| Next | Lyrics, smart mixes, settings redesign, visual polish pass | Planned |
+| 7 | Visual polish & design system: tokens, premium component redesign, smooth animations, consistent spacing/typography, PressableScale, refined empty states | ✅ Done |
+| Next | Lyrics, smart mixes, settings redesign | Planned |
 
 ---
 
@@ -37,7 +38,8 @@ lib/
 │   ├── home_shell.dart           # IndexedStack 4-tab shell + MiniPlayer slot
 │   └── theme/
 │       ├── app_colors.dart       # VoraTube palette (dark-first, restrained rose accent)
-│       └── app_theme.dart        # Material 3 ThemeData builders (dark/light) + typography
+│       ├── app_theme.dart        # Material 3 ThemeData builders (dark/light) + typography
+│       └── app_tokens.dart       # Design tokens: spacing, radius, animation, shadows, sizes
 ├── core/
 │   ├── db/
 │   │   ├── tables.dart           # Drift table definitions (+ @TableIndex declarations)
@@ -127,7 +129,7 @@ lib/
 │                                               #   Most Played, Recently Played)
 └── shared/
     └── widgets/                                # empty_state, screen_header, artwork_view,
-                                                #   skeleton_list, transitions
+                                                #   skeleton_list, transitions, pressable_scale
 ```
 
 Platform-native code:
@@ -376,6 +378,89 @@ Both implement the single `IngestService` contract; nothing downstream knows the
 
 ---
 
+## Phase 7 — Visual Polish & Design System
+
+### Design System (`app_tokens.dart`)
+
+Central source of truth for all visual constants:
+
+- **Spacing scale:** `s0`–`s10` (4px base: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64)
+- **Radius scale:** `rXs`–`rXxl` (6, 8, 12, 16, 20, 24)
+- **Animation durations:** `fast` (120ms), `normal` (200ms), `medium` (280ms), `slow` (380ms)
+- **Curves:** `easeOut` (easeOutCubic), `easeIn` (easeInCubic), `spring` (easeOutBack)
+- **Shadows:** `shadowSm`, `shadowMd`, `shadowLg` — factory methods accepting a color
+- **Artwork sizes:** `artworkXs` (40), `artworkSm` (48), `artworkMd` (56), `artworkLg` (64), `artworkXl` (120)
+- **Touch target:** 48dp minimum
+
+### Color Tokens (`app_colors.dart`)
+
+Expanded with semantic surfaces:
+- `cardDark`/`cardElevatedDark` — card backgrounds without touching surface hierarchy
+- `dividerDark`/`dividerLight` — subtle dividers
+- `borderSubtleDark`/`borderSubtleLight` — thin border accents
+
+### Theme (`app_theme.dart`)
+
+Added component themes for consistency:
+- `BottomSheetThemeData` — surface color, 20px top radius
+- `DialogThemeData` — raised surface, 20px radius
+- `CardThemeData` — card surface, 12px radius, zero elevation
+- `ChipThemeData` — subtle border, 8px radius
+- `SnackBarThemeData` — 12px radius
+- Divider theme refined: 0.5px thickness, token-based colors
+- Text scale: tighter letter-spacing on all levels, explicit height on body styles
+
+### Shared Components
+
+| Widget | File | Purpose |
+|---|---|---|
+| `PressableScale` | `shared/widgets/pressable_scale.dart` | GPU-friendly scale-on-tap feedback via AnimationController + Transform.scale |
+| `ArtworkView` | `shared/widgets/artwork_view.dart` | Enhanced with `showShadow` flag, token-based sizing, cleaner fallback |
+| `EmptyState` | `shared/widgets/empty_state.dart` | Circular gradient background behind icon, token spacing |
+| `SectionLabel` | `shared/widgets/transitions.dart` | Accent-bar indicator + optional trailing widget |
+| `ScreenHeader` | `shared/widgets/screen_header.dart` | Token-based padding, tighter letter-spacing |
+| `SkeletonList` | `shared/widgets/skeleton_list.dart` | 64px row height matching SongTile, rounded skeleton bars |
+
+### Redesigned Components
+
+| Component | Key Changes |
+|---|---|
+| `SongTile` | 64px artwork, PressableScale feedback, cleaner popup menu, minimal favorite button |
+| `CollectionsStrip` | Gradient overlay cards (152px wide), per-collection accent gradients, border accent |
+| `AlbumCard` | PressableScale, artwork shadow, tighter spacing |
+| `ArtistTile` | PressableScale, circular artwork, chevron indicator |
+| `GenreTile` | Filled background (no border), music note icon, token spacing |
+| `SectionSelector` | AnimatedContainer pill, rXl radius, token padding |
+| `MiniPlayer` | Top border (0.5px outline), token spacing, 30px play icon |
+| `FullPlayerScreen` | s6 horizontal padding, thinner progress track (2.5px), refined metadata spacing |
+| `PlayerControls` | 68px play button (down from 72px), 22px shuffle/repeat icons, 20% disabled opacity |
+| `PlayerArtwork` | rXl radius (20px), token-based fallback, shadowLg |
+| `QueueSheet` | rXl top radius, token-based drag handle and padding |
+| `PlaylistsScreen` | PressableScale tiles, chevron indicators, "All" section label when no pinned |
+| `PlaylistDetailScreen` | Token padding, 0.5px dividers, refined popup menu items |
+| `SearchScreen` | rXl search field radius, token spacing, 48px artwork in results |
+| `FilteredSongsScreen` | Token padding, 0.5px dividers |
+
+### Performance Decisions
+
+- **PressableScale:** Uses AnimationController (not implicit AnimatedScale) for 60fps
+- **Artwork:** `cacheWidth` limits decode memory; `gaplessPlayback` for smooth transitions
+- **Songs list:** `ListView.separated` with 0.5px dividers (not full Divider widget)
+- **Grid:** `SliverGridDelegateWithMaxCrossAxisExtent` preserves existing pagination
+- **No new dependencies:** All effects use Flutter built-ins (Transform, Opacity, AnimationController)
+
+### Animation Durations
+
+| Interaction | Duration | Curve |
+|---|---|---|
+| Press feedback | 120ms | easeInOut |
+| Section switch | 200ms | easeOutCubic |
+| Page push | 280ms | easeOutCubic |
+| Artwork cross-fade | 380ms | easeOutCubic |
+| MiniPlayer → FullPlayer | 380ms | easeOutCubic |
+
+---
+
 ## Design Decisions & Rationale
 
 - **No `metadata_god`:** Rust toolchain burden; pure-Dart reader chosen behind an
@@ -396,7 +481,7 @@ Both implement the single `IngestService` contract; nothing downstream knows the
 - `flutter analyze` clean; `dart format` enforced; strict lints (`avoid_print`,
   `prefer_single_quotes`, const lints…).
 - 98 tests: widget shell, repository, import worker, migration, playlist,
-  collection, playback stats, and full player screen.
+  collection, playback stats, and full player screen. All pass after Phase 7.
 - Widget tests: 4-tab shell smoke with in-memory Drift + fake player.
 - Repository tests: sync/duplicate/update semantics, large-batch inserts (1200),
   null-metadata handling, removal+orphan cleanup, artwork attach/missing sentinel,
@@ -426,9 +511,8 @@ Both implement the single `IngestService` contract; nothing downstream knows the
 - Play count incremented on track-change, not on full-listen completion (intentional simplicity trade-off).
 - Collection songs are not paginated yet (full list per collection); fine ≤5k per collection.
 - Playlist songs view doesn't use Drift keyset pagination (linear scans acceptable for typical playlist sizes).
-- Full player artwork does not use dynamic palette extraction yet (planned for visual polish phase).
+- Full player artwork does not use dynamic palette extraction yet (planned for later phase).
 - Queue reorder drag-and-drop not yet implemented (current: swipe-to-remove only).
-- MiniPlayer lacks a thin progress indicator line (added in visual polish phase).
 
 ---
 
