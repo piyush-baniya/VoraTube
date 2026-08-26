@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/artwork_view.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../data/playlist_models.dart';
 
 /// Mosaic artwork for a playlist: a single cover, a 2-up split, a 3-up
@@ -11,7 +12,7 @@ class PlaylistCollage extends StatelessWidget {
     super.key,
     required this.summary,
     this.size = 56,
-    this.radius = 12,
+    this.radius = AppTokens.rSm,
   });
 
   final PlaylistSummary summary;
@@ -27,13 +28,13 @@ class PlaylistCollage extends StatelessWidget {
       return _fallback(theme);
     }
 
-    Widget art(String? path, {double? radius}) =>
-        ArtworkView(path: path, size: size, radius: radius ?? 0);
+    Widget art(String? path, {double? r}) =>
+        ArtworkView(path: path, size: size, radius: r ?? 0);
 
     final Widget mosaic;
     switch (covers.length) {
       case 1:
-        return art(covers[0], radius: radius);
+        return art(covers[0], r: radius);
       case 2:
         mosaic = Row(
           children: [
@@ -86,7 +87,6 @@ class PlaylistCollage extends StatelessWidget {
         child: Stack(
           children: [
             Positioned.fill(child: mosaic),
-            // Hairline separators keep tiles distinct on any background.
             Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(
@@ -118,7 +118,8 @@ class PlaylistCollage extends StatelessWidget {
       ),
       child: Icon(
         Icons.queue_music_rounded,
-        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+        size: size * 0.4,
+        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
       ),
     );
   }

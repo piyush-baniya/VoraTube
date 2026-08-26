@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_tokens.dart';
+
+/// Intentional empty-state with icon, message, and optional action.
+///
+/// Every empty screen in VoraTube uses this to ensure visual consistency
+/// and a polished feel. The icon uses a subtle gradient background circle
+/// rather than a flat icon.
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
@@ -18,19 +25,30 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 40),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 56,
-            color: theme.colorScheme.onSurfaceVariant,
-            semanticLabel: title,
+          // Icon with subtle circular background.
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            ),
+            child: Icon(
+              icon,
+              size: 36,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              semanticLabel: title,
+            ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppTokens.s5),
           Text(
             title,
             style: theme.textTheme.titleMedium?.copyWith(
@@ -38,16 +56,16 @@ class EmptyState extends StatelessWidget {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppTokens.s2),
           Text(
             message,
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+              color: colorScheme.onSurfaceVariant,
             ),
             textAlign: TextAlign.center,
           ),
           if (actionLabel != null && onAction != null) ...[
-            const SizedBox(height: 20),
+            const SizedBox(height: AppTokens.s6),
             FilledButton.tonal(onPressed: onAction, child: Text(actionLabel!)),
           ],
         ],

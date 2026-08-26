@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../providers/player_providers.dart';
 import '../widgets/player_artwork.dart';
@@ -14,14 +15,9 @@ import '../widgets/queue_sheet.dart';
 ///
 /// Performance architecture:
 /// - Watches [playbackSnapshotProvider] for coarse state (track, modes, queue info).
-///   This stream emits infrequently — only on meaningful state changes.
-/// - Only the [PlayerProgress] child watches [playbackPositionProvider].
-///   The high-frequency position stream rebuilds ONLY the progress bar,
-///   NOT the entire player screen, artwork, or controls.
-/// - Artwork uses [AnimatedSwitcher] to cross-fade on song changes
-///   without re-decoding during position ticks.
-/// - Favorite state resolves via [currentSongIsFavoriteProvider] which
-///   only triggers a rebuild when the current song or favorite set changes.
+/// - Only [PlayerProgress] watches [playbackPositionProvider].
+/// - Artwork uses [AnimatedSwitcher] to cross-fade on song changes.
+/// - Favorite state resolves via [currentSongIsFavoriteProvider].
 class FullPlayerScreen extends ConsumerWidget {
   const FullPlayerScreen({super.key});
 
@@ -31,7 +27,6 @@ class FullPlayerScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final snapshot = ref.watch(playbackSnapshotProvider).value;
 
-    // No track playing — show empty state.
     if (snapshot == null || !snapshot.hasTrack) {
       return const _EmptyPlayer();
     }
@@ -52,22 +47,20 @@ class FullPlayerScreen extends ConsumerWidget {
         backgroundColor: colorScheme.surface,
         body: Column(
           children: [
-            // Top bar — respects safe area, uses reparented overlay.
             SafeArea(
               bottom: false,
               child: _TopBar(onQueueTap: () => QueueSheet.show(context)),
             ),
-
-            // Main content — artwork, metadata, controls.
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  // Responsive artwork size: fill available width but cap.
                   final maxArtSize = constraints.maxWidth * 0.82;
                   final artSize = maxArtSize.clamp(200.0, 360.0);
 
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.s6,
+                    ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -77,40 +70,27 @@ class FullPlayerScreen extends ConsumerWidget {
                             40.0,
                           ),
                         ),
-
-                        // Artwork.
                         PlayerArtwork(
                           path: current.artPath,
                           heroTag: _heroTag,
                           size: artSize,
                         ),
-
                         SizedBox(
                           height: (constraints.maxHeight * 0.04).clamp(
                             12.0,
                             40.0,
                           ),
                         ),
-
-                        // Song metadata.
                         _SongMetadata(
                           title: current.title,
                           artist: current.artist,
                           identityKey: current.identityKey,
                         ),
-
-                        const SizedBox(height: 8),
-
-                        // Progress — the ONLY widget that rebuilds
-                        // on high-frequency position ticks.
+                        const SizedBox(height: AppTokens.s4),
                         _PositionConsumer(),
-
-                        const SizedBox(height: 4),
-
-                        // Controls.
+                        const SizedBox(height: AppTokens.s2),
                         _ControlsConsumer(),
-
-                        SizedBox(height: bottomPadding + 16),
+                        SizedBox(height: bottomPadding + AppTokens.s4),
                       ],
                     ),
                   );
@@ -124,7 +104,6 @@ class FullPlayerScreen extends ConsumerWidget {
   }
 }
 
-/// Minimal top bar with back and queue buttons.
 class _TopBar extends StatelessWidget {
   const _TopBar({required this.onQueueTap});
 
@@ -135,19 +114,22 @@ class _TopBar extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s1,
+        vertical: AppTokens.s1,
+      ),
       child: Row(
         children: [
           IconButton(
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 32),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
             color: colorScheme.onSurfaceVariant,
             tooltip: 'Close',
           ),
           const Spacer(),
           IconButton(
             onPressed: onQueueTap,
-            icon: const Icon(Icons.queue_music_rounded, size: 24),
+            icon: const Icon(Icons.queue_music_rounded, size: 22),
             color: colorScheme.onSurfaceVariant,
             tooltip: 'Queue',
           ),
@@ -157,7 +139,6 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-/// Song title and artist with overflow handling.
 class _SongMetadata extends StatelessWidget {
   const _SongMetadata({
     required this.title,
@@ -177,7 +158,6 @@ class _SongMetadata extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Text info.
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,7 +172,7 @@ class _SongMetadata extends StatelessWidget {
                 ),
               ),
               if (artist != null) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: AppTokens.s1),
                 Text(
                   artist!,
                   maxLines: 1,
@@ -205,18 +185,13 @@ class _SongMetadata extends StatelessWidget {
             ],
           ),
         ),
-
-        const SizedBox(width: 8),
-
-        // Favorite button.
+        const SizedBox(width: AppTokens.s2),
         _FavoriteButton(identityKey: identityKey),
       ],
     );
   }
 }
 
-/// Favorite heart toggle. Resolves identityKey → rowId and syncs
-/// with [favoriteIdsProvider] for optimistic updates.
 class _FavoriteButton extends ConsumerWidget {
   const _FavoriteButton({required this.identityKey});
 
@@ -239,7 +214,7 @@ class _FavoriteButton extends ConsumerWidget {
       },
       icon: Icon(
         isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-        size: 26,
+        size: 24,
       ),
       color: isFavorite
           ? Theme.of(context).colorScheme.primary
@@ -249,8 +224,6 @@ class _FavoriteButton extends ConsumerWidget {
   }
 }
 
-/// Position consumer — the only widget that subscribes to the
-/// high-frequency position stream.
 class _PositionConsumer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -281,7 +254,6 @@ class _PositionConsumer extends ConsumerWidget {
   }
 }
 
-/// Controls consumer — watches only the coarse snapshot.
 class _ControlsConsumer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -307,14 +279,12 @@ class _ControlsConsumer extends ConsumerWidget {
   }
 }
 
-/// Empty state when no track is playing.
 class _EmptyPlayer extends StatelessWidget {
   const _EmptyPlayer();
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -329,14 +299,17 @@ class _EmptyPlayer extends StatelessWidget {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTokens.s1,
+                  vertical: AppTokens.s1,
+                ),
                 child: Row(
                   children: [
                     IconButton(
                       onPressed: () => Navigator.of(context).maybePop(),
                       icon: const Icon(
                         Icons.keyboard_arrow_down_rounded,
-                        size: 32,
+                        size: 30,
                       ),
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -350,15 +323,15 @@ class _EmptyPlayer extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.music_note_rounded,
-                        size: 64,
+                        size: 56,
                         color: Color(0x409C9CA6),
                       ),
-                      SizedBox(height: 16),
+                      SizedBox(height: AppTokens.s4),
                       Text(
                         'No song playing',
                         style: TextStyle(
                           color: Color(0xFF9C9CA6),
-                          fontSize: 16,
+                          fontSize: 15,
                         ),
                       ),
                     ],

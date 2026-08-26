@@ -1,8 +1,12 @@
 ﻿import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/artwork_view.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../data/library_models.dart';
 
+/// Album card with larger artwork, clean typography, and subtle
+/// press feedback. Uses PressableScale for GPU-friendly animation.
 class AlbumCard extends StatelessWidget {
   const AlbumCard({super.key, required this.album, required this.onTap});
 
@@ -12,32 +16,38 @@ class AlbumCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(AppTokens.s2),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             AspectRatio(
               aspectRatio: 1,
-              child: ArtworkView(path: album.artPath, size: 160, radius: 14),
+              child: ArtworkView(
+                path: album.artPath,
+                size: 160,
+                radius: AppTokens.rMd,
+                showShadow: true,
+              ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: AppTokens.s2),
             Text(
               album.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleSmall,
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 1),
             Text(
               album.artistName ?? '${album.songCount} songs',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],
@@ -47,6 +57,7 @@ class AlbumCard extends StatelessWidget {
   }
 }
 
+/// Artist tile with circular artwork and chevron indicator.
 class ArtistTile extends StatelessWidget {
   const ArtistTile({super.key, required this.artist, required this.onTap});
 
@@ -56,10 +67,15 @@ class ArtistTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s4,
+          vertical: AppTokens.s2,
+        ),
         child: SizedBox(
           height: 56,
           child: Row(
@@ -70,7 +86,7 @@ class ArtistTile extends StatelessWidget {
                 square: false,
                 iconSize: 24,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: AppTokens.s3),
               Expanded(
                 child: Text(
                   artist.name,
@@ -82,13 +98,14 @@ class ArtistTile extends StatelessWidget {
               Text(
                 '${artist.songCount}',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: AppTokens.s2),
               Icon(
                 Icons.chevron_right_rounded,
-                color: theme.colorScheme.onSurfaceVariant,
+                size: 20,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
               ),
             ],
           ),
@@ -98,6 +115,7 @@ class ArtistTile extends StatelessWidget {
   }
 }
 
+/// Genre tile with subtle border and clean layout.
 class GenreTile extends StatelessWidget {
   const GenreTile({super.key, required this.genre, required this.onTap});
 
@@ -107,30 +125,40 @@ class GenreTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
       child: Container(
-        constraints: const BoxConstraints(minHeight: 64),
+        constraints: const BoxConstraints(minHeight: 56),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+          borderRadius: BorderRadius.circular(AppTokens.rMd),
+          color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s5,
+          vertical: AppTokens.s3,
+        ),
         child: Row(
           children: [
+            Icon(
+              Icons.music_note_rounded,
+              size: 20,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+            const SizedBox(width: AppTokens.s3),
             Expanded(
               child: Text(
                 genre.genre,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleMedium,
+                style: theme.textTheme.titleSmall,
               ),
             ),
             Text(
               '${genre.songCount}',
               style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ],

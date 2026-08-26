@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/player/player_controller.dart';
-import '../providers/player_providers.dart';
+import '../../../../app/theme/app_tokens.dart';
 
 /// Seekable progress bar for the full-screen player.
 ///
 /// Designed for performance:
-/// - Only this widget (and its children) rebuild on position ticks.
-/// - The parent full-player screen does NOT rebuild on position changes.
-/// - Uses a local StatefulWidget to track drag state without external state.
-/// - The slider theme is configured to feel premium with a thin track
-///   and a visible thumb only during interaction.
+/// - Only this widget rebuilds on position ticks.
+/// - Uses a local StatefulWidget for drag state.
+/// - Clean thin track with accent color.
 class PlayerProgress extends StatefulWidget {
   const PlayerProgress({
     super.key,
@@ -52,12 +50,12 @@ class _PlayerProgressState extends State<PlayerProgress> {
       children: [
         SliderTheme(
           data: SliderThemeData(
-            trackHeight: 3,
+            trackHeight: 2.5,
             activeTrackColor: colorScheme.onSurface,
-            inactiveTrackColor: colorScheme.onSurface.withValues(alpha: 0.12),
+            inactiveTrackColor: colorScheme.onSurface.withValues(alpha: 0.1),
             thumbColor: colorScheme.onSurface,
             thumbShape: const RoundSliderThumbShape(
-              enabledThumbRadius: 6,
+              enabledThumbRadius: 5,
               elevation: 0,
             ),
             overlayColor: Colors.transparent,
@@ -87,7 +85,7 @@ class _PlayerProgressState extends State<PlayerProgress> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -158,7 +156,7 @@ class _RoundedTrackShape extends RoundedRectSliderTrackShape {
     bool isEnabled = false,
     bool isDiscrete = false,
   }) {
-    final trackHeight = sliderTheme.trackHeight ?? 3;
+    final trackHeight = sliderTheme.trackHeight ?? 2.5;
     final trackTop = offset.dy + (parentBox.size.height - trackHeight) / 2;
     return Rect.fromLTWH(
       offset.dx + 6,

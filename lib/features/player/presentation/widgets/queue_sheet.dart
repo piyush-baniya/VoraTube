@@ -2,15 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
-import '../../../library/data/library_models.dart';
-import '../../../library/presentation/providers/library_providers.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../providers/player_providers.dart';
 
 /// Premium bottom sheet displaying the current playback queue.
 ///
-/// Shows the current song highlighted, with the ability to tap any
-/// item to jump to it, and a swipe-to-remove gesture. The sheet
-/// uses a drag-handle and avoids rebuilding on position ticks.
+/// Shows the current song highlighted, with tap-to-jump and
+/// swipe-to-remove. Uses a drag-handle and consistent styling.
 class QueueSheet extends ConsumerWidget {
   const QueueSheet({super.key});
 
@@ -43,24 +41,34 @@ class QueueSheet extends ConsumerWidget {
         return Container(
           decoration: BoxDecoration(
             color: colorScheme.surfaceContainerLow,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppTokens.rXl),
+            ),
           ),
           child: Column(
             children: [
               // Drag handle.
               Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 4),
+                margin: const EdgeInsets.only(
+                  top: AppTokens.s3,
+                  bottom: AppTokens.s1,
+                ),
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
 
               // Header.
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+                padding: const EdgeInsets.fromLTRB(
+                  AppTokens.s6,
+                  AppTokens.s3,
+                  AppTokens.s6,
+                  AppTokens.s2,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -81,13 +89,19 @@ class QueueSheet extends ConsumerWidget {
                 ),
               ),
 
-              const Divider(height: 1),
+              Divider(
+                height: 1,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+              ),
 
               // Queue list.
               Expanded(
                 child: ListView.builder(
                   controller: scrollController,
-                  padding: const EdgeInsets.only(top: 8, bottom: 32),
+                  padding: const EdgeInsets.only(
+                    top: AppTokens.s2,
+                    bottom: AppTokens.s8,
+                  ),
                   itemCount: queue.length,
                   itemBuilder: (context, index) {
                     final song = queue[index];
@@ -148,19 +162,19 @@ class _QueueTile extends ConsumerWidget {
       child: ListTile(
         onTap: onTap,
         leading: Container(
-          width: 40,
-          height: 40,
+          width: 36,
+          height: 36,
           decoration: isCurrent
               ? BoxDecoration(
                   color: colorScheme.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppTokens.rXs),
                 )
               : null,
           child: Center(
             child: isCurrent
                 ? Icon(
                     Icons.equalizer_rounded,
-                    size: 20,
+                    size: 18,
                     color: colorScheme.primary,
                   )
                 : Text(
@@ -179,6 +193,7 @@ class _QueueTile extends ConsumerWidget {
           style: TextStyle(
             fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w400,
             color: isCurrent ? colorScheme.primary : colorScheme.onSurface,
+            fontSize: 14,
           ),
         ),
         subtitle: song.artist != null
@@ -192,7 +207,10 @@ class _QueueTile extends ConsumerWidget {
               )
             : null,
         dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s4,
+          vertical: 0,
+        ),
       ),
     );
   }

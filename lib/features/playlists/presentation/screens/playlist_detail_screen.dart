@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/empty_state.dart';
-import '../../../../shared/widgets/transitions.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../library/presentation/widgets/song_tile.dart';
@@ -50,7 +49,6 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final asyncSongs = ref.watch(playlistDetailProvider(widget.playlistId));
     final notifier = ref.read(
       playlistDetailProvider(widget.playlistId).notifier,
@@ -90,7 +88,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     itemCount: tiles.length + (notifier.hasMore ? 1 : 0),
                     separatorBuilder: (_, i) => i == tiles.length - 1
                         ? const SizedBox.shrink()
-                        : const Divider(height: 1, indent: 78),
+                        : const Divider(
+                            height: 0.5,
+                            indent: 80,
+                            endIndent: AppTokens.s4,
+                          ),
                     itemBuilder: (context, index) {
                       if (index >= tiles.length) {
                         return const Padding(
@@ -144,7 +146,10 @@ class _DetailHeader extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s1,
+        vertical: AppTokens.s1,
+      ),
       child: Row(
         children: [
           IconButton(
@@ -159,6 +164,7 @@ class _DetailHeader extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
               ),
             ),
           ),
@@ -228,39 +234,42 @@ class _PlaylistMenuButton extends ConsumerWidget {
       itemBuilder: (context) => [
         PopupMenuItem(
           value: 'rename',
-          child: ListTile(
-            dense: true,
-            leading: const Icon(Icons.edit_rounded, size: 22),
-            title: const Text('Rename'),
-            contentPadding: EdgeInsets.zero,
+          height: 44,
+          child: Row(
+            children: [
+              const Icon(Icons.edit_rounded, size: 20),
+              const SizedBox(width: AppTokens.s3),
+              const Text('Rename'),
+            ],
           ),
         ),
         PopupMenuItem(
           value: 'pin',
-          child: ListTile(
-            dense: true,
-            leading: Icon(
-              isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
-              size: 22,
-            ),
-            title: Text(isPinned ? 'Unpin' : 'Pin'),
-            contentPadding: EdgeInsets.zero,
+          height: 44,
+          child: Row(
+            children: [
+              Icon(
+                isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
+                size: 20,
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Text(isPinned ? 'Unpin' : 'Pin'),
+            ],
           ),
         ),
         PopupMenuItem(
           value: 'delete',
-          child: ListTile(
-            dense: true,
-            leading: Icon(
-              Icons.delete_rounded,
-              size: 22,
-              color: theme.colorScheme.error,
-            ),
-            title: Text(
-              'Delete',
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-            contentPadding: EdgeInsets.zero,
+          height: 44,
+          child: Row(
+            children: [
+              Icon(
+                Icons.delete_rounded,
+                size: 20,
+                color: theme.colorScheme.error,
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Text('Delete', style: TextStyle(color: theme.colorScheme.error)),
+            ],
           ),
         ),
       ],
@@ -319,13 +328,12 @@ class _PlayerButtons extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: AppTokens.s2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          FilledButton.icon(
+          FilledButton.tonalIcon(
             onPressed: () {
               final ctx = playContextFromTiles(tiles, 0);
               ref.read(playerProvider).setShuffle(true);
@@ -336,7 +344,7 @@ class _PlayerButtons extends ConsumerWidget {
             icon: const Icon(Icons.shuffle_rounded, size: 20),
             label: const Text('Shuffle'),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppTokens.s3),
           FilledButton.icon(
             onPressed: () {
               final ctx = playContextFromTiles(tiles, 0);

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../../collections/presentation/providers/collections_providers.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
@@ -11,8 +12,7 @@ import '../../data/song_ref_mapper.dart';
 import '../providers/library_providers.dart';
 import '../widgets/song_tile.dart';
 
-/// Songs of one album, artist, or collection — the drill-down target from the
-/// library grids/lists. Loads once; supports play-all in context.
+/// Songs of one album, artist, or collection — the drill-down target.
 class FilteredSongsScreen extends ConsumerStatefulWidget {
   const FilteredSongsScreen({
     super.key,
@@ -59,6 +59,7 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final title =
         widget.collectionLabel ??
         widget.album?.name ??
@@ -95,7 +96,12 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                padding: const EdgeInsets.fromLTRB(
+                  AppTokens.s5,
+                  AppTokens.s1,
+                  AppTokens.s5,
+                  AppTokens.s1,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -104,7 +110,7 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -121,8 +127,11 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
               Expanded(
                 child: ListView.separated(
                   itemCount: tiles.length,
-                  separatorBuilder: (_, _) =>
-                      const Divider(height: 1, indent: 78),
+                  separatorBuilder: (_, _) => const Divider(
+                    height: 0.5,
+                    indent: 80,
+                    endIndent: AppTokens.s4,
+                  ),
                   itemBuilder: (context, index) => SongTile(
                     tile: tiles[index],
                     index: index,

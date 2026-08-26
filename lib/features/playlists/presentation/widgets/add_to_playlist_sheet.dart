@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/theme/app_tokens.dart';
 import '../../data/playlist_models.dart';
 import '../../data/playlist_repository.dart';
 import '../providers/playlist_providers.dart';
@@ -32,6 +33,7 @@ class _AddToPlaylistBodyState extends ConsumerState<_AddToPlaylistBody> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final playlistsAsync = ref.watch(playlistsOverviewProvider);
 
     return DraggableScrollableSheet(
@@ -43,22 +45,25 @@ class _AddToPlaylistBodyState extends ConsumerState<_AddToPlaylistBody> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Handle bar
+            // Handle bar.
             Center(
               child: Container(
-                margin: const EdgeInsets.only(top: 12),
+                margin: const EdgeInsets.only(top: AppTokens.s3),
                 width: 36,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.onSurfaceVariant.withValues(
-                    alpha: 0.3,
-                  ),
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s5,
+                AppTokens.s4,
+                AppTokens.s5,
+                AppTokens.s2,
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -77,7 +82,10 @@ class _AddToPlaylistBodyState extends ConsumerState<_AddToPlaylistBody> {
                 ],
               ),
             ),
-            const Divider(height: 1),
+            Divider(
+              height: 1,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+            ),
             Expanded(
               child: playlistsAsync.when(
                 loading: () => const Center(
@@ -92,7 +100,7 @@ class _AddToPlaylistBodyState extends ConsumerState<_AddToPlaylistBody> {
                         'No playlists yet.\nCreate one using the + button.',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                     );
@@ -174,6 +182,7 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return ListView.builder(
       controller: widget.scrollController,
@@ -186,7 +195,7 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
 
         return membershipAsync.when(
           loading: () => ListTile(
-            leading: _PlaylistIcon(color: theme.colorScheme),
+            leading: _PlaylistIcon(colorScheme: colorScheme),
             title: Text(playlist.name),
             trailing: const SizedBox(
               width: 20,
@@ -195,13 +204,13 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
             ),
           ),
           error: (_, __) => ListTile(
-            leading: _PlaylistIcon(color: theme.colorScheme),
+            leading: _PlaylistIcon(colorScheme: colorScheme),
             title: Text(playlist.name),
           ),
           data: (memberIds) {
             final isMember = memberIds.contains(widget.songRowId);
             return ListTile(
-              leading: _PlaylistIcon(color: theme.colorScheme),
+              leading: _PlaylistIcon(colorScheme: colorScheme),
               title: Text(
                 playlist.name,
                 maxLines: 1,
@@ -210,7 +219,7 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
               subtitle: Text(
                 '${playlist.songCount} ${playlist.songCount == 1 ? 'song' : 'songs'}',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: colorScheme.onSurfaceVariant,
                 ),
               ),
               trailing: Icon(
@@ -218,8 +227,8 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
                     ? Icons.check_circle_rounded
                     : Icons.add_circle_outline_rounded,
                 color: isMember
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.onSurfaceVariant,
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
                 size: 24,
               ),
               onTap: () => _toggle(playlist, isMember),
@@ -240,10 +249,8 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
       }
       widget.onChanged();
       ref.read(playlistRefreshTickProvider.notifier).state++;
-      // Refresh membership for this playlist.
       ref.invalidate(playlistMembershipProvider(playlist.id));
     } catch (_) {
-      // Best-effort; show a subtle message.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -269,7 +276,6 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
     PlaylistRepository repository,
     PlaylistSummary playlist,
   ) async {
-    // Find the index of this song in the playlist.
     final songs = await repository.songsOf(playlist.id, limit: 1000);
     final index = songs.indexWhere((s) => s.song.id == widget.songRowId);
     if (index >= 0) {
@@ -279,9 +285,9 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
 }
 
 class _PlaylistIcon extends StatelessWidget {
-  const _PlaylistIcon({required this.color});
+  const _PlaylistIcon({required this.colorScheme});
 
-  final ColorScheme color;
+  final ColorScheme colorScheme;
 
   @override
   Widget build(BuildContext context) {
@@ -289,12 +295,13 @@ class _PlaylistIcon extends StatelessWidget {
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        color: color.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppTokens.rSm),
       ),
       child: Icon(
         Icons.queue_music_rounded,
-        color: color.onSurfaceVariant.withValues(alpha: 0.7),
+        size: 20,
+        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
       ),
     );
   }

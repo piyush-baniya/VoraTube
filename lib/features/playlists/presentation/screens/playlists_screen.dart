@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/screen_header.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../data/playlist_models.dart';
 import '../providers/playlist_providers.dart';
 import '../widgets/playlist_collage.dart';
@@ -131,12 +133,20 @@ class _PlaylistList extends StatelessWidget {
           for (final p in pinned) _PlaylistTile(playlist: p),
         ],
         if (pinned.isNotEmpty && unpinned.isNotEmpty)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 14, 20, 6),
-            child: Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.s5,
+              AppTokens.s3,
+              AppTokens.s5,
+              AppTokens.s1,
+            ),
+            child: Divider(
+              height: 1,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
           ),
         if (unpinned.isNotEmpty) ...[
-          if (pinned.isEmpty) const SizedBox.shrink(),
+          if (pinned.isEmpty) const SectionLabel(title: 'All'),
           for (final p in unpinned) _PlaylistTile(playlist: p),
         ],
       ],
@@ -152,6 +162,7 @@ class _PlaylistTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Dismissible(
       key: ValueKey('playlist-${playlist.id}'),
@@ -159,8 +170,8 @@ class _PlaylistTile extends ConsumerWidget {
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 24),
-        color: theme.colorScheme.error,
-        child: Icon(Icons.delete_rounded, color: theme.colorScheme.onError),
+        color: colorScheme.error,
+        child: Icon(Icons.delete_rounded, color: colorScheme.onError),
       ),
       confirmDismiss: (_) async {
         return showDialog<bool>(
@@ -175,7 +186,7 @@ class _PlaylistTile extends ConsumerWidget {
               ),
               FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: theme.colorScheme.error,
+                  backgroundColor: colorScheme.error,
                 ),
                 onPressed: () => Navigator.of(ctx).pop(true),
                 child: const Text('Delete'),
@@ -194,34 +205,63 @@ class _PlaylistTile extends ConsumerWidget {
           ).showSnackBar(SnackBar(content: Text('"${playlist.name}" deleted')));
         }
       },
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-        leading: PlaylistCollage(summary: playlist, size: 52, radius: 10),
-        title: Text(
-          playlist.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleMedium,
-        ),
-        subtitle: Text(
-          '${playlist.songCount} ${playlist.songCount == 1 ? 'song' : 'songs'}',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        trailing: playlist.pinned
-            ? Icon(
-                Icons.push_pin_rounded,
-                size: 16,
-                color: theme.colorScheme.onSurfaceVariant.withValues(
-                  alpha: 0.6,
-                ),
-              )
-            : null,
+      child: PressableScale(
         onTap: () => Navigator.of(context).push(
           pushSharedAxis<void>(
             context,
             PlaylistDetailScreen(playlistId: playlist.id, name: playlist.name),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.s5,
+            vertical: AppTokens.s1,
+          ),
+          child: SizedBox(
+            height: 64,
+            child: Row(
+              children: [
+                PlaylistCollage(
+                  summary: playlist,
+                  size: 52,
+                  radius: AppTokens.rSm,
+                ),
+                const SizedBox(width: AppTokens.s3),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        playlist.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${playlist.songCount} ${playlist.songCount == 1 ? 'song' : 'songs'}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (playlist.pinned)
+                  Icon(
+                    Icons.push_pin_rounded,
+                    size: 14,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                const SizedBox(width: AppTokens.s1),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -234,47 +274,55 @@ class _LoadingSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.surfaceContainerHigh;
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s5,
+        vertical: AppTokens.s2,
+      ),
       itemCount: 6,
       itemBuilder: (_, i) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(10),
+        padding: const EdgeInsets.symmetric(vertical: AppTokens.s1),
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(AppTokens.rSm),
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 14,
-                    width: 100 + (i * 20).toDouble(),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(4),
+              const SizedBox(width: AppTokens.s3),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 13,
+                      width: 100 + (i * 20).toDouble(),
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    height: 10,
-                    width: 60,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(4),
+                    const SizedBox(height: 6),
+                    Container(
+                      height: 10,
+                      width: 60,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

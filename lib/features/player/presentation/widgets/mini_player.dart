@@ -4,13 +4,15 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../presentation/screens/full_player_screen.dart';
 import '../providers/player_providers.dart';
 
 /// Compact now-playing bar docked above the bottom navigation.
 ///
+/// Design: Clean, elevated surface with artwork, metadata, and
+/// transport controls. Subtle top border adds depth.
 /// Tapping opens the full-screen player with a Hero artwork transition.
-/// Play/pause and next remain directly accessible.
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key});
 
@@ -26,37 +28,45 @@ class MiniPlayer extends ConsumerWidget {
     }
 
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
           PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 400),
-            reverseTransitionDuration: const Duration(milliseconds: 320),
+            transitionDuration: AppTokens.slow,
+            reverseTransitionDuration: AppTokens.medium,
             pageBuilder: (_, __, ___) => const FullPlayerScreen(),
             transitionsBuilder: (_, animation, __, child) {
               final curved = CurvedAnimation(
                 parent: animation,
-                curve: Curves.easeOutCubic,
-                reverseCurve: Curves.easeInCubic,
+                curve: AppTokens.easeOut,
+                reverseCurve: AppTokens.easeIn,
               );
               return FadeTransition(opacity: curved, child: child);
             },
           ),
         );
       },
-      child: Material(
-        color: theme.colorScheme.surfaceContainerHigh,
-        elevation: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHigh,
+          border: Border(
+            top: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              width: 0.5,
+            ),
+          ),
+        ),
         child: SafeArea(
           top: false,
           child: SizedBox(
             height: 64,
             child: Row(
               children: [
-                const SizedBox(width: 8),
+                const SizedBox(width: AppTokens.s2),
                 _Artwork(path: current.artPath, heroTag: _heroTag),
-                const SizedBox(width: 12),
+                const SizedBox(width: AppTokens.s3),
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -76,7 +86,7 @@ class MiniPlayer extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: colorScheme.onSurfaceVariant,
                           ),
                         ),
                     ],
@@ -89,7 +99,7 @@ class MiniPlayer extends ConsumerWidget {
                     snapshot.isPlaying
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
-                    size: 32,
+                    size: 30,
                   ),
                 ),
                 IconButton(
@@ -99,9 +109,9 @@ class MiniPlayer extends ConsumerWidget {
                           snapshot.repeatMode == RepeatMode.all
                       ? () => ref.read(playerProvider).next()
                       : null,
-                  icon: const Icon(Icons.skip_next_rounded, size: 28),
+                  icon: const Icon(Icons.skip_next_rounded, size: 26),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: AppTokens.s1),
               ],
             ),
           ),
@@ -124,7 +134,7 @@ class _Artwork extends StatelessWidget {
     return Hero(
       tag: heroTag,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppTokens.rSm),
         child: SizedBox(
           width: 48,
           height: 48,
@@ -139,6 +149,7 @@ class _Artwork extends StatelessWidget {
                   color: theme.colorScheme.surfaceContainerHighest,
                   child: Icon(
                     Icons.music_note_rounded,
+                    size: 22,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),

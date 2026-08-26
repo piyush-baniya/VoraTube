@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
+import 'app_tokens.dart';
 
 abstract final class AppTheme {
   static ThemeData get dark => _build(_darkScheme, isDark: true);
@@ -64,13 +65,24 @@ abstract final class AppTheme {
         fontWeight: FontWeight.w700,
         letterSpacing: -0.4,
       ),
-      titleLarge: baseText.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+      titleLarge: baseText.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.2,
+      ),
       titleMedium: baseText.titleMedium?.copyWith(
         fontWeight: FontWeight.w600,
         letterSpacing: -0.1,
       ),
       titleSmall: baseText.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      bodyLarge: baseText.bodyLarge?.copyWith(height: 1.4),
       bodyMedium: baseText.bodyMedium?.copyWith(height: 1.35),
+      bodySmall: baseText.bodySmall?.copyWith(height: 1.3),
+      labelLarge: baseText.labelLarge?.copyWith(
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.1,
+      ),
+      labelMedium: baseText.labelMedium?.copyWith(letterSpacing: 0.2),
+      labelSmall: baseText.labelSmall?.copyWith(letterSpacing: 0.4),
     );
 
     return ThemeData(
@@ -80,8 +92,9 @@ abstract final class AppTheme {
       textTheme: textTheme,
       splashFactory: InkRipple.splashFactory,
       dividerTheme: DividerThemeData(
-        color: scheme.outlineVariant,
-        thickness: 1,
+        color: isDark ? AppColors.dividerDark : AppColors.dividerLight,
+        thickness: 0.5,
+        space: 0.5,
       ),
       appBarTheme: AppBarTheme(
         centerTitle: false,
@@ -119,7 +132,7 @@ abstract final class AppTheme {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           textStyle: textTheme.titleSmall,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppTokens.rMd),
           ),
         ),
       ),
@@ -129,7 +142,7 @@ abstract final class AppTheme {
           side: BorderSide(color: scheme.outline),
           textStyle: textTheme.titleSmall,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(AppTokens.rMd),
           ),
         ),
       ),
@@ -148,6 +161,48 @@ abstract final class AppTheme {
         contentTextStyle: textTheme.bodyMedium?.copyWith(
           color: scheme.onInverseSurface,
         ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTokens.rMd),
+        ),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: isDark
+            ? AppColors.surfaceDark
+            : AppColors.surfaceLight,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppTokens.rXl),
+          ),
+        ),
+        showDragHandle: false,
+        constraints: const BoxConstraints(maxWidth: 640),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: isDark
+            ? AppColors.surfaceRaisedDark
+            : AppColors.surfaceLight,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTokens.rXl),
+        ),
+        titleTextStyle: textTheme.headlineSmall,
+      ),
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTokens.rSm),
+        ),
+        side: BorderSide(
+          color: isDark
+              ? AppColors.borderSubtleDark
+              : AppColors.borderSubtleLight,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTokens.rMd),
+        ),
+        margin: EdgeInsets.zero,
       ),
     );
   }

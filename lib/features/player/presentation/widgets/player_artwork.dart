@@ -1,14 +1,14 @@
 import 'dart:io';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+
+import '../../../../app/theme/app_tokens.dart';
 
 /// Large album artwork for the full-screen player with Hero transition
 /// and smooth fade when the song changes.
 ///
 /// The artwork is the visual centerpiece of the player. When the path
 /// is null/empty or the file doesn't exist, a beautiful fallback is
-/// shown using a gradient and music note icon.
+/// shown using a gradient and decorative elements.
 class PlayerArtwork extends StatelessWidget {
   const PlayerArtwork({
     super.key,
@@ -24,23 +24,22 @@ class PlayerArtwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveFile = _resolveFile();
-    final cardSize = size;
-    final borderRadius = BorderRadius.circular(20);
+    final borderRadius = BorderRadius.circular(AppTokens.rXl);
 
     Widget artwork = AnimatedSwitcher(
-      duration: const Duration(milliseconds: 350),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
+      duration: AppTokens.slow,
+      switchInCurve: AppTokens.easeOut,
+      switchOutCurve: AppTokens.easeIn,
       child: effectiveFile != null
           ? _ArtworkImage(
               key: ValueKey(path),
               file: effectiveFile,
-              size: cardSize,
+              size: size,
               borderRadius: borderRadius,
             )
           : _ArtworkFallback(
               key: const ValueKey('fallback'),
-              size: cardSize,
+              size: size,
               borderRadius: borderRadius,
             ),
     );
@@ -79,18 +78,7 @@ class _ArtworkImage extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         borderRadius: borderRadius,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 40,
-            offset: const Offset(0, 16),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: AppTokens.shadowLg(Colors.black),
       ),
       child: ClipRRect(
         borderRadius: borderRadius,
@@ -127,6 +115,7 @@ class _ArtworkFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Container(
       width: size,
@@ -137,18 +126,12 @@ class _ArtworkFallback extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            theme.colorScheme.surfaceContainerHigh,
-            theme.colorScheme.surfaceContainerHighest,
-            theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+            colorScheme.surfaceContainerHigh,
+            colorScheme.surfaceContainerHighest,
+            colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
           ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 40,
-            offset: const Offset(0, 16),
-          ),
-        ],
+        boxShadow: AppTokens.shadowLg(Colors.black),
       ),
       child: Stack(
         alignment: Alignment.center,
@@ -164,8 +147,8 @@ class _ArtworkFallback extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: theme.colorScheme.outline.withValues(
-                      alpha: 0.06 + i * 0.02,
+                    color: colorScheme.outline.withValues(
+                      alpha: 0.05 + i * 0.015,
                     ),
                     width: 1,
                   ),
@@ -175,8 +158,8 @@ class _ArtworkFallback extends StatelessWidget {
           }),
           Icon(
             Icons.album_rounded,
-            size: size * 0.3,
-            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            size: size * 0.28,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.35),
           ),
         ],
       ),

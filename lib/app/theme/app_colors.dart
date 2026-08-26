@@ -30,4 +30,16 @@ abstract final class AppColors {
   static const Color outlineLight = Color(0xFFDDDACF);
   static const Color textPrimaryLight = Color(0xFF1A191D);
   static const Color textSecondaryLight = Color(0xFF6B6972);
+
+  // ── Semantic surfaces (dark) ──────────────────────────────────────
+  static const Color cardDark = Color(0xFF141416);
+  static const Color cardElevatedDark = Color(0xFF1C1C20);
+  static const Color dividerDark = Color(0xFF1E1E22);
+  static const Color borderSubtleDark = Color(0xFF222228);
+
+  // ── Semantic surfaces (light) ─────────────────────────────────────
+  static const Color cardLight = Color(0xFFFFFFFF);
+  static const Color cardElevatedLight = Color(0xFFF8F7F5);
+  static const Color dividerLight = Color(0xFFEDEBE8);
+  static const Color borderSubtleLight = Color(0xFFE0DDD8);
 }

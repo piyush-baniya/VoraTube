@@ -5,6 +5,7 @@ import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/screen_header.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../../collections/presentation/widgets/collections_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
@@ -59,7 +60,12 @@ class _SongsToolbar extends ConsumerWidget {
     final theme = Theme.of(context);
     final favoritesOnly = ref.watch(favoritesOnlyProvider);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s1,
+        AppTokens.s4,
+        AppTokens.s1,
+      ),
       child: Row(
         children: [
           FilterChip(
@@ -70,7 +76,7 @@ class _SongsToolbar extends ConsumerWidget {
               favoritesOnly
                   ? Icons.favorite_rounded
                   : Icons.favorite_border_rounded,
-              size: 18,
+              size: 16,
               color: favoritesOnly
                   ? theme.colorScheme.primary
                   : theme.colorScheme.onSurfaceVariant,
@@ -82,7 +88,7 @@ class _SongsToolbar extends ConsumerWidget {
           IconButton(
             tooltip: 'Sort',
             onPressed: () => showSortSheet(context, ref),
-            icon: const Icon(Icons.swap_vert_rounded),
+            icon: const Icon(Icons.swap_vert_rounded, size: 22),
           ),
         ],
       ),
@@ -154,7 +160,11 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                     (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
                 separatorBuilder: (_, i) => i == tiles.length - 1
                     ? const SizedBox.shrink()
-                    : const Divider(height: 1, indent: 78),
+                    : const Divider(
+                        height: 0.5,
+                        indent: 80,
+                        endIndent: AppTokens.s4,
+                      ),
                 itemBuilder: (context, index) {
                   if (index >= tiles.length) {
                     return const Padding(
@@ -207,12 +217,12 @@ class _AlbumsView extends ConsumerWidget {
           );
         }
         return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+          padding: const EdgeInsets.all(AppTokens.s3),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 200,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 0.82,
+            mainAxisSpacing: AppTokens.s2,
+            crossAxisSpacing: AppTokens.s2,
+            childAspectRatio: 0.78,
           ),
           itemCount: albums.length,
           itemBuilder: (context, index) {
@@ -289,9 +299,12 @@ class _GenresView extends ConsumerWidget {
           );
         }
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.s4,
+            vertical: AppTokens.s3,
+          ),
           itemCount: genres.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          separatorBuilder: (_, _) => const SizedBox(height: AppTokens.s2),
           itemBuilder: (context, index) =>
               GenreTile(genre: genres[index], onTap: () {}),
         );

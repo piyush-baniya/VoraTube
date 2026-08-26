@@ -1,7 +1,12 @@
 ﻿import 'package:flutter/material.dart';
 
 import '../../data/library_models.dart';
+import '../../../../app/theme/app_tokens.dart';
 
+/// Library section selector with animated pill transitions.
+///
+/// Uses a smooth AnimatedContainer for the selected state, providing
+/// clear visual feedback with the accent color.
 class SectionSelector extends StatelessWidget {
   const SectionSelector({
     super.key,
@@ -22,13 +27,15 @@ class SectionSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return SizedBox(
       height: 44,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
         itemCount: _labels.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: AppTokens.s2),
         itemBuilder: (context, index) {
           final section = _labels.keys.elementAt(index);
           final isSelected = section == selected;
@@ -36,26 +43,26 @@ class SectionSelector extends StatelessWidget {
             button: true,
             selected: isSelected,
             label: _labels[section],
-            child: InkWell(
+            child: GestureDetector(
               onTap: () => onChanged(section),
-              borderRadius: BorderRadius.circular(20),
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                padding: const EdgeInsets.symmetric(horizontal: 18),
+                duration: AppTokens.normal,
+                curve: AppTokens.easeOut,
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s5),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(20),
+                      ? colorScheme.primary
+                      : colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(AppTokens.rXl),
                 ),
                 child: Text(
                   _labels[section]!,
                   style: theme.textTheme.titleSmall?.copyWith(
+                    fontSize: 13,
                     color: isSelected
-                        ? theme.colorScheme.onPrimary
-                        : theme.colorScheme.onSurfaceVariant,
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
