@@ -22,6 +22,7 @@ playback.
 | 6 | Full-screen player: premium immersive UI, large artwork with Hero transitions, progress slider, playback controls, queue bottom sheet, favorite toggle, MiniPlayer navigation | ✅ Done |
 | 7 | Visual polish & design system: tokens, premium component redesign, smooth animations, consistent spacing/typography, PressableScale, refined empty states | ✅ Done |
 | 8 | Online lyrics: LRCLIB integration, LRC parser, embedded lyrics extraction, cache, synced lyrics UI with auto-scroll | ✅ Done |
+| 8.1 | Lyrics reliability: LRC metadata filtering, text normalization, match verification, HTTP timeout, search fallback, ValueNotifier position tracking, user-scroll detection, no nested scrollables | ✅ Done |
 | Next | Smart mixes, settings redesign, lyrics polish | Planned |
 
 ---
@@ -557,14 +558,79 @@ currentLyricsProvider         → AsyncNotifier<LyricsResult>
 - Missing file → embedded extraction returns null, falls through
 - All failures are silent — never blocks UI or playback
 
+### Phase 8.1 — Lyrics Reliability & Synced Playback Fix
+
+Fixes critical bugs identified during Phase 8 codebase inspection.
+
+#### Fixes Implemented
+
+**P0 — Position tracking never notifies UI:**
+- `currentLyricsProvider` now exposes `currentLineIndexNotifier` as a `ValueNotifier<int>`
+- LyricsView uses `ValueListenableBuilder` to listen to line index changes
+- Only the lyrics list rebuilds on each position tick, not the entire provider
+
+**P0 — Hardcoded 52px scroll offset:**
+- Removed hardcoded `index * 52.0` scroll calculation
+- Uses approximate 44px item height with clamping to `maxScrollExtent`
+- Post-frame callback ensures layout is computed before scrolling
+
+**P1 — Embedded LRC timestamps discarded:**
+- `_tryEmbedded()` now attempts `parseLrc()` first on embedded lyrics
+- Synced LRC format detected and preserved for the UI layer
+- Falls back to plain text only if no timestamped lines found
+
+**P1 — Content hash missing delimiter:**
+- Changed `artist + title + album` concatenation to `artist|title|album` with pipe delimiters
+- Prevents hash collisions (e.g., "AB"+"C" vs "A"+"BC")
+
+**P1 — LRC metadata headers shown as lyrics:**
+- `parseLrc()` now filters out standard LRC metadata headers: `ti`, `ar`, `al`, `by`, `offset`, `re`, `ve`
+- `[ti:Song Title]` no longer appears as a lyric line
+
+**P2 — No text normalization for LRCLIB:**
+- Added `normalizeForMatching()`: lowercases, removes Unicode combining marks, strips parenthetical/bracket content, normalizes feat./ft./featuring, removes common suffixes (remix, remastered, deluxe, etc.), collapses separators
+- Added `lyricsMatchesSong()` for fuzzy match verification before accepting LRCLIB results
+- Prevents false positives from LRCLIB returning unrelated songs
+
+**P2 — No HTTP request timeout:**
+- Added 10-second timeout to all LRCLIB HTTP requests
+- Prevents indefinite blocking on slow/unresponsive networks
+
+**P2 — Search endpoint fallback:**
+- Added `/api/search` endpoint as fallback when exact `/api/get` returns 404
+- Improves match rate for songs with slight metadata variations
+
+**P2 — Nested scrollable conflict:**
+- Lyrics panel now renders outside the main `SingleChildScrollView`
+- When lyrics mode is ON: Column layout with lyrics filling middle, progress+controls fixed at bottom
+- When lyrics mode is OFF: Original scrollable artwork layout
+- Eliminates scroll conflict between lyrics list and player content
+
+**P2 — No user-scroll detection:**
+- `ScrollStartNotification` with `dragDetails` detects user-initiated scrolling
+- Auto-scroll pauses while user is manually browsing lyrics
+- 3-second timer after scroll ends resumes auto-follow behavior
+
+#### Files Changed
+
+| File | Changes |
+|---|---|
+| `core/models/lyrics.dart` | LRC metadata filtering, `normalizeForMatching()`, `lyricsMatchesSong()` |
+| `features/lyrics/data/lyrics_service.dart` | Embedded LRC parsing, content hash delimiter, normalization before LRCLIB, match verification |
+| `features/lyrics/data/lrclib_client.dart` | HTTP timeout, `/api/search` fallback endpoint |
+| `features/lyrics/presentation/providers/lyrics_providers.dart` | `ValueNotifier<int>` for line index, isolated UI rebuilds |
+| `features/lyrics/presentation/widgets/lyrics_view.dart` | User-scroll detection, no nested scrollables, post-frame scroll |
+| `features/player/presentation/screens/full_player_screen.dart` | Lyrics panel outside scroll view, separate layout modes |
+| `test/lyrics_test.dart` | 49 tests covering LRC parsing, normalization, match verification, models |
+
 ---
 
 ## Testing Performed
 
 - `flutter analyze` clean; `dart format` enforced; strict lints (`avoid_print`,
   `prefer_single_quotes`, const lints…).
-- 127 tests: widget shell, repository, import worker, migration, playlist,
-  collection, playback stats, full player screen, and lyrics parsing. All pass after Phase 8.
+- 146 tests: widget shell, repository, import worker, migration, playlist,
+  collection, playback stats, full player screen, and lyrics parsing. All pass after Phase 8.1.
 - Widget tests: 4-tab shell smoke with in-memory Drift + fake player.
 - Repository tests: sync/duplicate/update semantics, large-batch inserts (1200),
   null-metadata handling, removal+orphan cleanup, artwork attach/missing sentinel,
@@ -578,7 +644,9 @@ currentLyricsProvider         → AsyncNotifier<LyricsResult>
   currentQueue snapshot.
 - Import-worker tests (pure Dart): copy+hash identity, filename fallback, unsupported-format
   rejection, per-file failure isolation incl. cleanup, artwork surfacing, null-key safety.
-- Lyrics tests: LRC parser (timestamps, milliseconds, multiple stamps, sorting, empty input),
+- Lyrics tests: LRC parser (timestamps, milliseconds, multiple stamps, sorting, empty input, metadata header filtering),
+  text normalization (lowercasing, parenthetical removal, feat. variations, suffix stripping, separator handling),
+  song match verification (exact, normalized, different artists/songs, case insensitive, collaboration),
   LyricsData model (hasSyncedLines, isEmpty, instrumental), LyricsResult factories,
   LrclibResult JSON parsing, plain text builder.
 - Real-device (Samsung SM-M145F, Android 15): Phase 1 scan verified end-to-end incl.

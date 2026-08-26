@@ -65,41 +65,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
               ),
             ),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final maxArtSize = constraints.maxWidth * 0.82;
-                  final artSize = maxArtSize.clamp(200.0, 360.0);
-
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTokens.s6,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+              child: _showLyrics
+                  ? Column(
                       children: [
-                        SizedBox(
-                          height: (constraints.maxHeight * 0.04).clamp(
-                            8.0,
-                            40.0,
-                          ),
-                        ),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 280),
-                          child: _showLyrics
-                              ? const LyricsView(key: ValueKey('lyrics_panel'))
-                              : PlayerArtwork(
-                                  key: const ValueKey('artwork_panel'),
-                                  path: current.artPath,
-                                  heroTag: FullPlayerScreen._heroTag,
-                                  size: artSize,
-                                ),
-                        ),
-                        SizedBox(
-                          height: (constraints.maxHeight * 0.04).clamp(
-                            12.0,
-                            40.0,
-                          ),
-                        ),
+                        const SizedBox(height: AppTokens.s2),
+                        const Expanded(child: LyricsView()),
+                        const SizedBox(height: AppTokens.s4),
                         _SongMetadata(
                           title: current.title,
                           artist: current.artist,
@@ -111,10 +82,51 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
                         _ControlsConsumer(),
                         SizedBox(height: bottomPadding + AppTokens.s4),
                       ],
+                    )
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final maxArtSize = constraints.maxWidth * 0.82;
+                        final artSize = maxArtSize.clamp(200.0, 360.0);
+
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppTokens.s6,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                height: (constraints.maxHeight * 0.04).clamp(
+                                  8.0,
+                                  40.0,
+                                ),
+                              ),
+                              PlayerArtwork(
+                                path: current.artPath,
+                                heroTag: FullPlayerScreen._heroTag,
+                                size: artSize,
+                              ),
+                              SizedBox(
+                                height: (constraints.maxHeight * 0.04).clamp(
+                                  12.0,
+                                  40.0,
+                                ),
+                              ),
+                              _SongMetadata(
+                                title: current.title,
+                                artist: current.artist,
+                                identityKey: current.identityKey,
+                              ),
+                              const SizedBox(height: AppTokens.s4),
+                              _PositionConsumer(),
+                              const SizedBox(height: AppTokens.s2),
+                              _ControlsConsumer(),
+                              SizedBox(height: bottomPadding + AppTokens.s4),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         ),

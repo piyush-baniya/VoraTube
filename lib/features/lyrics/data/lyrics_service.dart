@@ -17,10 +17,16 @@ class LyricsService {
   final AppDatabase _db;
   final LrclibClient _lrclib;
 
+  /// Computes a content-addressable hash for lyrics caching.
+  ///
+  /// Uses pipe delimiters to prevent hash collisions between
+  /// different combinations of artist/title/album fields.
   String _contentHash(String artist, String title, String? album) {
     final normalized = StringBuffer()
       ..write(artist.toLowerCase().trim())
+      ..write('|')
       ..write(title.toLowerCase().trim())
+      ..write('|')
       ..write((album ?? '').toLowerCase().trim());
     return md5.convert(utf8.encode(normalized.toString())).toString();
   }
@@ -41,10 +47,6 @@ class LyricsService {
       return LyricsResult.loaded(online, LyricsSource.lrclib);
     }
 
-    if (embedded != null && embedded.isInstrumental) {
-      return LyricsResult.loaded(embedded, LyricsSource.embedded);
-    }
-
     return const LyricsResult.notFound();
   }
 
@@ -60,7 +62,20 @@ class LyricsService {
       final lyricsText = metadata.lyrics;
       if (lyricsText == null || lyricsText.trim().isEmpty) return null;
 
-      return _buildFromPlainText(lyricsText.trim());
+      final trimmed = lyricsText.trim();
+
+      // Try parsing as LRC first (supports synced lyrics in embedded metadata)
+      final lrcLines = parseLrc(trimmed);
+      if (lrcLines.isNotEmpty && lrcLines.any((l) => l.isTimestamped)) {
+        return LyricsData(
+          lines: lrcLines,
+          plainText: plainTextFromLines(lrcLines),
+          syncedLrc: trimmed,
+        );
+      }
+
+      // Fall back to plain text
+      return _buildFromPlainText(trimmed);
     } catch (_) {
       return null;
     }
@@ -106,14 +121,36 @@ class LyricsService {
           ? (song.durationMs ~/ 1000)
           : null;
 
-      final result = await _lrclib.fetchByTrack(
+      // Try exact match first
+      var result = await _lrclib.fetchByTrack(
         trackName: song.title,
-        artistName: song.artist ?? 'Unknown',
+        artistName: song.artist ?? '',
         albumName: song.album,
         durationSec: durationSec,
       );
 
+      // Fall back to fuzzy search if exact match fails
+      if (result == null || !result.hasLyrics) {
+        result = await _lrclib.searchByTrack(
+          trackName: song.title,
+          artistName: song.artist ?? '',
+          albumName: song.album,
+        );
+      }
+
       if (result == null || !result.hasLyrics) return null;
+
+      // Verify the result plausibly matches the requested song
+      if (song.artist != null &&
+          song.artist!.isNotEmpty &&
+          !lyricsMatchesSong(
+            resultTrackName: result.trackName,
+            resultArtistName: result.artistName,
+            requestedTrackName: song.title,
+            requestedArtistName: song.artist!,
+          )) {
+        return null;
+      }
 
       final data = _buildFromLrclib(result);
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/models/lyrics.dart';
@@ -23,7 +24,12 @@ final lyricsServiceProvider = Provider<LyricsService>((ref) {
 /// Tracks the current lyrics state for the playing song.
 ///
 /// Automatically re-fetches when the track changes. Exposes the lyrics
-/// data, current line index, and status for the UI to render.
+/// data and a separate [currentLineIndexNotifier] for real-time position
+/// updates. The [currentLineIndexNotifier] is a [ValueNotifier<int>] that
+/// updates on every position tick WITHOUT triggering a full provider rebuild.
+///
+/// The UI watches [currentLyricsProvider] for lyrics data and
+/// [currentLineIndexNotifier] for the active line index.
 final currentLyricsProvider =
     AsyncNotifierProvider<CurrentLyricsNotifier, LyricsResult>(
       CurrentLyricsNotifier.new,
@@ -33,16 +39,23 @@ class CurrentLyricsNotifier extends AsyncNotifier<LyricsResult> {
   StreamSubscription<Duration>? _positionSub;
   int _currentLineIndex = -1;
 
+  /// Exposes the current line index as a [ValueNotifier] for efficient
+  /// UI updates. Widgets watch this instead of rebuilding the entire
+  /// provider on every position tick.
+  final ValueNotifier<int> currentLineIndexNotifier = ValueNotifier<int>(-1);
+
   int get currentLineIndex => _currentLineIndex;
 
   @override
   Future<LyricsResult> build() async {
     ref.onDispose(() {
       _positionSub?.cancel();
+      currentLineIndexNotifier.dispose();
     });
 
     final snapshot = ref.watch(playbackSnapshotProvider).value;
     if (snapshot == null || !snapshot.hasTrack) {
+      _resetLineIndex();
       return const LyricsResult.notFound();
     }
 
@@ -50,11 +63,18 @@ class CurrentLyricsNotifier extends AsyncNotifier<LyricsResult> {
     final service = ref.read(lyricsServiceProvider);
     final result = await service.getLyrics(song);
 
+    _resetLineIndex();
+
     if (result.data?.hasSyncedLines == true) {
       _startPositionTracking();
     }
 
     return result;
+  }
+
+  void _resetLineIndex() {
+    _currentLineIndex = -1;
+    currentLineIndexNotifier.value = -1;
   }
 
   void _startPositionTracking() {
@@ -82,6 +102,7 @@ class CurrentLyricsNotifier extends AsyncNotifier<LyricsResult> {
 
     if (newIndex != _currentLineIndex) {
       _currentLineIndex = newIndex;
+      currentLineIndexNotifier.value = newIndex;
     }
   }
 

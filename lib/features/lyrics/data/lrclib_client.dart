@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 const _baseUrl = 'https://lrclib.net/api';
 const _userAgent = 'VoraTube/1.0.0 (https://github.com/vora-tube/vora-tube)';
 const _requestDelay = Duration(milliseconds: 300);
+const _requestTimeout = Duration(seconds: 10);
 
 class LrclibClient {
   LrclibClient({http.Client? client}) : _client = client ?? http.Client();
@@ -25,13 +26,15 @@ class LrclibClient {
 
   Future<http.Response> _get(Uri uri) async {
     await _throttle();
-    final response = await _client.get(
-      uri,
-      headers: {'User-Agent': _userAgent},
-    );
+    final response = await _client
+        .get(uri, headers: {'User-Agent': _userAgent})
+        .timeout(_requestTimeout);
     return response;
   }
 
+  /// Fetches lyrics using the exact-match `/get` endpoint.
+  ///
+  /// Returns null on 404, throws [RateLimitException] on 429.
   Future<LrclibResult?> fetchByTrack({
     required String trackName,
     required String artistName,
@@ -60,6 +63,49 @@ class LrclibClient {
       }
       if (response.statusCode == 404) {
         return null;
+      }
+      if (response.statusCode == 429) {
+        final retryAfter = response.headers['retry-after'];
+        final seconds = retryAfter != null ? int.tryParse(retryAfter) : null;
+        throw RateLimitException(retrySeconds: seconds);
+      }
+      return null;
+    } on RateLimitException {
+      rethrow;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Searches for lyrics using the fuzzy `/search` endpoint.
+  ///
+  /// Falls back to this when the exact `/get` endpoint returns 404.
+  /// Returns the best matching result, or null if nothing matches.
+  Future<LrclibResult?> searchByTrack({
+    required String trackName,
+    required String artistName,
+    String? albumName,
+    int? durationSec,
+  }) async {
+    final params = <String, String>{
+      'track_name': trackName,
+      'artist_name': artistName,
+    };
+    if (albumName != null && albumName.isNotEmpty) {
+      params['album_name'] = albumName;
+    }
+
+    final uri = Uri.parse('$_baseUrl/search').replace(queryParameters: params);
+
+    try {
+      final response = await _get(uri);
+
+      if (response.statusCode == 200) {
+        final jsonList = jsonDecode(response.body) as List<dynamic>;
+        if (jsonList.isEmpty) return null;
+
+        // Pick the first result (LRCLIB sorts by relevance)
+        return LrclibResult.fromJson(jsonList.first as Map<String, dynamic>);
       }
       if (response.statusCode == 429) {
         final retryAfter = response.headers['retry-after'];
