@@ -14,13 +14,14 @@ part 'app_database.g.dart';
     PlaylistSongs,
     KvEntries,
     ScanStates,
+    LyricsCache,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -46,6 +47,9 @@ class AppDatabase extends _$AppDatabase {
           "UPDATE artists SET artist_key = 'ms:' || media_store_artist_id "
           'WHERE artist_key IS NULL',
         );
+      }
+      if (from < 3) {
+        await m.createTable(lyricsCache);
       }
     },
   );

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
+import '../../../lyrics/presentation/widgets/lyrics_view.dart';
 import '../providers/player_providers.dart';
 import '../widgets/player_artwork.dart';
 import '../widgets/player_controls.dart';
@@ -18,13 +19,21 @@ import '../widgets/queue_sheet.dart';
 /// - Only [PlayerProgress] watches [playbackPositionProvider].
 /// - Artwork uses [AnimatedSwitcher] to cross-fade on song changes.
 /// - Favorite state resolves via [currentSongIsFavoriteProvider].
-class FullPlayerScreen extends ConsumerWidget {
+/// - Lyrics panel toggles via a button in the top bar.
+class FullPlayerScreen extends ConsumerStatefulWidget {
   const FullPlayerScreen({super.key});
 
   static const _heroTag = 'player_artwork_hero';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FullPlayerScreen> createState() => _FullPlayerScreenState();
+}
+
+class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
+  bool _showLyrics = false;
+
+  @override
+  Widget build(BuildContext context) {
     final snapshot = ref.watch(playbackSnapshotProvider).value;
 
     if (snapshot == null || !snapshot.hasTrack) {
@@ -49,7 +58,11 @@ class FullPlayerScreen extends ConsumerWidget {
           children: [
             SafeArea(
               bottom: false,
-              child: _TopBar(onQueueTap: () => QueueSheet.show(context)),
+              child: _TopBar(
+                onQueueTap: () => QueueSheet.show(context),
+                onLyricsTap: () => setState(() => _showLyrics = !_showLyrics),
+                showLyricsActive: _showLyrics,
+              ),
             ),
             Expanded(
               child: LayoutBuilder(
@@ -70,10 +83,16 @@ class FullPlayerScreen extends ConsumerWidget {
                             40.0,
                           ),
                         ),
-                        PlayerArtwork(
-                          path: current.artPath,
-                          heroTag: _heroTag,
-                          size: artSize,
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 280),
+                          child: _showLyrics
+                              ? const LyricsView(key: ValueKey('lyrics_panel'))
+                              : PlayerArtwork(
+                                  key: const ValueKey('artwork_panel'),
+                                  path: current.artPath,
+                                  heroTag: FullPlayerScreen._heroTag,
+                                  size: artSize,
+                                ),
                         ),
                         SizedBox(
                           height: (constraints.maxHeight * 0.04).clamp(
@@ -105,9 +124,15 @@ class FullPlayerScreen extends ConsumerWidget {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onQueueTap});
+  const _TopBar({
+    required this.onQueueTap,
+    required this.onLyricsTap,
+    required this.showLyricsActive,
+  });
 
   final VoidCallback onQueueTap;
+  final VoidCallback onLyricsTap;
+  final bool showLyricsActive;
 
   @override
   Widget build(BuildContext context) {
@@ -127,6 +152,17 @@ class _TopBar extends StatelessWidget {
             tooltip: 'Close',
           ),
           const Spacer(),
+          IconButton(
+            onPressed: onLyricsTap,
+            icon: Icon(
+              Icons.lyrics_rounded,
+              size: 22,
+              color: showLyricsActive
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
+            ),
+            tooltip: 'Lyrics',
+          ),
           IconButton(
             onPressed: onQueueTap,
             icon: const Icon(Icons.queue_music_rounded, size: 22),

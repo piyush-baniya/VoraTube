@@ -21,7 +21,8 @@ playback.
 | 5 | Playlists & collections: full CRUD, playlist detail, add-to-playlist sheet, song-tile menu, collections strip (Favorites/Recently Added/Most Played/Recently Played), playback stats recording | ✅ Done |
 | 6 | Full-screen player: premium immersive UI, large artwork with Hero transitions, progress slider, playback controls, queue bottom sheet, favorite toggle, MiniPlayer navigation | ✅ Done |
 | 7 | Visual polish & design system: tokens, premium component redesign, smooth animations, consistent spacing/typography, PressableScale, refined empty states | ✅ Done |
-| Next | Lyrics, smart mixes, settings redesign | Planned |
+| 8 | Online lyrics: LRCLIB integration, LRC parser, embedded lyrics extraction, cache, synced lyrics UI with auto-scroll | ✅ Done |
+| Next | Smart mixes, settings redesign, lyrics polish | Planned |
 
 ---
 
@@ -202,10 +203,10 @@ coarse `PlayerSnapshot` emits strictly on meaningful changes.
 
 ---
 
-## Database (Drift / SQLite, schemaVersion 2)
+## Database (Drift / SQLite, schemaVersion 3)
 
 Tables: `songs` · `albums` · `artists` · `song_stats` · `playlists` ·
-`playlist_songs` · `kv_entries` · `scan_states`
+`playlist_songs` · `kv_entries` · `scan_states` · `lyrics_cache`
 
 Key columns:
 
@@ -222,6 +223,8 @@ Indexes: `songs(album_row_id)` · `songs(artist_row_id)` · `songs(title_search)
 Migration v1→v2 (`app_database.onUpgrade`): adds new columns via `TableMigration`,
 then backfills `album_key='ms:'||media_store_album_id`. Verified by
 `test/migration_test.dart`.
+
+Migration v2→v3: adds `lyrics_cache` table for online lyrics persistence.
 
 Genres intentionally have **no table**: derived via indexed `GROUP BY songs.genre`.
 
@@ -476,12 +479,92 @@ Added component themes for consistency:
 
 ---
 
+## Phase 8 — Online Lyrics
+
+### Lyrics Architecture
+
+The lyrics feature is the **only planned online functionality** in VoraTube.
+It follows a priority chain: embedded → cache → LRCLIB → not found.
+
+```
+LyricsService.getLyrics(SongRef)
+  ├─ 1. _tryEmbedded()    → readMetadata(file).lyrics → parse if LRC
+  ├─ 2. _tryCache()       → lyrics_cache table lookup by content hash
+  ├─ 3. _tryOnline()      → LRCLIB API (GET /api/get)
+  │     ├─ throttle: 300ms between requests
+  │     ├─ User-Agent: 'VoraTube/1.0.0 (...)'
+  │     └─ 429 → honor Retry-After, return offline
+  └─ 4. Cache result      → lyrics_cache table (MD5 hash of artist+title+album)
+```
+
+### LRCLIB Integration
+
+- **API:** `https://lrclib.net/api/get` — free, no API key required
+- **Parameters:** `track_name` (required), `artist_name` (required), `album_name` (recommended), `duration` (seconds, improves matching)
+- **Response:** `plainLyrics` (untimed text), `syncedLyrics` (LRC format), `instrumental` flag
+- **Rate limit:** Generous but must throttle; 429 with `Retry-After` header
+- **User-Agent:** Required by LRCLIB policy (`VoraTube/1.0.0`)
+
+### Data Model
+
+| Type | File | Purpose |
+|---|---|---|
+| `LyricsLine` | `core/models/lyrics.dart` | Single line with text + optional `startTimeMs` |
+| `LyricsData` | `core/models/lyrics.dart` | Lines, plainText, syncedLrc, isInstrumental, source |
+| `LyricsResult` | `core/models/lyrics.dart` | Status wrapper (loading/loaded/notFound/error/offline) |
+| `LrclibResult` | `features/lyrics/data/lrclib_client.dart` | LRCLIB JSON response model |
+
+### LRC Parser
+
+Parses standard LRC format: `[mm:ss.xx] Text`
+- Supports 2-digit and 3-digit milliseconds
+- Handles multiple timestamps per line
+- Sorts by timestamp
+- Untimed lines preserved as plain lyrics
+
+### Cache
+
+- `lyrics_cache` table: `content_hash` (PK), `identity_key`, `lyrics_json`, `source`, `fetched_at`
+- Content hash = MD5 of normalized (artist + title + album)
+- Cache writes are best-effort (failures silently ignored)
+- Embedded lyrics bypass cache entirely
+
+### Full Player Integration
+
+- **Lyrics button** in top bar (between close and queue)
+- Toggle shows/hides lyrics panel with `AnimatedSwitcher` (280ms)
+- **Synced lyrics:** Current line highlighted, auto-scrolls, tap-to-seek
+- **Plain lyrics:** Static centered list
+- **Empty states:** "No lyrics available", "Instrumental", "Offline — lyrics unavailable"
+- **Position tracking:** `CurrentLyricsNotifier` subscribes to position stream, updates line index
+
+### Provider Chain
+
+```
+lrclibClientProvider          → LrclibClient (disposed on cleanup)
+lyricsServiceProvider         → LyricsService (db + lrclib)
+currentLyricsProvider         → AsyncNotifier<LyricsResult>
+  └─ watches playbackSnapshotProvider
+  └─ re-fetches on track change
+  └─ subscribes to position stream for synced lyrics
+```
+
+### Error Handling
+
+- Network failure → returns `notFound`, song continues playing
+- Rate limit (429) → returns `offline`, honors `Retry-After`
+- Corrupt cache → falls through to online fetch
+- Missing file → embedded extraction returns null, falls through
+- All failures are silent — never blocks UI or playback
+
+---
+
 ## Testing Performed
 
 - `flutter analyze` clean; `dart format` enforced; strict lints (`avoid_print`,
   `prefer_single_quotes`, const lints…).
-- 98 tests: widget shell, repository, import worker, migration, playlist,
-  collection, playback stats, and full player screen. All pass after Phase 7.
+- 127 tests: widget shell, repository, import worker, migration, playlist,
+  collection, playback stats, full player screen, and lyrics parsing. All pass after Phase 8.
 - Widget tests: 4-tab shell smoke with in-memory Drift + fake player.
 - Repository tests: sync/duplicate/update semantics, large-batch inserts (1200),
   null-metadata handling, removal+orphan cleanup, artwork attach/missing sentinel,
@@ -495,6 +578,9 @@ Added component themes for consistency:
   currentQueue snapshot.
 - Import-worker tests (pure Dart): copy+hash identity, filename fallback, unsupported-format
   rejection, per-file failure isolation incl. cleanup, artwork surfacing, null-key safety.
+- Lyrics tests: LRC parser (timestamps, milliseconds, multiple stamps, sorting, empty input),
+  LyricsData model (hasSyncedLines, isEmpty, instrumental), LyricsResult factories,
+  LrclibResult JSON parsing, plain text builder.
 - Real-device (Samsung SM-M145F, Android 15): Phase 1 scan verified end-to-end incl.
   incremental re-scan zeros and 87/89 artwork coverage. Playback verified manually
   (notification/lock-screen controls appear; background audio persists).

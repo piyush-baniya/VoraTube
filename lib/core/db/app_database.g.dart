@@ -3533,6 +3533,385 @@ class ScanStatesCompanion extends UpdateCompanion<ScanStateEntry> {
   }
 }
 
+class $LyricsCacheTable extends LyricsCache
+    with TableInfo<$LyricsCacheTable, LyricsCacheEntry> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LyricsCacheTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _contentHashMeta = const VerificationMeta(
+    'contentHash',
+  );
+  @override
+  late final GeneratedColumn<String> contentHash = GeneratedColumn<String>(
+    'content_hash',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _identityKeyMeta = const VerificationMeta(
+    'identityKey',
+  );
+  @override
+  late final GeneratedColumn<String> identityKey = GeneratedColumn<String>(
+    'identity_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lyricsJsonMeta = const VerificationMeta(
+    'lyricsJson',
+  );
+  @override
+  late final GeneratedColumn<String> lyricsJson = GeneratedColumn<String>(
+    'lyrics_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fetchedAtMeta = const VerificationMeta(
+    'fetchedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> fetchedAt = GeneratedColumn<DateTime>(
+    'fetched_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    contentHash,
+    identityKey,
+    lyricsJson,
+    source,
+    fetchedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'lyrics_cache';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LyricsCacheEntry> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('content_hash')) {
+      context.handle(
+        _contentHashMeta,
+        contentHash.isAcceptableOrUnknown(
+          data['content_hash']!,
+          _contentHashMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_contentHashMeta);
+    }
+    if (data.containsKey('identity_key')) {
+      context.handle(
+        _identityKeyMeta,
+        identityKey.isAcceptableOrUnknown(
+          data['identity_key']!,
+          _identityKeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_identityKeyMeta);
+    }
+    if (data.containsKey('lyrics_json')) {
+      context.handle(
+        _lyricsJsonMeta,
+        lyricsJson.isAcceptableOrUnknown(data['lyrics_json']!, _lyricsJsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lyricsJsonMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(
+        _fetchedAtMeta,
+        fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fetchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {contentHash};
+  @override
+  LyricsCacheEntry map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LyricsCacheEntry(
+      contentHash: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content_hash'],
+      )!,
+      identityKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}identity_key'],
+      )!,
+      lyricsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}lyrics_json'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      fetchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}fetched_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LyricsCacheTable createAlias(String alias) {
+    return $LyricsCacheTable(attachedDatabase, alias);
+  }
+}
+
+class LyricsCacheEntry extends DataClass
+    implements Insertable<LyricsCacheEntry> {
+  final String contentHash;
+  final String identityKey;
+  final String lyricsJson;
+  final String source;
+  final DateTime fetchedAt;
+  const LyricsCacheEntry({
+    required this.contentHash,
+    required this.identityKey,
+    required this.lyricsJson,
+    required this.source,
+    required this.fetchedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['content_hash'] = Variable<String>(contentHash);
+    map['identity_key'] = Variable<String>(identityKey);
+    map['lyrics_json'] = Variable<String>(lyricsJson);
+    map['source'] = Variable<String>(source);
+    map['fetched_at'] = Variable<DateTime>(fetchedAt);
+    return map;
+  }
+
+  LyricsCacheCompanion toCompanion(bool nullToAbsent) {
+    return LyricsCacheCompanion(
+      contentHash: Value(contentHash),
+      identityKey: Value(identityKey),
+      lyricsJson: Value(lyricsJson),
+      source: Value(source),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory LyricsCacheEntry.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LyricsCacheEntry(
+      contentHash: serializer.fromJson<String>(json['contentHash']),
+      identityKey: serializer.fromJson<String>(json['identityKey']),
+      lyricsJson: serializer.fromJson<String>(json['lyricsJson']),
+      source: serializer.fromJson<String>(json['source']),
+      fetchedAt: serializer.fromJson<DateTime>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'contentHash': serializer.toJson<String>(contentHash),
+      'identityKey': serializer.toJson<String>(identityKey),
+      'lyricsJson': serializer.toJson<String>(lyricsJson),
+      'source': serializer.toJson<String>(source),
+      'fetchedAt': serializer.toJson<DateTime>(fetchedAt),
+    };
+  }
+
+  LyricsCacheEntry copyWith({
+    String? contentHash,
+    String? identityKey,
+    String? lyricsJson,
+    String? source,
+    DateTime? fetchedAt,
+  }) => LyricsCacheEntry(
+    contentHash: contentHash ?? this.contentHash,
+    identityKey: identityKey ?? this.identityKey,
+    lyricsJson: lyricsJson ?? this.lyricsJson,
+    source: source ?? this.source,
+    fetchedAt: fetchedAt ?? this.fetchedAt,
+  );
+  LyricsCacheEntry copyWithCompanion(LyricsCacheCompanion data) {
+    return LyricsCacheEntry(
+      contentHash: data.contentHash.present
+          ? data.contentHash.value
+          : this.contentHash,
+      identityKey: data.identityKey.present
+          ? data.identityKey.value
+          : this.identityKey,
+      lyricsJson: data.lyricsJson.present
+          ? data.lyricsJson.value
+          : this.lyricsJson,
+      source: data.source.present ? data.source.value : this.source,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LyricsCacheEntry(')
+          ..write('contentHash: $contentHash, ')
+          ..write('identityKey: $identityKey, ')
+          ..write('lyricsJson: $lyricsJson, ')
+          ..write('source: $source, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(contentHash, identityKey, lyricsJson, source, fetchedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LyricsCacheEntry &&
+          other.contentHash == this.contentHash &&
+          other.identityKey == this.identityKey &&
+          other.lyricsJson == this.lyricsJson &&
+          other.source == this.source &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class LyricsCacheCompanion extends UpdateCompanion<LyricsCacheEntry> {
+  final Value<String> contentHash;
+  final Value<String> identityKey;
+  final Value<String> lyricsJson;
+  final Value<String> source;
+  final Value<DateTime> fetchedAt;
+  final Value<int> rowid;
+  const LyricsCacheCompanion({
+    this.contentHash = const Value.absent(),
+    this.identityKey = const Value.absent(),
+    this.lyricsJson = const Value.absent(),
+    this.source = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LyricsCacheCompanion.insert({
+    required String contentHash,
+    required String identityKey,
+    required String lyricsJson,
+    required String source,
+    required DateTime fetchedAt,
+    this.rowid = const Value.absent(),
+  }) : contentHash = Value(contentHash),
+       identityKey = Value(identityKey),
+       lyricsJson = Value(lyricsJson),
+       source = Value(source),
+       fetchedAt = Value(fetchedAt);
+  static Insertable<LyricsCacheEntry> custom({
+    Expression<String>? contentHash,
+    Expression<String>? identityKey,
+    Expression<String>? lyricsJson,
+    Expression<String>? source,
+    Expression<DateTime>? fetchedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (contentHash != null) 'content_hash': contentHash,
+      if (identityKey != null) 'identity_key': identityKey,
+      if (lyricsJson != null) 'lyrics_json': lyricsJson,
+      if (source != null) 'source': source,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LyricsCacheCompanion copyWith({
+    Value<String>? contentHash,
+    Value<String>? identityKey,
+    Value<String>? lyricsJson,
+    Value<String>? source,
+    Value<DateTime>? fetchedAt,
+    Value<int>? rowid,
+  }) {
+    return LyricsCacheCompanion(
+      contentHash: contentHash ?? this.contentHash,
+      identityKey: identityKey ?? this.identityKey,
+      lyricsJson: lyricsJson ?? this.lyricsJson,
+      source: source ?? this.source,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (contentHash.present) {
+      map['content_hash'] = Variable<String>(contentHash.value);
+    }
+    if (identityKey.present) {
+      map['identity_key'] = Variable<String>(identityKey.value);
+    }
+    if (lyricsJson.present) {
+      map['lyrics_json'] = Variable<String>(lyricsJson.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<DateTime>(fetchedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LyricsCacheCompanion(')
+          ..write('contentHash: $contentHash, ')
+          ..write('identityKey: $identityKey, ')
+          ..write('lyricsJson: $lyricsJson, ')
+          ..write('source: $source, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3544,6 +3923,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PlaylistSongsTable playlistSongs = $PlaylistSongsTable(this);
   late final $KvEntriesTable kvEntries = $KvEntriesTable(this);
   late final $ScanStatesTable scanStates = $ScanStatesTable(this);
+  late final $LyricsCacheTable lyricsCache = $LyricsCacheTable(this);
   late final Index songsSourceMediaStoreId = Index(
     'songs_source_media_store_id',
     'CREATE UNIQUE INDEX songs_source_media_store_id ON songs (source, media_store_id)',
@@ -3601,6 +3981,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     playlistSongs,
     kvEntries,
     scanStates,
+    lyricsCache,
     songsSourceMediaStoreId,
     songsSourceContentHash,
     songsAlbum,
@@ -6218,6 +6599,212 @@ typedef $$ScanStatesTableProcessedTableManager =
       ScanStateEntry,
       PrefetchHooks Function()
     >;
+typedef $$LyricsCacheTableCreateCompanionBuilder =
+    LyricsCacheCompanion Function({
+      required String contentHash,
+      required String identityKey,
+      required String lyricsJson,
+      required String source,
+      required DateTime fetchedAt,
+      Value<int> rowid,
+    });
+typedef $$LyricsCacheTableUpdateCompanionBuilder =
+    LyricsCacheCompanion Function({
+      Value<String> contentHash,
+      Value<String> identityKey,
+      Value<String> lyricsJson,
+      Value<String> source,
+      Value<DateTime> fetchedAt,
+      Value<int> rowid,
+    });
+
+class $$LyricsCacheTableFilterComposer
+    extends Composer<_$AppDatabase, $LyricsCacheTable> {
+  $$LyricsCacheTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get contentHash => $composableBuilder(
+    column: $table.contentHash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get identityKey => $composableBuilder(
+    column: $table.identityKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lyricsJson => $composableBuilder(
+    column: $table.lyricsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LyricsCacheTableOrderingComposer
+    extends Composer<_$AppDatabase, $LyricsCacheTable> {
+  $$LyricsCacheTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get contentHash => $composableBuilder(
+    column: $table.contentHash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get identityKey => $composableBuilder(
+    column: $table.identityKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lyricsJson => $composableBuilder(
+    column: $table.lyricsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LyricsCacheTableAnnotationComposer
+    extends Composer<_$AppDatabase, $LyricsCacheTable> {
+  $$LyricsCacheTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get contentHash => $composableBuilder(
+    column: $table.contentHash,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get identityKey => $composableBuilder(
+    column: $table.identityKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lyricsJson => $composableBuilder(
+    column: $table.lyricsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+}
+
+class $$LyricsCacheTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $LyricsCacheTable,
+          LyricsCacheEntry,
+          $$LyricsCacheTableFilterComposer,
+          $$LyricsCacheTableOrderingComposer,
+          $$LyricsCacheTableAnnotationComposer,
+          $$LyricsCacheTableCreateCompanionBuilder,
+          $$LyricsCacheTableUpdateCompanionBuilder,
+          (
+            LyricsCacheEntry,
+            BaseReferences<_$AppDatabase, $LyricsCacheTable, LyricsCacheEntry>,
+          ),
+          LyricsCacheEntry,
+          PrefetchHooks Function()
+        > {
+  $$LyricsCacheTableTableManager(_$AppDatabase db, $LyricsCacheTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LyricsCacheTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LyricsCacheTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LyricsCacheTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> contentHash = const Value.absent(),
+                Value<String> identityKey = const Value.absent(),
+                Value<String> lyricsJson = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<DateTime> fetchedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LyricsCacheCompanion(
+                contentHash: contentHash,
+                identityKey: identityKey,
+                lyricsJson: lyricsJson,
+                source: source,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String contentHash,
+                required String identityKey,
+                required String lyricsJson,
+                required String source,
+                required DateTime fetchedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LyricsCacheCompanion.insert(
+                contentHash: contentHash,
+                identityKey: identityKey,
+                lyricsJson: lyricsJson,
+                source: source,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LyricsCacheTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $LyricsCacheTable,
+      LyricsCacheEntry,
+      $$LyricsCacheTableFilterComposer,
+      $$LyricsCacheTableOrderingComposer,
+      $$LyricsCacheTableAnnotationComposer,
+      $$LyricsCacheTableCreateCompanionBuilder,
+      $$LyricsCacheTableUpdateCompanionBuilder,
+      (
+        LyricsCacheEntry,
+        BaseReferences<_$AppDatabase, $LyricsCacheTable, LyricsCacheEntry>,
+      ),
+      LyricsCacheEntry,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6238,4 +6825,6 @@ class $AppDatabaseManager {
       $$KvEntriesTableTableManager(_db, _db.kvEntries);
   $$ScanStatesTableTableManager get scanStates =>
       $$ScanStatesTableTableManager(_db, _db.scanStates);
+  $$LyricsCacheTableTableManager get lyricsCache =>
+      $$LyricsCacheTableTableManager(_db, _db.lyricsCache);
 }

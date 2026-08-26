@@ -46,6 +46,7 @@ dependencies:
   animations: ^3.0.0
   audio_metadata_reader: ^1.7.1
   crypto: ^3.0.7
+  http: ^1.4.0
 
 dev_dependencies:
   flutter_test:

@@ -108,6 +108,18 @@ class KvEntries extends Table {
   Set<Column> get primaryKey => {key};
 }
 
+@DataClassName('LyricsCacheEntry')
+class LyricsCache extends Table {
+  TextColumn get contentHash => text()();
+  TextColumn get identityKey => text()();
+  TextColumn get lyricsJson => text()();
+  TextColumn get source => text()();
+  DateTimeColumn get fetchedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {contentHash};
+}
+
 @DataClassName('ScanStateEntry')
 class ScanStates extends Table {
   TextColumn get source => text()();
