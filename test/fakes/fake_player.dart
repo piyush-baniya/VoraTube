@@ -36,6 +36,9 @@ class FakePlayerController implements PlayerController {
   Future<void> seek(Duration position) async {}
 
   @override
+  Future<void> seekBy(Duration offset) async {}
+
+  @override
   Future<void> next() async {}
 
   @override

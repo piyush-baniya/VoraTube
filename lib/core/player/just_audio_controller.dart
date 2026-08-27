@@ -170,6 +170,11 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
+  Future<void> seekBy(Duration offset) async {
+    await _player.seek(clampSeekBy(_player.position, offset, _player.duration));
+  }
+
+  @override
   Future<void> next() => _player.seekToNext();
 
   @override

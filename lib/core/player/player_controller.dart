@@ -10,6 +10,21 @@ enum PlayerStatus { idle, loading, ready }
 
 enum ReplayGainMode { off, track, album }
 
+/// Computes the clamped target position for a relative seek.
+///
+/// [position] is the current position, [offset] the signed amount to move, and
+/// [duration] the track length (nullable when unknown). The result is clamped
+/// to `[0, duration]`. Exposed for unit testing the rewind/forward controls.
+Duration clampSeekBy(Duration position, Duration offset, Duration? duration) {
+  var target = position + offset;
+  if (target < Duration.zero) {
+    target = Duration.zero;
+  } else if (duration != null && target > duration) {
+    target = duration;
+  }
+  return target;
+}
+
 /// Minimal track reference handed to the player.
 ///
 /// Deliberately free of database and platform-engine types so feature code
@@ -199,6 +214,10 @@ abstract class PlayerController {
   Future<void> pause();
 
   Future<void> seek(Duration position);
+
+  /// Seeks relative to the current position by [offset], clamped to the
+  /// track's [0, duration] range. Used for rewind/forward controls.
+  Future<void> seekBy(Duration offset);
 
   Future<void> next();
 

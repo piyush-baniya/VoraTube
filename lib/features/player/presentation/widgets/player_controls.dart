@@ -5,9 +5,10 @@ import '../../../../app/theme/app_tokens.dart';
 
 /// Central playback controls for the full-screen player.
 ///
-/// Layout:  [shuffle]  [previous]  [play/pause]  [next]  [repeat]
+/// Layout:  [shuffle]  [previous]  [rewind-10]  [play/pause]  [forward-10]  [next]  [repeat]
 ///
 /// Play/pause is the largest element with a prominent shadow.
+/// Rewind/forward-10 are compact glass buttons flanking play/pause.
 /// Shuffle/repeat are smaller toggle buttons with active-state coloring.
 class PlayerControls extends StatelessWidget {
   const PlayerControls({
@@ -16,6 +17,8 @@ class PlayerControls extends StatelessWidget {
     required this.onTogglePlay,
     required this.onPrevious,
     required this.onNext,
+    required this.onRewind10,
+    required this.onForward10,
     required this.onToggleShuffle,
     required this.onToggleRepeat,
   });
@@ -24,6 +27,8 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback onTogglePlay;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
+  final VoidCallback onRewind10;
+  final VoidCallback onForward10;
   final VoidCallback onToggleShuffle;
   final VoidCallback onToggleRepeat;
 
@@ -37,62 +42,100 @@ class PlayerControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final playFootprint = 68.0;
+    final unit = AppTokens.touchTarget; // 48
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        _ControlButton(
-          icon: snapshot.shuffleEnabled
-              ? Icons.shuffle_on_rounded
-              : Icons.shuffle_rounded,
-          size: 22,
-          isActive: snapshot.shuffleEnabled,
-          activeColor: colorScheme.primary,
-          inactiveColor: colorScheme.onSurfaceVariant,
-          onTap: onToggleShuffle,
-        ),
-        _ControlButton(
-          icon: Icons.skip_previous_rounded,
-          size: 30,
-          isActive: false,
-          activeColor: colorScheme.onSurface,
-          inactiveColor: _canPrevious
-              ? colorScheme.onSurface
-              : colorScheme.onSurface.withValues(alpha: 0.2),
-          onTap: _canPrevious ? onPrevious : null,
-        ),
-        _PlayButton(isPlaying: snapshot.isPlaying, onTap: onTogglePlay),
-        _ControlButton(
-          icon: Icons.skip_next_rounded,
-          size: 30,
-          isActive: false,
-          activeColor: colorScheme.onSurface,
-          inactiveColor: _canNext
-              ? colorScheme.onSurface
-              : colorScheme.onSurface.withValues(alpha: 0.2),
-          onTap: _canNext ? onNext : null,
-        ),
-        _ControlButton(
-          icon: snapshot.repeatMode == RepeatMode.one
-              ? Icons.repeat_one_on_rounded
-              : snapshot.repeatMode == RepeatMode.all
-              ? Icons.repeat_on_rounded
-              : Icons.repeat_rounded,
-          size: 22,
-          isActive: snapshot.repeatMode != RepeatMode.off,
-          activeColor: colorScheme.primary,
-          inactiveColor: colorScheme.onSurfaceVariant,
-          onTap: onToggleRepeat,
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final needed = playFootprint + unit * 6;
+        final scale = constraints.maxWidth < needed
+            ? constraints.maxWidth / needed
+            : 1.0;
+        final baseUnit = unit * scale;
+        final basePlay = playFootprint * scale;
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _ControlButton(
+              width: baseUnit,
+              icon: snapshot.shuffleEnabled
+                  ? Icons.shuffle_on_rounded
+                  : Icons.shuffle_rounded,
+              size: 22,
+              isActive: snapshot.shuffleEnabled,
+              activeColor: colorScheme.primary,
+              inactiveColor: colorScheme.onSurfaceVariant,
+              onTap: onToggleShuffle,
+            ),
+            _ControlButton(
+              width: baseUnit,
+              icon: Icons.skip_previous_rounded,
+              size: 30,
+              isActive: false,
+              activeColor: colorScheme.onSurface,
+              inactiveColor: _canPrevious
+                  ? colorScheme.onSurface
+                  : colorScheme.onSurface.withValues(alpha: 0.2),
+              onTap: _canPrevious ? onPrevious : null,
+            ),
+            _TenSecButton(
+              width: baseUnit,
+              icon: Icons.replay_10_rounded,
+              onTap: onRewind10,
+              color: colorScheme.onSurface,
+            ),
+            _PlayButton(
+              diameter: basePlay,
+              isPlaying: snapshot.isPlaying,
+              onTap: onTogglePlay,
+            ),
+            _TenSecButton(
+              width: baseUnit,
+              icon: Icons.forward_10_rounded,
+              onTap: onForward10,
+              color: colorScheme.onSurface,
+            ),
+            _ControlButton(
+              width: baseUnit,
+              icon: Icons.skip_next_rounded,
+              size: 30,
+              isActive: false,
+              activeColor: colorScheme.onSurface,
+              inactiveColor: _canNext
+                  ? colorScheme.onSurface
+                  : colorScheme.onSurface.withValues(alpha: 0.2),
+              onTap: _canNext ? onNext : null,
+            ),
+            _ControlButton(
+              width: baseUnit,
+              icon: snapshot.repeatMode == RepeatMode.one
+                  ? Icons.repeat_one_on_rounded
+                  : snapshot.repeatMode == RepeatMode.all
+                  ? Icons.repeat_on_rounded
+                  : Icons.repeat_rounded,
+              size: 22,
+              isActive: snapshot.repeatMode != RepeatMode.off,
+              activeColor: colorScheme.primary,
+              inactiveColor: colorScheme.onSurfaceVariant,
+              onTap: onToggleRepeat,
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
 class _PlayButton extends StatefulWidget {
-  const _PlayButton({required this.isPlaying, required this.onTap});
+  const _PlayButton({
+    required this.diameter,
+    required this.isPlaying,
+    required this.onTap,
+  });
 
+  final double diameter;
   final bool isPlaying;
   final VoidCallback onTap;
 
@@ -138,8 +181,8 @@ class _PlayButtonState extends State<_PlayButton>
           return Transform.scale(scale: _scaleAnim.value, child: child);
         },
         child: Container(
-          width: 68,
-          height: 68,
+          width: widget.diameter,
+          height: widget.diameter,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: colorScheme.onSurface,
@@ -153,7 +196,7 @@ class _PlayButtonState extends State<_PlayButton>
           ),
           child: Icon(
             widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            size: 34,
+            size: 34 * (widget.diameter / 68),
             color: colorScheme.surface,
           ),
         ),
@@ -164,6 +207,7 @@ class _PlayButtonState extends State<_PlayButton>
 
 class _ControlButton extends StatelessWidget {
   const _ControlButton({
+    required this.width,
     required this.icon,
     required this.size,
     required this.isActive,
@@ -172,6 +216,7 @@ class _ControlButton extends StatelessWidget {
     this.onTap,
   });
 
+  final double width;
   final IconData icon;
   final double size;
   final bool isActive;
@@ -182,7 +227,7 @@ class _ControlButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: AppTokens.touchTarget,
+      width: width,
       height: AppTokens.touchTarget,
       child: IconButton(
         onPressed: onTap,
@@ -190,6 +235,50 @@ class _ControlButton extends StatelessWidget {
         color: isActive ? activeColor : inactiveColor,
         splashRadius: 24,
         padding: EdgeInsets.zero,
+      ),
+    );
+  }
+}
+
+/// Compact circular glass button used for rewind/forward-10 controls.
+class _TenSecButton extends StatelessWidget {
+  const _TenSecButton({
+    required this.width,
+    required this.icon,
+    required this.onTap,
+    required this.color,
+  });
+
+  final double width;
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      width: width,
+      height: AppTokens.touchTarget,
+      child: IconButton(
+        onPressed: onTap,
+        tooltip: 'Seek 10 seconds',
+        icon: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.55),
+            border: Border.all(
+              color: colorScheme.onSurface.withValues(alpha: 0.08),
+              width: AppTokens.borderHairline,
+            ),
+          ),
+          child: Icon(icon, size: 24, color: color),
+        ),
+        padding: EdgeInsets.zero,
+        splashRadius: 24,
       ),
     );
   }

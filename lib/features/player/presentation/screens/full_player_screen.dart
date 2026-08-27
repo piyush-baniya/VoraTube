@@ -611,6 +611,10 @@ class _ControlsConsumer extends ConsumerWidget {
       onTogglePlay: () => ref.read(playerProvider).togglePlay(),
       onPrevious: () => ref.read(playerProvider).previous(),
       onNext: () => ref.read(playerProvider).next(),
+      onRewind10: () =>
+          ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
+      onForward10: () =>
+          ref.read(playerProvider).seekBy(const Duration(seconds: 10)),
       onToggleShuffle: () =>
           ref.read(playerProvider).setShuffle(!snapshot.shuffleEnabled),
       onToggleRepeat: () {

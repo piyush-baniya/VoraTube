@@ -204,6 +204,8 @@ void main() {
               onTogglePlay: () => toggled = true,
               onPrevious: () {},
               onNext: () {},
+              onRewind10: () {},
+              onForward10: () {},
               onToggleShuffle: () {},
               onToggleRepeat: () {},
             ),
@@ -235,6 +237,8 @@ void main() {
               onTogglePlay: () {},
               onPrevious: () {},
               onNext: () => called = true,
+              onRewind10: () {},
+              onForward10: () {},
               onToggleShuffle: () {},
               onToggleRepeat: () {},
             ),
@@ -266,6 +270,8 @@ void main() {
               onTogglePlay: () {},
               onPrevious: () => called = true,
               onNext: () {},
+              onRewind10: () {},
+              onForward10: () {},
               onToggleShuffle: () {},
               onToggleRepeat: () {},
             ),
@@ -299,6 +305,8 @@ void main() {
               onTogglePlay: () {},
               onPrevious: () {},
               onNext: () => nextCalled = true,
+              onRewind10: () {},
+              onForward10: () {},
               onToggleShuffle: () {},
               onToggleRepeat: () {},
             ),
@@ -332,6 +340,8 @@ void main() {
               onTogglePlay: () {},
               onPrevious: () => prevCalled = true,
               onNext: () {},
+              onRewind10: () {},
+              onForward10: () {},
               onToggleShuffle: () {},
               onToggleRepeat: () {},
             ),
@@ -434,6 +444,95 @@ void main() {
       expect(player.previousCount, 1);
     });
 
+    testWidgets('rewind-10 button calls seekBy(-10s)', (tester) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final player = _TestablePlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: true,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 3,
+          currentIndex: 1,
+          durationMs: 200000,
+          current: _testSong(),
+        ),
+        queue: [_testSong(id: 1), _testSong(id: 2), _testSong(id: 3)],
+      );
+
+      await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.replay_10_rounded));
+      expect(player.seekByEvents, [const Duration(seconds: -10)]);
+    });
+
+    testWidgets('forward-10 button calls seekBy(+10s)', (tester) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final player = _TestablePlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: true,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 3,
+          currentIndex: 1,
+          durationMs: 200000,
+          current: _testSong(),
+        ),
+        queue: [_testSong(id: 1), _testSong(id: 2), _testSong(id: 3)],
+      );
+
+      await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.forward_10_rounded));
+      expect(player.seekByEvents, [const Duration(seconds: 10)]);
+    });
+
+    testWidgets('repeated rapid rewind/forward taps queue seekBy calls', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final player = _TestablePlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: true,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 3,
+          currentIndex: 1,
+          durationMs: 200000,
+          current: _testSong(),
+        ),
+        queue: [_testSong(id: 1), _testSong(id: 2), _testSong(id: 3)],
+      );
+
+      await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.forward_10_rounded));
+      await tester.tap(find.byIcon(Icons.forward_10_rounded));
+      await tester.tap(find.byIcon(Icons.replay_10_rounded));
+      expect(player.seekByEvents, [
+        const Duration(seconds: 10),
+        const Duration(seconds: 10),
+        const Duration(seconds: -10),
+      ]);
+    });
+
     testWidgets('shrink wrap: full player does not throw on small viewport', (
       tester,
     ) async {
@@ -466,6 +565,73 @@ void main() {
       expect(identical(q1, q2), isFalse);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // 10-second seek clamping
+  // -------------------------------------------------------------------------
+
+  group('clampSeekBy', () {
+    const duration = Duration(minutes: 4); // 240s
+
+    test('clamps rewind below zero to zero', () {
+      expect(
+        clampSeekBy(
+          const Duration(seconds: 5),
+          const Duration(seconds: -10),
+          duration,
+        ),
+        Duration.zero,
+      );
+    });
+
+    test('clamps forward beyond duration to duration', () {
+      expect(
+        clampSeekBy(
+          const Duration(minutes: 3, seconds: 55),
+          const Duration(seconds: 10),
+          duration,
+        ),
+        duration,
+      );
+    });
+
+    test('normal forward within range is position plus offset', () {
+      expect(
+        clampSeekBy(
+          const Duration(minutes: 1),
+          const Duration(seconds: 10),
+          duration,
+        ),
+        const Duration(minutes: 1, seconds: 10),
+      );
+    });
+
+    test('normal rewind within range is position minus offset', () {
+      expect(
+        clampSeekBy(
+          const Duration(minutes: 2),
+          const Duration(seconds: -10),
+          duration,
+        ),
+        const Duration(minutes: 1, seconds: 50),
+      );
+    });
+
+    test('handles unknown duration by only clamping below zero', () {
+      expect(
+        clampSeekBy(
+          const Duration(seconds: 30),
+          const Duration(seconds: 10),
+          null,
+        ),
+        const Duration(seconds: 40),
+      );
+      expect(
+        clampSeekBy(Duration.zero, const Duration(seconds: -5), null),
+        Duration.zero,
+      );
+    });
+  });
 }
 
 /// A FakePlayer that counts method calls for verification.
@@ -478,6 +644,12 @@ class _TestablePlayer extends FakePlayerController {
   int previousCount = 0;
   int shuffleCount = 0;
   int repeatCount = 0;
+  final List<Duration> seekByEvents = [];
+
+  @override
+  Future<void> seekBy(Duration offset) async {
+    seekByEvents.add(offset);
+  }
 
   @override
   Future<void> togglePlay() async {
