@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../app/theme/app_tokens.dart';
@@ -92,58 +93,154 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
               message: 'This entry has no playable songs right now.',
             );
           }
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppTokens.s5,
-                  AppTokens.s1,
-                  AppTokens.s5,
-                  AppTokens.s1,
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: _EntryHeader(
+                  album: widget.album,
+                  artist: widget.artist,
+                  subtitle: subtitle,
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        subtitle ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+              ),
+              if (tiles.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppTokens.s5,
+                      AppTokens.s1,
+                      AppTokens.s5,
+                      AppTokens.s1,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${tiles.length} ${tiles.length == 1 ? 'song' : 'songs'}',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
-                      ),
+                        FilledButton.tonalIcon(
+                          onPressed: () => ref.read(playerProvider).playQueue([
+                            for (final t in tiles) songTileToRef(t),
+                          ]),
+                          icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                          label: const Text('Play all'),
+                        ),
+                      ],
                     ),
-                    FilledButton.tonalIcon(
-                      onPressed: () => ref.read(playerProvider).playQueue([
-                        for (final t in tiles) songTileToRef(t),
-                      ]),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                      label: const Text('Play all'),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: tiles.length,
-                  separatorBuilder: (_, _) => const Divider(
-                    height: 0.5,
-                    indent: 80,
-                    endIndent: AppTokens.s4,
-                  ),
-                  itemBuilder: (context, index) => SongTile(
-                    tile: tiles[index],
-                    index: index,
-                    onPlay: (_) => ref.read(playerProvider).playQueue([
-                      for (final t in tiles) songTileToRef(t),
-                    ], startIndex: index),
                   ),
                 ),
+              SliverList.separated(
+                itemCount: tiles.length,
+                separatorBuilder: (_, _) => const Divider(
+                  height: 0.5,
+                  indent: 80,
+                  endIndent: AppTokens.s4,
+                ),
+                itemBuilder: (context, index) => SongTile(
+                  tile: tiles[index],
+                  index: index,
+                  onPlay: (_) => ref.read(playerProvider).playQueue([
+                    for (final t in tiles) songTileToRef(t),
+                  ], startIndex: index),
+                ),
               ),
+              const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s8)),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _EntryHeader extends StatelessWidget {
+  const _EntryHeader({this.album, this.artist, this.subtitle});
+
+  final AlbumSummary? album;
+  final ArtistSummary? artist;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final title = album?.name ?? artist?.name ?? '';
+    final isAlbum = album != null;
+    final artPath = album?.artPath ?? artist?.artPath;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s5,
+        AppTokens.s4,
+        AppTokens.s5,
+        AppTokens.s3,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Flexible(
+            child: isAlbum
+                ? ArtworkView(
+                    path: artPath,
+                    size: AppTokens.artworkXl,
+                    radius: AppTokens.rLg,
+                  )
+                : Container(
+                    width: AppTokens.artworkXl,
+                    height: AppTokens.artworkXl,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          colorScheme.primary.withValues(alpha: 0.18),
+                          colorScheme.primary.withValues(alpha: 0.04),
+                        ],
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.person_rounded,
+                      size: AppTokens.artworkXl * 0.45,
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.6,
+                      ),
+                    ),
+                  ),
+          ),
+          const SizedBox(width: AppTokens.s4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                if (subtitle != null && subtitle!.isNotEmpty) ...[
+                  const SizedBox(height: AppTokens.s1),
+                  Text(
+                    subtitle!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
