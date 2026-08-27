@@ -1353,6 +1353,27 @@ extension CollectionQueries on LibraryRepository {
     final mostPlayed = await countCollection(CollectionKind.mostPlayed);
     final recentlyPlayed = await countCollection(CollectionKind.recentlyPlayed);
 
+    // Top-scoring song for the featured stat card.
+    String? topSongTitle;
+    String? topSongArtist;
+    var topSongCount = 0;
+    final topRow = await _db
+        .customSelect(
+          'SELECT s.title AS title, s.artist AS artist, '
+          'st.play_count AS count '
+          'FROM song_stats st JOIN songs s ON s.id = st.song_id '
+          'ORDER BY st.play_count DESC, s.title ASC LIMIT 1',
+        )
+        .getSingleOrNull();
+    if (topRow != null) {
+      final count = (topRow.data['count'] as num?)?.toInt() ?? 0;
+      if (count > 0) {
+        topSongTitle = topRow.data['title'] as String?;
+        topSongArtist = topRow.data['artist'] as String?;
+        topSongCount = count;
+      }
+    }
+
     // Also read totalPlays via typed query as fallback when customSelect is
     // unavailable in tests; keep the joined sum above as primary.
     final _ = playsExp;
@@ -1364,6 +1385,9 @@ extension CollectionQueries on LibraryRepository {
       favoritesCount: favCount,
       mostPlayedCount: mostPlayed,
       recentlyPlayedCount: recentlyPlayed,
+      mostPlayedSongTitle: topSongTitle,
+      mostPlayedSongArtist: topSongArtist,
+      mostPlayedSongCount: topSongCount,
     );
   }
 

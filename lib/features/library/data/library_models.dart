@@ -107,6 +107,9 @@ final class ListeningStats {
     required this.favoritesCount,
     required this.mostPlayedCount,
     required this.recentlyPlayedCount,
+    this.mostPlayedSongTitle,
+    this.mostPlayedSongArtist,
+    this.mostPlayedSongCount = 0,
   });
 
   final int totalSongs;
@@ -116,7 +119,15 @@ final class ListeningStats {
   final int mostPlayedCount;
   final int recentlyPlayedCount;
 
+  /// Top-scoring song across the whole library, for a featured stat card.
+  final String? mostPlayedSongTitle;
+  final String? mostPlayedSongArtist;
+  final int mostPlayedSongCount;
+
   bool get hasActivity => totalPlays > 0;
+
+  bool get hasMostPlayedSong =>
+      mostPlayedSongTitle != null && mostPlayedSongCount > 0;
 
   String get formattedListeningTime {
     final hours = totalListeningMs ~/ 3600000;

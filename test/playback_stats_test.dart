@@ -289,4 +289,35 @@ void main() {
       expect(buffer.pendingCount, 0);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // listeningStats
+  // -------------------------------------------------------------------------
+
+  group('listeningStats', () {
+    test('reports most played song and aggregate plays', () async {
+      // Song 1 is played the most.
+      await repo.recordPlayback([1], DateTime(2025, 1, 1));
+      await repo.recordPlayback([1], DateTime(2025, 1, 2));
+      await repo.recordPlayback([3], DateTime(2025, 1, 1));
+
+      final stats = await repo.listeningStats();
+
+      expect(stats.totalSongs, 5);
+      expect(stats.totalPlays, 3);
+      expect(stats.hasMostPlayedSong, isTrue);
+      expect(stats.mostPlayedSongTitle, 'Song 1');
+      expect(stats.mostPlayedSongArtist, 'Artist 1');
+      expect(stats.mostPlayedSongCount, 2);
+    });
+
+    test('no most played song when nothing has been played', () async {
+      final stats = await repo.listeningStats();
+
+      expect(stats.hasMostPlayedSong, isFalse);
+      expect(stats.mostPlayedSongCount, 0);
+      expect(stats.totalPlays, 0);
+      expect(stats.formattedListeningTime, '0m');
+    });
+  });
 }
