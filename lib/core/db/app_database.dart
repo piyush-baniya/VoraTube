@@ -118,7 +118,16 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(songStats, songStats.mood);
       }
       if (from < 5) {
-        // Column already added in v1→v2 custom migration
+        try {
+          await m.addColumn(songs, songs.replayGainJson);
+        } catch (_) {
+          // Column may already exist if upgraded via v1→v2 custom path
+          try {
+            await customStatement(
+              'ALTER TABLE songs ADD COLUMN replay_gain_json TEXT',
+            );
+          } catch (_) {}
+        }
       }
     },
   );
