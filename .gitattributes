@@ -1,0 +1,41 @@
+# Line endings
+#
+# Every text file in this repository is stored and checked out with LF.
+# Without this, an editor or tool that rewrites a file as CRLF on Windows
+# produces a whole-file diff, which buries real changes in noise and makes
+# `git blame` useless.
+* text=auto eol=lf
+
+# Windows-only scripts must keep CRLF or cmd.exe mis-parses them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Never touch binaries.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.mp3 binary
+*.m4a binary
+*.flac binary
+*.ogg binary
+*.wav binary
+*.jar binary
+*.keystore binary
+*.jks binary
+*.so binary
+*.dylib binary
+*.dll binary
+*.zip binary
+*.pdf binary
+
+# Generated Drift code: keep it out of diff summaries and language stats.
+*.g.dart linguist-generated=true
