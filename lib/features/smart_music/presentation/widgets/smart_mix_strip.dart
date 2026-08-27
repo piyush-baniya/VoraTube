@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../providers/smart_music_providers.dart';
-import '../screens/smart_mix_detail_screen.dart';
+import '../screens/smart_mixes_screen.dart';
 import 'mix_card.dart';
 
 /// Horizontal strip of Smart Mix cards — mirrors [CollectionsStrip] placement.
@@ -24,23 +24,27 @@ class SmartMixStrip extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppTokens.s4,
-                AppTokens.s2,
-                AppTokens.s4,
-                AppTokens.s1,
-              ),
-              child: Row(
-                children: [
-                  SectionLabel(
-                    title: 'Smart Mixes',
-                    trailing: Text(
+            GestureDetector(
+              onTap: () => Navigator.of(
+                context,
+              ).push(pushSharedAxis<void>(context, const SmartMixesScreen())),
+              child: SectionLabel(
+                title: 'Smart Mixes',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
                       '${visible.length}',
                       style: Theme.of(context).textTheme.labelSmall,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
               ),
             ),
             SizedBox(

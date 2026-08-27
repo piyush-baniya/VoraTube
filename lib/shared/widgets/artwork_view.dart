@@ -51,7 +51,10 @@ class ArtworkView extends StatelessWidget {
       effectiveFile,
       theme,
       effectiveRadius,
-      ArtworkFileCache.decodeWidth(size, MediaQuery.devicePixelRatioOf(context)),
+      ArtworkFileCache.decodeWidth(
+        size,
+        MediaQuery.devicePixelRatioOf(context),
+      ),
     );
 
     if (showShadow) {

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dart:io';
+
 import '../../../../../app/theme/app_tokens.dart';
+import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../../core/player/player_controller.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
 import '../../../../../features/player/presentation/providers/player_providers.dart';
@@ -72,19 +75,26 @@ class MixCard extends ConsumerWidget {
                 child: Stack(
                   children: mix.artworkPaths.take(4).map((path) {
                     final index = mix.artworkPaths.indexOf(path);
+                    final file = ArtworkFileCache.resolve(path);
                     return Positioned(
                       left: (index * 16).toDouble(),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(AppTokens.rSm),
-                        child: Image.asset(
-                          path,
-                          width: 64,
-                          height: 64,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, __, ___) =>
-                              _buildArtworkFallback(colorScheme),
-                        ),
+                        child: file != null
+                            ? Image.file(
+                                file,
+                                width: 64,
+                                height: 64,
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                                cacheWidth: ArtworkFileCache.decodeWidth(
+                                  64,
+                                  MediaQuery.devicePixelRatioOf(context),
+                                ),
+                                errorBuilder: (_, __, ___) =>
+                                    _buildArtworkFallback(colorScheme),
+                              )
+                            : _buildArtworkFallback(colorScheme),
                       ),
                     );
                   }).toList(),

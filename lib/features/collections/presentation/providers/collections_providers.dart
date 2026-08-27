@@ -45,26 +45,16 @@ class Collections {
   final LibraryRepository _repository;
 
   Future<List<CollectionSummary>> summaries() async {
-    final results = await Future.wait([
-      _repository.collectionSongs(CollectionKind.favorites, limit: 1),
-      _repository.collectionSongs(CollectionKind.recentlyAdded, limit: 1),
-      _repository.collectionSongs(CollectionKind.mostPlayed, limit: 1),
-      _repository.collectionSongs(CollectionKind.recentlyPlayed, limit: 1),
+    final counts = await Future.wait([
+      _repository.countCollection(CollectionKind.favorites),
+      _repository.countCollection(CollectionKind.recentlyAdded),
+      _repository.countCollection(CollectionKind.mostPlayed),
+      _repository.countCollection(CollectionKind.recentlyPlayed),
     ]);
-
-    // We need actual counts, not just limit-1. Use count queries instead.
-    final favCount = await _repository.countCollection(
-      CollectionKind.favorites,
-    );
-    final addedCount = await _repository.countCollection(
-      CollectionKind.recentlyAdded,
-    );
-    final playedCount = await _repository.countCollection(
-      CollectionKind.mostPlayed,
-    );
-    final recentCount = await _repository.countCollection(
-      CollectionKind.recentlyPlayed,
-    );
+    final favCount = counts[0];
+    final addedCount = counts[1];
+    final playedCount = counts[2];
+    final recentCount = counts[3];
 
     return [
       CollectionSummary(

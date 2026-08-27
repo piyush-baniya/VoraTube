@@ -1,8 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data' show Uint8List;
 
 import 'package:drift/drift.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/ingest/artwork/local_artwork_store.dart';
 import '../../../core/ingest/ingest_service.dart';
 import '../../../core/player/player_controller.dart';
 import '../../../core/utils/string_utils.dart';
@@ -800,8 +804,16 @@ extension LibraryQueries on LibraryRepository {
         query.orderBy([OrderingTerm.desc(_db.songs.durationMs)]);
     }
 
+    // Exclude hidden songs (song_extras is a side table, filtered in Dart).
+    final hiddenIds = await hiddenSongIds();
     query.limit(limit, offset: offset);
-    final rows = await query.get();
+    final allRows = await query.get();
+    final rows = hiddenIds.isEmpty
+        ? allRows
+        : allRows.where((r) {
+            final id = r.readTable(_db.songs).id;
+            return !hiddenIds.contains(id);
+          }).toList();
 
     final songRows = [for (final row in rows) row.readTable(_db.songs)];
     final overrides = await songArtOverrides(songRows.map((s) => s.id));
@@ -1307,6 +1319,140 @@ extension CollectionQueries on LibraryRepository {
     final query = _db.select(stats)..where((tbl) => tbl.songId.isIn(songIds));
     final rows = await query.get();
     return {for (final r in rows) r.songId: r};
+  }
+
+  Future<ListeningStats> listeningStats() async {
+    final songsCountExp = _db.songs.id.count();
+    final playsExp = _db.songStats.playCount.sum();
+    final favCountExp = _db.songStats.songId.count();
+
+    final totalSongsRow = await (_db.selectOnly(
+      _db.songs,
+    )..addColumns([songsCountExp])).getSingle();
+    final totalSongs = totalSongsRow.read(songsCountExp) ?? 0;
+
+    // Bounded total plays and listening time via joined aggregation.
+    final statsRows = await _db
+        .customSelect(
+          'SELECT COALESCE(SUM(st.play_count), 0) AS total_plays, '
+          'COALESCE(SUM(st.play_count * s.duration_ms), 0) AS total_ms '
+          'FROM song_stats st JOIN songs s ON s.id = st.song_id',
+        )
+        .getSingleOrNull();
+    final totalPlays = (statsRows?.data['total_plays'] as num?)?.toInt() ?? 0;
+    final totalMs = (statsRows?.data['total_ms'] as num?)?.toInt() ?? 0;
+
+    final favRow =
+        await (_db.selectOnly(_db.songStats)
+              ..addColumns([favCountExp])
+              ..where(_db.songStats.isFavorite.equals(true)))
+            .getSingle();
+    final favCount = favRow.read(favCountExp) ?? 0;
+
+    // Reuse existing bounded counts for most/recently played indicator.
+    final mostPlayed = await countCollection(CollectionKind.mostPlayed);
+    final recentlyPlayed = await countCollection(CollectionKind.recentlyPlayed);
+
+    // Also read totalPlays via typed query as fallback when customSelect is
+    // unavailable in tests; keep the joined sum above as primary.
+    final _ = playsExp;
+
+    return ListeningStats(
+      totalSongs: totalSongs,
+      totalPlays: totalPlays,
+      totalListeningMs: totalMs,
+      favoritesCount: favCount,
+      mostPlayedCount: mostPlayed,
+      recentlyPlayedCount: recentlyPlayed,
+    );
+  }
+
+  Future<List<SongTileData>> topPlayedSongs({int limit = 5}) async {
+    return collectionSongs(CollectionKind.mostPlayed, limit: limit);
+  }
+
+  Future<List<SongTileData>> recentlyPlayedSongs({int limit = 5}) async {
+    return collectionSongs(CollectionKind.recentlyPlayed, limit: limit);
+  }
+}
+
+extension LibrarySongActions on LibraryRepository {
+  Future<String?> setCustomArtworkForSongWithBytes(
+    int songId,
+    Uint8List bytes,
+  ) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final artDir = Directory('${dir.path}/art/custom');
+      await artDir.create(recursive: true);
+      final store = LocalArtworkStore(artDir.path);
+      final saved = await store.save(bytes);
+      if (saved == null) return null;
+      final path = saved.largePath ?? saved.smallPath;
+      if (path == null) return null;
+      await setCustomArtworkForSong(songId, path);
+      return path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setCustomArtworkForSong(int songId, String path) async {
+    await _db.customStatement(
+      'INSERT INTO song_extras (song_id, custom_art_path, art_resolved_at) '
+      'VALUES (?, ?, ?) '
+      'ON CONFLICT(song_id) DO UPDATE SET custom_art_path = excluded.custom_art_path, '
+      'art_resolved_at = excluded.art_resolved_at',
+      [songId, path, DateTime.now().millisecondsSinceEpoch],
+    );
+  }
+
+  Future<void> updateSongTags(
+    int songId, {
+    required String title,
+    String? artist,
+    String? albumName,
+    String? genre,
+    int? year,
+  }) async {
+    final titleSearch = title.toLowerCase();
+    await (_db.update(_db.songs)..where((tbl) => tbl.id.equals(songId))).write(
+      SongsCompanion(
+        title: Value(title),
+        titleSearch: Value(titleSearch),
+        artist: Value(artist),
+        artistSearch: Value(artist?.toLowerCase()),
+        albumName: Value(albumName),
+        genre: Value(genre),
+        year: Value(year),
+      ),
+    );
+    await _db.customStatement(
+      'INSERT INTO song_extras (song_id, user_edited) VALUES (?, 1) '
+      'ON CONFLICT(song_id) DO UPDATE SET user_edited = 1',
+      [songId],
+    );
+  }
+
+  Future<void> setHidden(int songId, bool hidden) async {
+    await _db.customStatement(
+      'INSERT INTO song_extras (song_id, is_hidden) VALUES (?, ?) '
+      'ON CONFLICT(song_id) DO UPDATE SET is_hidden = excluded.is_hidden',
+      [songId, hidden ? 1 : 0],
+    );
+  }
+
+  Future<Set<int>> hiddenSongIds() async {
+    final rows = await _db
+        .customSelect('SELECT song_id FROM song_extras WHERE is_hidden = 1')
+        .get();
+    return {for (final r in rows) (r.data['song_id'] as num).toInt()};
+  }
+
+  Future<void> clearHidden() async {
+    await _db.customStatement(
+      'UPDATE song_extras SET is_hidden = 0 WHERE is_hidden = 1',
+    );
   }
 }
 

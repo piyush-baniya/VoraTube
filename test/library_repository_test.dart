@@ -333,11 +333,9 @@ void main() {
       await repository.syncTracks([_msTrack(1)]);
 
       await repository.attachArtwork({'ms:11': null});
-      expect(
-        (await repository.artworkTargets()).map((t) => t.key),
-        ['ms:11'],
-        reason: 'one transient failure should not disqualify an album',
-      );
+      expect((await repository.artworkTargets()).map((t) => t.key), [
+        'ms:11',
+      ], reason: 'one transient failure should not disqualify an album');
 
       await repository.attachArtwork({'ms:11': null});
       expect(

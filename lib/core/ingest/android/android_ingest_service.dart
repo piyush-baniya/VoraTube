@@ -48,9 +48,7 @@ class AndroidIngestService implements IngestService {
     final Object? raw = await _channel.invokeMethod<Object?>(
       'resolveArtwork',
       <String, Object?>{
-        'targets': [
-          for (final target in targets) target.toChannelMap(),
-        ],
+        'targets': [for (final target in targets) target.toChannelMap()],
       },
     );
     if (raw is! Map<Object?, Object?>) {

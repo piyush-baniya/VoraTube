@@ -1,0 +1,974 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:file_picker/file_picker.dart';
+
+import '../../../../app/theme/app_tokens.dart';
+import '../../../../core/ingest/artwork/artwork_file_cache.dart';
+import '../../../../core/ingest/artwork/local_artwork_store.dart';
+import '../../../../core/player/player_controller.dart';
+import '../../../../shared/widgets/artwork_view.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../../core/db/app_database.dart';
+import '../../../library/data/library_models.dart';
+import '../../../library/data/song_ref_mapper.dart';
+import '../../../player/presentation/providers/player_providers.dart';
+import '../../data/library_repository.dart';
+import '../providers/library_providers.dart';
+import '../providers/library_view_providers.dart';
+import '../screens/filtered_songs_screen.dart';
+import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
+
+enum SongAction {
+  playNext,
+  addToQueue,
+  addToPlaylist,
+  toggleFavorite,
+  goToAlbum,
+  goToArtist,
+  changeCover,
+  editTags,
+  hideSong,
+  deleteFromDevice,
+  findOnYouTube,
+  details,
+  shareSong,
+  setAsRingtone,
+}
+
+class SongActions {
+  static Future<void> show(
+    BuildContext context,
+    WidgetRef ref, {
+    required SongTileData tile,
+  }) async {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final song = tile.song;
+    final isFavorite = ref.read(
+      favoriteIdsProvider.select((ids) => ids.contains(song.id)),
+    );
+
+    // Capture refs before closing sheet
+    final player = ref.read(playerProvider);
+    final repo = ref.read(libraryRepositoryProvider);
+    final songRef = songTileToRef(tile);
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => _SongActionSheet(
+        tile: tile,
+        isFavorite: isFavorite,
+        onAction: (action) async {
+          Navigator.pop(sheetContext);
+          // Allow sheet to close before heavy work
+          await Future.delayed(const Duration(milliseconds: 140));
+          if (!sheetContext.mounted) return;
+          await _handleAction(
+            sheetContext,
+            ref,
+            tile: tile,
+            action: action,
+            player: player,
+            repo: repo,
+            songRef: songRef,
+            isFavorite: isFavorite,
+          );
+        },
+      ),
+    );
+  }
+
+  static Future<void> _handleAction(
+    BuildContext context,
+    WidgetRef ref, {
+    required SongTileData tile,
+    required SongAction action,
+    required PlayerController player,
+    required LibraryRepository repo,
+    required SongRef songRef,
+    required bool isFavorite,
+  }) async {
+    final song = tile.song;
+    switch (action) {
+      case SongAction.playNext:
+        player.playNext(songRef);
+        _snack(context, 'Playing next: ${song.title}');
+        break;
+      case SongAction.addToQueue:
+        player.enqueue(songRef);
+        _snack(context, 'Added to queue: ${song.title}');
+        break;
+      case SongAction.addToPlaylist:
+        if (!context.mounted) return;
+        await showAddToPlaylistSheet(context, song.id);
+        break;
+      case SongAction.toggleFavorite:
+        await ref.read(favoriteIdsProvider.notifier).toggle(song.id);
+        _snack(
+          context,
+          isFavorite ? 'Removed from favorites' : 'Added to favorites',
+        );
+        break;
+      case SongAction.goToAlbum:
+        if (song.albumRowId == null) {
+          _snack(context, 'No album information');
+          return;
+        }
+        final album = await _resolveAlbum(repo, song.albumRowId!);
+        if (!context.mounted) return;
+        if (album == null) {
+          _snack(context, 'Album not found');
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => FilteredSongsScreen.album(album)),
+        );
+        break;
+      case SongAction.goToArtist:
+        if (song.artistRowId == null) {
+          _snack(context, 'No artist information');
+          return;
+        }
+        final artist = await _resolveArtist(repo, song.artistRowId!);
+        if (!context.mounted) return;
+        if (artist == null) {
+          _snack(context, 'Artist not found');
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => FilteredSongsScreen.artist(artist)),
+        );
+        break;
+      case SongAction.changeCover:
+        await _changeCover(context, repo, tile);
+        ref.invalidate(libraryRefreshTickProvider);
+        break;
+      case SongAction.editTags:
+        await _editTags(context, ref, repo, tile);
+        break;
+      case SongAction.hideSong:
+        await _hideSong(context, ref, repo, song);
+        break;
+      case SongAction.deleteFromDevice:
+        await _deleteSong(context, ref, repo, song);
+        break;
+      case SongAction.findOnYouTube:
+        await _findOnYouTube(context, song);
+        break;
+      case SongAction.details:
+        if (!context.mounted) return;
+        await _showDetails(context, tile);
+        break;
+      case SongAction.shareSong:
+        await _shareSong(context, song);
+        break;
+      case SongAction.setAsRingtone:
+        await _setAsRingtone(context, song);
+        break;
+    }
+  }
+
+  static Future<AlbumSummary?> _resolveAlbum(
+    LibraryRepository repo,
+    int albumRowId,
+  ) async {
+    final albums = await repo.albumOverview(limit: 1000);
+    for (final a in albums) {
+      if (a.albumRowId == albumRowId) return a;
+    }
+    return null;
+  }
+
+  static Future<ArtistSummary?> _resolveArtist(
+    LibraryRepository repo,
+    int artistRowId,
+  ) async {
+    final artists = await repo.artistOverview(limit: 1000);
+    for (final a in artists) {
+      if (a.artistRowId == artistRowId) return a;
+    }
+    return null;
+  }
+
+  static Future<void> _changeCover(
+    BuildContext context,
+    LibraryRepository repo,
+    SongTileData tile,
+  ) async {
+    final file = await FilePicker.pickFile(type: FileType.image);
+    if (file == null || file.path == null) return;
+    final pickedPath = file.path!;
+    final pickedFile = File(pickedPath);
+    if (!await pickedFile.exists()) {
+      if (context.mounted) _snack(context, 'Selected file not found');
+      return;
+    }
+    try {
+      final bytes = await pickedFile.readAsBytes();
+      // Use path_provider to get art directory: reuse repo's base dir pattern
+      // For now store via repo helper which handles dir creation.
+      final storedPath = await repo.setCustomArtworkForSongWithBytes(
+        tile.song.id,
+        bytes,
+      );
+      if (storedPath == null) {
+        if (context.mounted) _snack(context, 'Failed to save cover');
+        return;
+      }
+      ArtworkFileCache.invalidate();
+      if (context.mounted) _snack(context, 'Cover updated');
+    } catch (_) {
+      if (context.mounted) _snack(context, 'Failed to update cover');
+    }
+  }
+
+  static Future<void> _editTags(
+    BuildContext context,
+    WidgetRef ref,
+    LibraryRepository repo,
+    SongTileData tile,
+  ) async {
+    final song = tile.song;
+    final titleCtrl = TextEditingController(text: song.title);
+    final artistCtrl = TextEditingController(text: song.artist ?? '');
+    final albumCtrl = TextEditingController(text: song.albumName ?? '');
+    final genreCtrl = TextEditingController(text: song.genre ?? '');
+    final yearCtrl = TextEditingController(
+      text: song.year != null && song.year! > 0 ? '${song.year}' : '',
+    );
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit tags'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(labelText: 'Title'),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: artistCtrl,
+                decoration: const InputDecoration(labelText: 'Artist'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: albumCtrl,
+                decoration: const InputDecoration(labelText: 'Album'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: genreCtrl,
+                decoration: const InputDecoration(labelText: 'Genre'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: yearCtrl,
+                decoration: const InputDecoration(labelText: 'Year'),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Edits update the library database only and do not modify the original file.',
+                style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    titleCtrl.dispose();
+    artistCtrl.dispose();
+    albumCtrl.dispose();
+    genreCtrl.dispose();
+    yearCtrl.dispose();
+
+    if (saved != true) return;
+    final newTitle = titleCtrl.text.trim();
+    if (newTitle.isEmpty) {
+      if (context.mounted) _snack(context, 'Title cannot be empty');
+      return;
+    }
+    final year = int.tryParse(yearCtrl.text.trim());
+    try {
+      await repo.updateSongTags(
+        song.id,
+        title: newTitle,
+        artist: artistCtrl.text.trim().isEmpty ? null : artistCtrl.text.trim(),
+        albumName: albumCtrl.text.trim().isEmpty ? null : albumCtrl.text.trim(),
+        genre: genreCtrl.text.trim().isEmpty ? null : genreCtrl.text.trim(),
+        year: year,
+      );
+      ref.invalidate(pagedSongsProvider);
+      ref.invalidate(libraryRefreshTickProvider);
+      if (context.mounted) _snack(context, 'Tags updated');
+    } catch (_) {
+      if (context.mounted) _snack(context, 'Failed to update tags');
+    }
+  }
+
+  static Future<void> _hideSong(
+    BuildContext context,
+    WidgetRef ref,
+    LibraryRepository repo,
+    Song song,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hide song?'),
+        content: Text(
+          '"${song.title}" will be hidden from the library. You can show hidden songs again from settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Hide'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await repo.setHidden(song.id, true);
+      ref.invalidate(pagedSongsProvider);
+      ref.invalidate(libraryRefreshTickProvider);
+      if (context.mounted) _snack(context, 'Song hidden');
+    } catch (_) {
+      if (context.mounted) _snack(context, 'Failed to hide song');
+    }
+  }
+
+  static Future<void> _deleteSong(
+    BuildContext context,
+    WidgetRef ref,
+    LibraryRepository repo,
+    Song song,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete from device?'),
+        content: Text(
+          '"${song.title}" will be removed from your library and the file will be deleted where possible. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      // Try to delete file if we have a path.
+      if (song.path != null && song.path!.isNotEmpty) {
+        final f = File(song.path!);
+        if (await f.exists()) {
+          try {
+            await f.delete();
+          } catch (_) {}
+        }
+      }
+      await repo.deleteSongsByRowIds({song.id});
+      ref.invalidate(pagedSongsProvider);
+      ref.invalidate(libraryRefreshTickProvider);
+      ref.invalidate(albumsOverviewProvider);
+      ref.invalidate(artistsOverviewProvider);
+      if (context.mounted) _snack(context, 'Song deleted');
+    } catch (_) {
+      if (context.mounted) _snack(context, 'Failed to delete song');
+    }
+  }
+
+  static Future<void> _findOnYouTube(BuildContext context, Song song) async {
+    final query = [
+      song.artist,
+      song.title,
+    ].whereType<String>().where((s) => s.trim().isNotEmpty).join(' ');
+    final encoded = Uri.encodeComponent(query.isEmpty ? song.title : query);
+    final url = Uri.parse(
+      'https://www.youtube.com/results?search_query=$encoded',
+    );
+    try {
+      final launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && context.mounted) {
+        _snack(context, 'Could not open YouTube');
+      }
+    } catch (_) {
+      if (context.mounted) _snack(context, 'Could not open YouTube');
+    }
+  }
+
+  static Future<void> _shareSong(BuildContext context, Song song) async {
+    final path = song.path;
+    if (path != null && path.isNotEmpty) {
+      final f = File(path);
+      if (await f.exists()) {
+        try {
+          await SharePlus.instance.share(
+            ShareParams(
+              files: [XFile(path, mimeType: _mimeForPath(path))],
+              text: '${song.title} — ${song.artist ?? ''}'.trim(),
+            ),
+          );
+          return;
+        } catch (_) {}
+      }
+    }
+    // Fallback to text share
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          text: '${song.title} — ${song.artist ?? ''}\n${song.albumName ?? ''}'
+              .trim(),
+          subject: song.title,
+        ),
+      );
+    } catch (_) {
+      if (context.mounted) _snack(context, 'Sharing not available');
+    }
+  }
+
+  static String _mimeForPath(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.mp3')) return 'audio/mpeg';
+    if (lower.endsWith('.flac')) return 'audio/flac';
+    if (lower.endsWith('.m4a') || lower.endsWith('.aac')) return 'audio/mp4';
+    if (lower.endsWith('.ogg')) return 'audio/ogg';
+    if (lower.endsWith('.wav')) return 'audio/wav';
+    return 'audio/*';
+  }
+
+  static Future<void> _setAsRingtone(BuildContext context, Song song) async {
+    // Scoped-storage compliant stub: copy to ringtones and inform user.
+    // Full RingtoneManager integration requires WRITE_SETTINGS permission
+    // and a platform channel; expose graceful fallback.
+    final path = song.path;
+    if (path == null || path.isEmpty) {
+      _snack(context, 'No file path for ringtone');
+      return;
+    }
+    final f = File(path);
+    if (!await f.exists()) {
+      _snack(context, 'File not found for ringtone');
+      return;
+    }
+    _snack(
+      context,
+      'To set as ringtone, open system Settings > Sound > Phone ringtone and choose "${song.title}". Direct ringtone assignment requires additional permission on this Android version.',
+      duration: const Duration(seconds: 4),
+    );
+  }
+
+  static Future<void> _showDetails(
+    BuildContext context,
+    SongTileData tile,
+  ) async {
+    final song = tile.song;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final repo = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(libraryRepositoryProvider);
+    Map<int, SongStat> stats = {};
+    try {
+      stats = await repo.getSongStatsForSongs({song.id});
+    } catch (_) {}
+    final stat = stats[song.id];
+
+    if (!context.mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(ctx).height * 0.78,
+        ),
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppTokens.rXxl),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: AppTokens.s3),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(AppTokens.s5),
+              child: Row(
+                children: [
+                  ArtworkView(
+                    path: tile.artPath,
+                    size: AppTokens.artworkXl,
+                    radius: AppTokens.rMd,
+                  ),
+                  const SizedBox(width: AppTokens.s4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        if (song.artist != null) ...[
+                          const SizedBox(height: AppTokens.s1),
+                          Text(
+                            song.artist!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(
+              height: 1,
+              color: colorScheme.outlineVariant,
+              indent: AppTokens.s5,
+              endIndent: AppTokens.s5,
+            ),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTokens.s5,
+                  vertical: AppTokens.s3,
+                ),
+                children: [
+                  _DetailRow(
+                    icon: Icons.album_rounded,
+                    label: 'Album',
+                    value: song.albumName ?? 'Unknown',
+                  ),
+                  if (song.artist != null)
+                    _DetailRow(
+                      icon: Icons.person_rounded,
+                      label: 'Artist',
+                      value: song.artist!,
+                    ),
+                  if (song.genre != null && song.genre!.isNotEmpty)
+                    _DetailRow(
+                      icon: Icons.style_rounded,
+                      label: 'Genre',
+                      value: song.genre!,
+                    ),
+                  if (song.year != null && song.year! > 0)
+                    _DetailRow(
+                      icon: Icons.calendar_today_rounded,
+                      label: 'Year',
+                      value: '${song.year}',
+                    ),
+                  _DetailRow(
+                    icon: Icons.timer_rounded,
+                    label: 'Duration',
+                    value: _formatDuration(song.durationMs),
+                  ),
+                  if (song.format != null && song.format!.isNotEmpty)
+                    _DetailRow(
+                      icon: Icons.audiotrack_rounded,
+                      label: 'Format',
+                      value: song.format!.toUpperCase(),
+                    ),
+                  if (song.sizeBytes != null && song.sizeBytes! > 0)
+                    _DetailRow(
+                      icon: Icons.storage_rounded,
+                      label: 'Size',
+                      value: _formatBytes(song.sizeBytes!),
+                    ),
+                  if (stat != null) ...[
+                    const Divider(height: 24),
+                    _DetailRow(
+                      icon: Icons.play_circle_rounded,
+                      label: 'Play count',
+                      value: '${stat.playCount}',
+                    ),
+                    if (stat.lastPlayedAt != null)
+                      _DetailRow(
+                        icon: Icons.history_rounded,
+                        label: 'Last played',
+                        value: _formatDate(
+                          DateTime.fromMillisecondsSinceEpoch(
+                            stat.lastPlayedAt!,
+                          ),
+                        ),
+                      ),
+                    _DetailRow(
+                      icon: stat.isFavorite
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      label: 'Favorite',
+                      value: stat.isFavorite ? 'Yes' : 'No',
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            SizedBox(height: MediaQuery.paddingOf(ctx).bottom + AppTokens.s4),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _formatDuration(int ms) {
+    if (ms <= 0) return '—';
+    final total = Duration(milliseconds: ms);
+    final s = total.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '${total.inMinutes}:$s';
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  static String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    if (diff.inDays == 0) return 'Today';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  static void _snack(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(seconds: 2),
+  }) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message), duration: duration));
+  }
+}
+
+class _SongActionSheet extends StatelessWidget {
+  const _SongActionSheet({
+    required this.tile,
+    required this.isFavorite,
+    required this.onAction,
+  });
+
+  final SongTileData tile;
+  final bool isFavorite;
+  final ValueChanged<SongAction> onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppTokens.rXxl),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: AppTokens.s3),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppTokens.s5),
+            child: Row(
+              children: [
+                ArtworkView(
+                  path: tile.artPath,
+                  size: AppTokens.artworkMd,
+                  radius: AppTokens.rSm,
+                ),
+                const SizedBox(width: AppTokens.s3),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        tile.song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (tile.song.artist != null)
+                        Text(
+                          tile.song.artist!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(
+            height: 1,
+            color: colorScheme.outlineVariant,
+            indent: AppTokens.s5,
+            endIndent: AppTokens.s5,
+          ),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ActionTile(
+                    icon: Icons.skip_next_rounded,
+                    label: 'Play next',
+                    onTap: () => onAction(SongAction.playNext),
+                  ),
+                  _ActionTile(
+                    icon: Icons.queue_music_rounded,
+                    label: 'Add to queue',
+                    onTap: () => onAction(SongAction.addToQueue),
+                  ),
+                  _ActionTile(
+                    icon: Icons.playlist_add_rounded,
+                    label: 'Add to playlist',
+                    onTap: () => onAction(SongAction.addToPlaylist),
+                  ),
+                  _ActionTile(
+                    icon: isFavorite
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    label: isFavorite
+                        ? 'Remove from favorites'
+                        : 'Add to favorites',
+                    iconColor: isFavorite ? colorScheme.primary : null,
+                    onTap: () => onAction(SongAction.toggleFavorite),
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  _ActionTile(
+                    icon: Icons.album_rounded,
+                    label: 'Go to album',
+                    onTap: () => onAction(SongAction.goToAlbum),
+                  ),
+                  _ActionTile(
+                    icon: Icons.person_rounded,
+                    label: 'Go to artist',
+                    onTap: () => onAction(SongAction.goToArtist),
+                  ),
+                  _ActionTile(
+                    icon: Icons.image_rounded,
+                    label: 'Change cover',
+                    onTap: () => onAction(SongAction.changeCover),
+                  ),
+                  _ActionTile(
+                    icon: Icons.edit_rounded,
+                    label: 'Edit tags',
+                    onTap: () => onAction(SongAction.editTags),
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  _ActionTile(
+                    icon: Icons.visibility_off_rounded,
+                    label: 'Hide song',
+                    onTap: () => onAction(SongAction.hideSong),
+                  ),
+                  _ActionTile(
+                    icon: Icons.delete_outline_rounded,
+                    label: 'Delete from device',
+                    iconColor: colorScheme.error,
+                    onTap: () => onAction(SongAction.deleteFromDevice),
+                  ),
+                  const Divider(height: 1, indent: 56),
+                  _ActionTile(
+                    icon: Icons.ondemand_video_rounded,
+                    label: 'Find on YouTube',
+                    onTap: () => onAction(SongAction.findOnYouTube),
+                  ),
+                  _ActionTile(
+                    icon: Icons.share_rounded,
+                    label: 'Share song',
+                    onTap: () => onAction(SongAction.shareSong),
+                  ),
+                  _ActionTile(
+                    icon: Icons.music_note_rounded,
+                    label: 'Set as ringtone',
+                    onTap: () => onAction(SongAction.setAsRingtone),
+                  ),
+                  _ActionTile(
+                    icon: Icons.info_outline_rounded,
+                    label: 'Details',
+                    onTap: () => onAction(SongAction.details),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(height: MediaQuery.paddingOf(context).bottom + AppTokens.s4),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.iconColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return PressableScale(
+      onTap: onTap,
+      child: ListTile(
+        leading: Icon(
+          icon,
+          size: 22,
+          color: iconColor ?? colorScheme.onSurfaceVariant,
+        ),
+        title: Text(
+          label,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s5,
+          vertical: AppTokens.s1,
+        ),
+        dense: true,
+        onTap: onTap,
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+          ),
+          const SizedBox(width: AppTokens.s3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

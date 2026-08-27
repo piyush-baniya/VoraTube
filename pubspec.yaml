@@ -48,6 +48,8 @@ dependencies:
   crypto: ^3.0.7
   http: ^1.4.0
   meta: ^1.18.0
+  url_launcher: ^6.3.2
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

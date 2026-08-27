@@ -8,6 +8,8 @@ import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../collections/presentation/widgets/collections_strip.dart';
+import '../../../collections/presentation/widgets/listening_insights.dart';
+import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
@@ -285,7 +287,9 @@ class _SongsViewState extends ConsumerState<_SongsView> {
 
     return Column(
       children: [
+        const ListeningInsightsStrip(),
         const CollectionsStrip(),
+        const MoodStrip(),
         const SmartMixStrip(),
         Expanded(
           child: AsyncValueSwitcher<List<SongTileData>>(

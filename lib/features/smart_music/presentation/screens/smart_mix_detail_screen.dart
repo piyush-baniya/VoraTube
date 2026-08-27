@@ -1,14 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../app/theme/app_tokens.dart';
+import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../../core/player/player_controller.dart';
 import '../../../../../features/library/data/library_models.dart';
 import '../../../../../features/library/data/library_repository.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
 import '../../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../../shared/widgets/empty_state.dart';
-import '../../../../../shared/widgets/skeleton_list.dart';
 import '../../data/smart_mix_service.dart';
 
 class SmartMixDetailScreen extends ConsumerStatefulWidget {
@@ -39,11 +41,17 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (widget.mix.artworkPaths.isNotEmpty)
-                    Image.asset(
-                      widget.mix.artworkPaths.first,
+                  if (widget.mix.artworkPaths.isNotEmpty &&
+                      ArtworkFileCache.resolve(widget.mix.artworkPaths.first) !=
+                          null)
+                    Image.file(
+                      ArtworkFileCache.resolve(widget.mix.artworkPaths.first)!,
                       fit: BoxFit.cover,
                       gaplessPlayback: true,
+                      cacheWidth: ArtworkFileCache.decodeWidth(
+                        320,
+                        MediaQuery.devicePixelRatioOf(context),
+                      ),
                     )
                   else
                     Container(
@@ -305,15 +313,20 @@ class _MixSongTile extends StatelessWidget {
             const SizedBox(width: AppTokens.s3),
             ClipRRect(
               borderRadius: BorderRadius.circular(AppTokens.rSm),
-              child: tile.artPath != null && tile.artPath!.isNotEmpty
-                  ? Image.asset(
-                      tile.artPath!,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                    )
-                  : Container(
+              child: (() {
+                final file = ArtworkFileCache.resolve(tile.artPath);
+                if (file != null) {
+                  return Image.file(
+                    file,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    cacheWidth: ArtworkFileCache.decodeWidth(
+                      48,
+                      MediaQuery.devicePixelRatioOf(context),
+                    ),
+                    errorBuilder: (_, __, ___) => Container(
                       width: 48,
                       height: 48,
                       color: colorScheme.surfaceContainerHighest,
@@ -324,6 +337,18 @@ class _MixSongTile extends StatelessWidget {
                         ),
                       ),
                     ),
+                  );
+                }
+                return Container(
+                  width: 48,
+                  height: 48,
+                  color: colorScheme.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.music_note_rounded,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                  ),
+                );
+              })(),
             ),
             const SizedBox(width: AppTokens.s3),
             Expanded(

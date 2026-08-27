@@ -5,12 +5,12 @@ import '../../data/song_ref_mapper.dart'
     show OnPlaySong, PlayContext, songTileToRef;
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../../../core/player/player_controller.dart';
-import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../data/library_models.dart';
 import '../providers/library_view_providers.dart';
+import 'song_actions.dart';
 
 /// Premium song tile with 64px artwork, clean typography,
 /// playing indicator, and subtle press feedback.
@@ -187,133 +187,7 @@ class _SongTileState extends ConsumerState<SongTile> {
   }
 
   void _showMenu(BuildContext context) {
-    final song = widget.tile.song;
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final isFavorite = ref.read(
-      favoriteIdsProvider.select((ids) => ids.contains(song.id)),
-    );
-    final player = ref.read(playerProvider);
-    final songRef = songTileToRef(widget.tile);
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppTokens.rXxl),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Drag handle
-            Container(
-              margin: const EdgeInsets.only(top: AppTokens.s3),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            // Song info header
-            Padding(
-              padding: const EdgeInsets.all(AppTokens.s5),
-              child: Row(
-                children: [
-                  ArtworkView(
-                    path: widget.tile.artPath,
-                    size: AppTokens.artworkMd,
-                    radius: AppTokens.rSm,
-                  ),
-                  const SizedBox(width: AppTokens.s3),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          song.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (song.artist != null)
-                          Text(
-                            song.artist!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Divider(
-              height: 1,
-              color: colorScheme.outlineVariant,
-              indent: AppTokens.s5,
-              endIndent: AppTokens.s5,
-            ),
-            // Menu items
-            _MenuTile(
-              icon: Icons.skip_next_rounded,
-              label: 'Play next',
-              onTap: () {
-                Navigator.pop(context);
-                player.playNext(songRef);
-              },
-            ),
-            _MenuTile(
-              icon: Icons.queue_music_rounded,
-              label: 'Add to queue',
-              onTap: () {
-                Navigator.pop(context);
-                player.enqueue(songRef);
-              },
-            ),
-            _MenuTile(
-              icon: Icons.playlist_add_rounded,
-              label: 'Add to playlist',
-              onTap: () {
-                Navigator.pop(context);
-                showAddToPlaylistSheet(context, widget.tile.song.id);
-              },
-            ),
-            _MenuTile(
-              icon: isFavorite
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              label: isFavorite ? 'Remove from favorites' : 'Add to favorites',
-              iconColor: isFavorite ? colorScheme.primary : null,
-              onTap: () {
-                Navigator.pop(context);
-                ref.read(favoriteIdsProvider.notifier).toggle(song.id);
-              },
-            ),
-            _MenuTile(
-              icon: Icons.info_outline_rounded,
-              label: 'Song info',
-              onTap: () {
-                Navigator.pop(context);
-                _showSongInfo(context);
-              },
-            ),
-            SizedBox(
-              height: MediaQuery.paddingOf(context).bottom + AppTokens.s4,
-            ),
-          ],
-        ),
-      ),
-    );
+    SongActions.show(context, ref, tile: widget.tile);
   }
 
   void _showSongInfo(BuildContext context) {

@@ -98,3 +98,30 @@ final class SearchResults {
   bool get isEmpty =>
       songs.isEmpty && albums.isEmpty && artists.isEmpty && playlists.isEmpty;
 }
+
+final class ListeningStats {
+  const ListeningStats({
+    required this.totalSongs,
+    required this.totalPlays,
+    required this.totalListeningMs,
+    required this.favoritesCount,
+    required this.mostPlayedCount,
+    required this.recentlyPlayedCount,
+  });
+
+  final int totalSongs;
+  final int totalPlays;
+  final int totalListeningMs;
+  final int favoritesCount;
+  final int mostPlayedCount;
+  final int recentlyPlayedCount;
+
+  bool get hasActivity => totalPlays > 0;
+
+  String get formattedListeningTime {
+    final hours = totalListeningMs ~/ 3600000;
+    final minutes = (totalListeningMs % 3600000) ~/ 60000;
+    if (hours > 0) return '${hours}h ${minutes}m';
+    return '${minutes}m';
+  }
+}
