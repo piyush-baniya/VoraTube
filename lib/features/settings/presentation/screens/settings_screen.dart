@@ -62,17 +62,13 @@ class _PlaybackSection extends ConsumerWidget {
         SettingsSwitchTile(
           title: 'Shuffle',
           subtitle: 'Play songs in random order',
-          value:
-              ref.watch(playbackSnapshotProvider).value?.shuffleEnabled ??
-              false,
+          value: ref.watch(playbackStateProvider).shuffleEnabled,
           onChanged: (value) => ref.read(playerProvider).setShuffle(value),
         ),
         SettingsSelectTile<RepeatMode>(
           title: 'Repeat',
           subtitle: 'Repeat playback behavior',
-          value:
-              ref.watch(playbackSnapshotProvider).value?.repeatMode ??
-              RepeatMode.off,
+          value: ref.watch(playbackStateProvider).repeatMode,
           onChanged: (mode) => ref.read(playerProvider).setRepeat(mode),
           items: const [RepeatMode.off, RepeatMode.all, RepeatMode.one],
           itemBuilder: (context, mode) => Text(mode.name.capitalize()),

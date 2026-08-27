@@ -22,10 +22,10 @@ class MiniPlayer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final snapshot = ref.watch(playbackSnapshotProvider).value;
-    final current = snapshot?.current;
+    final snapshot = ref.watch(playbackStateProvider);
+    final current = snapshot.current;
 
-    if (snapshot == null || !snapshot.hasTrack || current == null) {
+    if (current == null) {
       return const SizedBox.shrink();
     }
 

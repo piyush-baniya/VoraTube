@@ -28,8 +28,8 @@ class QueueSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final snapshot = ref.watch(playbackSnapshotProvider).value;
-    if (snapshot == null || !snapshot.hasTrack) {
+    final snapshot = ref.watch(playbackStateProvider);
+    if (!snapshot.hasTrack) {
       return const SizedBox.shrink();
     }
 

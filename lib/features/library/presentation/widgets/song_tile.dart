@@ -38,8 +38,8 @@ class _SongTileState extends ConsumerState<SongTile> {
     final song = widget.tile.song;
 
     // Watch playback state for playing indicator
-    final snapshot = ref.watch(playbackSnapshotProvider).value;
-    final isPlaying = snapshot?.isPlaying ?? false;
+    final snapshot = ref.watch(playbackStateProvider);
+    final isPlaying = snapshot.isPlaying;
     final isCurrentSong = _isCurrentSong(snapshot);
     final isFavorite = ref.watch(
       favoriteIdsProvider.select((ids) => ids.contains(song.id)),

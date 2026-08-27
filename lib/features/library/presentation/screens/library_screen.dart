@@ -64,7 +64,7 @@ class _LibraryHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final snapshot = ref.watch(playbackSnapshotProvider).value;
+    final snapshot = ref.watch(playbackStateProvider);
 
     // Time-aware greeting
     final hour = DateTime.now().hour;

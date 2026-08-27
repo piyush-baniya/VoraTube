@@ -16,15 +16,62 @@ final playerProvider = Provider<PlayerController>(
 );
 
 /// Coarse playback state: play/pause, current track, queue info, modes.
-final playbackSnapshotProvider = StreamProvider<PlayerSnapshot>(
-  (ref) => ref.watch(playerProvider).snapshot,
-);
+///
+/// The engine's snapshot stream is a plain broadcast stream with no replay, so
+/// a listener that subscribes *between* two emissions would otherwise wait
+/// indefinitely for the next change. Seeding with the controller's synchronous
+/// [PlayerController.current] makes a restored queue visible immediately
+/// instead of leaving the UI stuck in [AsyncLoading].
+final playbackSnapshotProvider = StreamProvider<PlayerSnapshot>((ref) async* {
+  final player = ref.watch(playerProvider);
+  yield player.current;
+  yield* player.snapshot;
+});
+
+/// Coarse playback state as a plain, always-available value.
+///
+/// Prefer this over [playbackSnapshotProvider] in widgets: it collapses the
+/// [AsyncValue] wrapper by falling back to [PlayerController.current], so the
+/// very first frame after a cold start renders real state rather than a
+/// loading placeholder. Watching it never forces a rebuild that watching the
+/// stream would not have caused.
+final playbackStateProvider = Provider<PlayerSnapshot>((ref) {
+  final asyncSnapshot = ref.watch(playbackSnapshotProvider);
+  final seeded = asyncSnapshot.valueOrNull;
+  if (seeded != null) return seeded;
+  return ref.watch(playerProvider).current;
+});
 
 /// High-frequency position stream. ONLY progress-rendering widgets should
 /// watch this — it fires many times per second by design.
 final playbackPositionProvider = StreamProvider<Duration>(
   (ref) => ref.watch(playerProvider).positions,
 );
+
+/// Identity of the currently loaded track, or null when nothing is loaded.
+///
+/// Deliberately narrow. [PlayerSnapshot] has no value equality, so every
+/// coarse emission (play/pause, buffering, duration discovery) looks like a
+/// change to Riverpod. Consumers that only care about *which* song is loaded
+/// — lyrics, metadata lookups — must watch this instead of the whole
+/// snapshot, otherwise they re-run their work on every pause and resume.
+final currentTrackIdentityProvider = Provider<String?>((ref) {
+  final snapshot = ref.watch(playbackStateProvider);
+  if (!snapshot.hasTrack) return null;
+  return snapshot.current!.identityKey;
+});
+
+/// The currently loaded track, or null when nothing is loaded.
+///
+/// Rebuilds only when the track identity changes, so widgets that render song
+/// metadata do not rebuild on every play/pause emission.
+final currentTrackProvider = Provider<SongRef?>((ref) {
+  final identityKey = ref.watch(currentTrackIdentityProvider);
+  if (identityKey == null) return null;
+  final current = ref.watch(playbackStateProvider).current;
+  if (current == null || current.identityKey != identityKey) return null;
+  return current;
+});
 
 /// Resolves a SongRef identity key to a database song row ID for
 /// operations like toggling favorites from the player UI.
@@ -38,13 +85,12 @@ final songRowIdProvider = FutureProvider.family<int?, String>((
 });
 
 /// Convenience provider that exposes whether the currently playing song
-/// is a favorite, derived from [playbackSnapshotProvider] +
+/// is a favorite, derived from [currentTrackIdentityProvider] +
 /// [favoriteIdsProvider].
 final currentSongIsFavoriteProvider = Provider<bool>((ref) {
-  final snapshot = ref.watch(playbackSnapshotProvider).value;
-  if (snapshot == null || !snapshot.hasTrack) return false;
+  final key = ref.watch(currentTrackIdentityProvider);
+  if (key == null) return false;
 
-  final key = snapshot.current!.identityKey;
   final rowIdAsync = ref.watch(songRowIdProvider(key));
   return rowIdAsync.when(
     data: (rowId) {
