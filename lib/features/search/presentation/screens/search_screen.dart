@@ -7,6 +7,7 @@ import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/empty_state.dart'
     show EmptyState, ScreenHeader;
 import '../../../../shared/widgets/transitions.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../playlists/presentation/screens/playlist_detail_screen.dart';
 
@@ -26,10 +27,21 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _fieldController = TextEditingController();
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-focus the search field
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNode.requestFocus();
+    });
+  }
 
   @override
   void dispose() {
     _fieldController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -44,42 +56,84 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const ScreenHeader(title: 'Search'),
+          // Header with back button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.s3,
+              AppTokens.s3,
+              AppTokens.s3,
+              AppTokens.s2,
+            ),
+            child: Row(
+              children: [
+                PressableScale(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHigh,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.arrow_back_rounded,
+                      size: 24,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppTokens.s3),
+                Expanded(
+                  child: Text(
+                    'Search',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Search field
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppTokens.s4,
               AppTokens.s1,
               AppTokens.s4,
-              AppTokens.s2,
+              AppTokens.s3,
             ),
             child: TextField(
               controller: _fieldController,
+              focusNode: _focusNode,
               onChanged: (text) => submitSearchText(ref, text),
               textInputAction: TextInputAction.search,
               style: theme.textTheme.bodyLarge,
               decoration: InputDecoration(
                 hintText: 'Songs, artists, albums, playlists',
                 hintStyle: TextStyle(
-                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                 ),
                 prefixIcon: Icon(
                   Icons.search_rounded,
-                  size: 22,
-                  color: colorScheme.onSurfaceVariant,
+                  size: 24,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 ),
                 suffixIcon: query.isEmpty
                     ? null
-                    : IconButton(
-                        tooltip: 'Clear',
-                        icon: Icon(
-                          Icons.close_rounded,
-                          size: 20,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                        onPressed: () {
+                    : PressableScale(
+                        onTap: () {
                           _fieldController.clear();
                           submitSearchText(ref, '');
                         },
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppTokens.s3),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 22,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
                 filled: true,
                 fillColor: colorScheme.surfaceContainerHigh,
@@ -91,6 +145,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   borderRadius: BorderRadius.circular(AppTokens.rXl),
                   borderSide: BorderSide.none,
                 ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppTokens.rXl),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppTokens.rXl),
+                  borderSide: BorderSide(
+                    color: colorScheme.primary,
+                    width: 2,
+                  ),
+                ),
               ),
             ),
           ),
@@ -98,27 +163,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             child: resultsAsync.when(
               skipLoadingOnRefresh: true,
               loading: () => const SizedBox.shrink(),
-              error: (e, _) => const EmptyState(
+              error: (e, _) => EmptyState(
                 icon: Icons.error_outline_rounded,
                 title: 'Search failed',
                 message: 'Try a different term.',
               ),
               data: (results) {
                 if (query.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.search_rounded,
-                    title: 'Search your library',
-                    message: 'Everything stays on this device.',
-                  );
+                  return _EmptySearchState();
                 }
                 if (results.isEmpty) {
-                  return EmptyState(
-                    icon: Icons.search_off_rounded,
-                    title: 'No matches for \u201C$query\u201D',
-                    message: 'Check the spelling or try fewer words.',
-                  );
+                  return _NoResultsState(query: query);
                 }
-                return _Results(results: results);
+                return _Results(results: results, query: query);
               },
             ),
           ),
@@ -128,70 +185,281 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 }
 
+class _EmptySearchState extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  colorScheme.primary.withValues(alpha: 0.15),
+                  colorScheme.primary.withValues(alpha: 0.03),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.6, 1.0],
+              ),
+            ),
+            child: Icon(
+              Icons.search_rounded,
+              size: 44,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+          ),
+          const SizedBox(height: AppTokens.s6),
+          Text(
+            'Search your library',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppTokens.s3),
+          Text(
+            'Everything stays on this device.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoResultsState extends StatelessWidget {
+  const _NoResultsState({required this.query});
+
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  colorScheme.error.withValues(alpha: 0.15),
+                  colorScheme.error.withValues(alpha: 0.03),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.6, 1.0],
+              ),
+            ),
+            child: Icon(
+              Icons.search_off_rounded,
+              size: 44,
+              color: colorScheme.error.withValues(alpha: 0.7),
+            ),
+          ),
+          const SizedBox(height: AppTokens.s6),
+          Text(
+            'No matches for "$query"',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: AppTokens.s3),
+          Text(
+            'Check the spelling or try fewer words.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Results extends ConsumerWidget {
-  const _Results({required this.results});
+  const _Results({required this.results, required this.query});
 
   final SearchResults results;
+  final String query;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final children = <Widget>[
-      for (final tile in results.songs)
-        _SongResultTile(tile: tile, allTiles: results.songs),
-      for (final album in results.albums)
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: AppTokens.s5),
-          leading: ArtworkView(path: album.artPath, size: 48),
-          title: Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          subtitle: Text(
-            'Album \u00b7 ${album.artistName ?? ''}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return CustomScrollView(
+      slivers: [
+        if (results.songs.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: _SectionHeader(
+              title: 'Songs',
+              count: results.songs.length,
+            ),
           ),
-          onTap: () => Navigator.of(context).push(
-            pushSharedAxis<void>(context, FilteredSongsScreen.album(album)),
+          SliverList.separated(
+            itemCount: results.songs.length,
+            separatorBuilder: (_, _) => Divider(
+              height: AppTokens.borderHairline,
+              thickness: AppTokens.borderHairline,
+              color: colorScheme.outlineVariant,
+              indent: AppTokens.artworkMd + AppTokens.s3 + AppTokens.s5,
+              endIndent: AppTokens.s5,
+            ),
+            itemBuilder: (context, index) =>
+                _SongResultTile(tile: results.songs[index], allTiles: results.songs),
           ),
-        ),
-      for (final artist in results.artists)
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: AppTokens.s5),
-          leading: const Icon(Icons.person_rounded, size: 26),
-          title: Text(
-            artist.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        ],
+        if (results.albums.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: _SectionHeader(
+              title: 'Albums',
+              count: results.albums.length,
+            ),
           ),
-          subtitle: const Text('Artist'),
-          onTap: () => Navigator.of(context).push(
-            pushSharedAxis<void>(context, FilteredSongsScreen.artist(artist)),
+          SliverList.separated(
+            itemCount: results.albums.length,
+            separatorBuilder: (_, _) => Divider(
+              height: AppTokens.borderHairline,
+              thickness: AppTokens.borderHairline,
+              color: colorScheme.outlineVariant,
+              indent: AppTokens.artworkMd + AppTokens.s3 + AppTokens.s5,
+              endIndent: AppTokens.s5,
+            ),
+            itemBuilder: (context, index) {
+              final album = results.albums[index];
+              return _AlbumResultTile(album: album);
+            },
           ),
-        ),
-      for (final playlist in results.playlists)
-        ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: AppTokens.s5),
-          leading: const Icon(Icons.queue_music_rounded, size: 26),
-          title: Text(
-            playlist.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        ],
+        if (results.artists.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: _SectionHeader(
+              title: 'Artists',
+              count: results.artists.length,
+            ),
           ),
-          subtitle: const Text('Playlist'),
-          onTap: () => Navigator.of(context).push(
-            pushSharedAxis<void>(
-              context,
-              PlaylistDetailScreen(
-                playlistId: playlist.id,
-                name: playlist.name,
+          SliverList.separated(
+            itemCount: results.artists.length,
+            separatorBuilder: (_, _) => Divider(
+              height: AppTokens.borderHairline,
+              thickness: AppTokens.borderHairline,
+              color: colorScheme.outlineVariant,
+              indent: AppTokens.artworkMd + AppTokens.s3 + AppTokens.s5,
+              endIndent: AppTokens.s5,
+            ),
+            itemBuilder: (context, index) {
+              final artist = results.artists[index];
+              return _ArtistResultTile(artist: artist);
+            },
+          ),
+        ],
+        if (results.playlists.isNotEmpty) ...[
+          SliverToBoxAdapter(
+            child: _SectionHeader(
+              title: 'Playlists',
+              count: results.playlists.length,
+            ),
+          ),
+          SliverList.separated(
+            itemCount: results.playlists.length,
+            separatorBuilder: (_, _) => Divider(
+              height: AppTokens.borderHairline,
+              thickness: AppTokens.borderHairline,
+              color: colorScheme.outlineVariant,
+              indent: AppTokens.artworkMd + AppTokens.s3 + AppTokens.s5,
+              endIndent: AppTokens.s5,
+            ),
+            itemBuilder: (context, index) {
+              final playlist = results.playlists[index];
+              return _PlaylistResultTile(playlist: playlist);
+            },
+          ),
+        ],
+        SliverToBoxAdapter(child: SizedBox(height: AppTokens.s8)),
+      ],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, required this.count});
+
+  final String title;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s5,
+        AppTokens.s4,
+        AppTokens.s5,
+        AppTokens.s2,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 16,
+            decoration: BoxDecoration(
+              color: colorScheme.primary,
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s3),
+          Text(
+            title.toUpperCase(),
+            style: theme.textTheme.labelLarge?.copyWith(
+              letterSpacing: 1.0,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(width: AppTokens.s3),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s2,
+              vertical: 1,
+            ),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(AppTokens.rFull),
+            ),
+            child: Text(
+              '$count',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-        ),
-    ];
-
-    return FadeThroughSwitcher(
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: children,
+        ],
       ),
     );
   }
@@ -206,22 +474,288 @@ class _SongResultTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final song = tile.song;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: AppTokens.s5),
-      leading: ArtworkView(path: tile.artPath, size: 48),
-      title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        song.artist ?? '\u2014',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: const Icon(Icons.play_arrow_rounded, size: 24),
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
       onTap: () {
         final ctx = playContextFromTiles(allTiles, allTiles.indexOf(tile));
         ref
             .read(playerProvider)
             .playQueue(ctx.refs, startIndex: ctx.startIndex);
       },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s5,
+          vertical: AppTokens.s1,
+        ),
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            children: [
+              ArtworkView(
+                path: tile.artPath,
+                size: AppTokens.artworkMd,
+                radius: AppTokens.rSm,
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      song.artist ?? '\u2014',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppTokens.s2),
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.play_arrow_rounded,
+                  size: 18,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AlbumResultTile extends ConsumerWidget {
+  const _AlbumResultTile({required this.album});
+
+  final dynamic album;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
+      onTap: () => Navigator.of(context).push(
+        pushSharedAxis<void>(context, FilteredSongsScreen.album(album)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s5,
+          vertical: AppTokens.s1,
+        ),
+        child: SizedBox(
+          height: 56,
+          child: Row(
+            children: [
+              ArtworkView(
+                path: album.artPath,
+                size: AppTokens.artworkMd,
+                radius: AppTokens.rSm,
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      album.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Album ${album.artistName ?? ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ArtistResultTile extends ConsumerWidget {
+  const _ArtistResultTile({required this.artist});
+
+  final dynamic artist;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
+      onTap: () => Navigator.of(context).push(
+        pushSharedAxis<void>(context, FilteredSongsScreen.artist(artist)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s5,
+          vertical: AppTokens.s1,
+        ),
+        child: SizedBox(
+          height: 56,
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHigh,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.person_rounded,
+                  size: 24,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      artist.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaylistResultTile extends ConsumerWidget {
+  const _PlaylistResultTile({required this.playlist});
+
+  final dynamic playlist;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
+      onTap: () => Navigator.of(context).push(
+        pushSharedAxis<void>(
+          context,
+          PlaylistDetailScreen(
+            playlistId: playlist.id,
+            name: playlist.name,
+          ),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s5,
+          vertical: AppTokens.s1,
+        ),
+        child: SizedBox(
+          height: 56,
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(AppTokens.rSm),
+                ),
+                child: Icon(
+                  Icons.queue_music_rounded,
+                  size: 24,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      playlist.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Playlist · ${playlist.songCount} songs',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
