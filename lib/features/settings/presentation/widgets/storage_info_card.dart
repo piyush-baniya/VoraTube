@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../providers/settings_providers.dart';
 
-/// Storage info card widget.
+/// Premium storage info card widget.
 class StorageInfoCard extends ConsumerWidget {
   const StorageInfoCard({super.key});
 
@@ -21,38 +22,91 @@ class StorageInfoCard extends ConsumerWidget {
 
   Widget _buildLoading(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-      child: Padding(
-        padding: const EdgeInsets.all(AppTokens.s4),
-        child: Row(
-          children: [
-            const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: AppTokens.s3),
-            Text('Loading storage info...', style: theme.textTheme.bodyMedium),
-          ],
+      padding: const EdgeInsets.all(AppTokens.s5),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        borderRadius: BorderRadius.circular(AppTokens.rLg),
+        border: Border.all(
+          color: isDark
+              ? AppColors.borderSubtleDark
+              : AppColors.borderSubtleLight,
+          width: AppTokens.borderHairline,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: -4,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: AppTokens.s4),
+          Text(
+            'Loading storage info...',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildError(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-      child: Padding(
-        padding: const EdgeInsets.all(AppTokens.s4),
-        child: Row(
-          children: [
-            Icon(Icons.error_outline, color: theme.colorScheme.error, size: 20),
-            const SizedBox(width: AppTokens.s3),
-            Text('Storage info unavailable', style: theme.textTheme.bodyMedium),
-          ],
+      padding: const EdgeInsets.all(AppTokens.s5),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        borderRadius: BorderRadius.circular(AppTokens.rLg),
+        border: Border.all(
+          color: isDark
+              ? AppColors.borderSubtleDark
+              : AppColors.borderSubtleLight,
+          width: AppTokens.borderHairline,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: -4,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.error_outline,
+            color: theme.colorScheme.error,
+            size: 20,
+          ),
+          const SizedBox(width: AppTokens.s3),
+          Text(
+            'Storage info unavailable',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -60,35 +114,56 @@ class StorageInfoCard extends ConsumerWidget {
   Widget _buildData(BuildContext context, StorageInfo info) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        borderRadius: BorderRadius.circular(AppTokens.rLg),
+        border: Border.all(
+          color: isDark
+              ? AppColors.borderSubtleDark
+              : AppColors.borderSubtleLight,
+          width: AppTokens.borderHairline,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: -4,
+          ),
+        ],
+      ),
       child: Column(
         children: [
           _InfoRow(
-            icon: Icons.storage,
+            icon: Icons.storage_rounded,
             label: 'Total Storage',
             value: info.totalSize,
             iconColor: colorScheme.primary,
           ),
-          const _Divider(),
+          _PremiumDivider(),
           _InfoRow(
-            icon: Icons.storage,
+            icon: Icons.data_object_rounded,
             label: 'Database',
             value: info.databaseSize,
-            iconColor: Colors.blue,
+            iconColor: colorScheme.primary.withValues(alpha: 0.8),
           ),
+          _PremiumDivider(),
           _InfoRow(
-            icon: Icons.image,
+            icon: Icons.image_rounded,
             label: 'Artwork Cache',
             value: info.artworkCacheSize,
-            iconColor: Colors.purple,
+            iconColor: colorScheme.secondary,
           ),
+          _PremiumDivider(),
           _InfoRow(
-            icon: Icons.music_note,
+            icon: Icons.music_note_rounded,
             label: 'Imported Music',
             value: info.importedMusicSize,
-            iconColor: Colors.green,
+            iconColor: colorScheme.tertiary,
           ),
         ],
       ),
@@ -116,21 +191,21 @@ class _InfoRow extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppTokens.s4,
-        vertical: AppTokens.s2,
+        horizontal: AppTokens.s5,
+        vertical: AppTokens.s3,
       ),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: iconColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(AppTokens.rSm),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
             ),
-            child: Icon(icon, size: 20, color: iconColor),
+            child: Icon(icon, size: 22, color: iconColor),
           ),
-          const SizedBox(width: AppTokens.s3),
+          const SizedBox(width: AppTokens.s4),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,9 +213,11 @@ class _InfoRow extends StatelessWidget {
                 Text(
                   label,
                   style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   value,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -156,18 +233,20 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _Divider extends StatelessWidget {
-  const _Divider();
+class _PremiumDivider extends StatelessWidget {
+  const _PremiumDivider();
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s5 + 44 + AppTokens.s4),
       child: Divider(
-        height: 0.5,
-        thickness: 0.5,
-        color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+        height: AppTokens.borderHairline,
+        thickness: AppTokens.borderHairline,
+        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+        indent: 0,
+        endIndent: 0,
       ),
     );
   }
