@@ -57,6 +57,12 @@ class FakePlayerController implements PlayerController {
   Future<void> move(int fromIndex, int toIndex) async {}
 
   @override
+  Future<void> moveQueueItem(int fromIndex, int toIndex) async {}
+
+  @override
+  Future<void> clearQueue() async {}
+
+  @override
   Future<void> setShuffle(bool enabled) async {}
 
   @override

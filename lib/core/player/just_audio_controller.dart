@@ -238,6 +238,25 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   }
 
   @override
+  Future<void> moveQueueItem(int fromIndex, int toIndex) async {
+    await move(fromIndex, toIndex);
+  }
+
+  @override
+  Future<void> clearQueue() async {
+    final currentIndex = _player.sequenceState.currentIndex ?? 0;
+    final currentRef = currentIndex < _queueRefs.length ? _queueRefs[currentIndex] : null;
+    
+    if (currentRef != null) {
+      await _player.setAudioSources([
+        _sourceFor(currentRef),
+      ], initialIndex: 0);
+      _queueRefs = List.unmodifiable([currentRef]);
+      _schedulePersist(immediate: true);
+    }
+  }
+
+  @override
   List<SongRef> get currentQueue => List<SongRef>.of(_queueRefs);
 
   @override

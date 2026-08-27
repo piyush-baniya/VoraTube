@@ -4,15 +4,17 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
+import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../shared/widgets/artwork_view.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
 import '../../presentation/screens/full_player_screen.dart';
 import '../providers/player_providers.dart';
 
 /// Compact now-playing bar docked above the bottom navigation.
 ///
-/// Design: Clean, elevated surface with artwork, metadata, and
-/// transport controls. Subtle top border adds depth.
-/// Tapping opens the full-screen player with a Hero artwork transition.
+/// Design: Premium elevated surface with artwork, metadata, progress indicator,
+/// and transport controls. Seamless Hero transition to full-screen player.
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key});
 
@@ -29,6 +31,7 @@ class MiniPlayer extends ConsumerWidget {
 
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return GestureDetector(
       onTap: () {
@@ -40,7 +43,7 @@ class MiniPlayer extends ConsumerWidget {
             transitionsBuilder: (_, animation, __, child) {
               final curved = CurvedAnimation(
                 parent: animation,
-                curve: AppTokens.easeOut,
+                curve: AppTokens.easeOutExpo,
                 reverseCurve: AppTokens.easeIn,
               );
               return FadeTransition(opacity: curved, child: child);
@@ -48,70 +51,126 @@ class MiniPlayer extends ConsumerWidget {
           ),
         );
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: AppTokens.normal,
+        curve: AppTokens.easeOut,
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHigh,
           border: Border(
             top: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-              width: 0.5,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+              width: AppTokens.borderHairline,
             ),
           ),
+          boxShadow: isDark
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 16,
+                    offset: const Offset(0, -4),
+                    spreadRadius: -4,
+                  ),
+                ]
+              : null,
         ),
         child: SafeArea(
           top: false,
           child: SizedBox(
-            height: 64,
+            height: 72,
             child: Row(
               children: [
-                const SizedBox(width: AppTokens.s2),
-                _Artwork(path: current.artPath, heroTag: _heroTag),
                 const SizedBox(width: AppTokens.s3),
+                // Artwork with Hero
+                _CompactArtwork(path: current.artPath, heroTag: _heroTag),
+                const SizedBox(width: AppTokens.s3),
+                // Metadata + progress
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        current.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (current.artist != null)
-                        Text(
-                          current.artist!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  current.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                if (current.artist != null)
+                                  Text(
+                                    current.artist!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
+                          // Play/pause
+                          PressableScale(
+                            onTap: () => ref.read(playerProvider).togglePlay(),
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                snapshot.isPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                size: 18,
+                                color: colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      // Progress bar
+                      _MiniProgress(
+                        snapshot: snapshot,
+                        onSeek: (pos) => ref.read(playerProvider).seek(pos),
+                      ),
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: snapshot.isPlaying ? 'Pause' : 'Play',
-                  onPressed: () => ref.read(playerProvider).togglePlay(),
-                  icon: Icon(
-                    snapshot.isPlaying
-                        ? Icons.pause_rounded
-                        : Icons.play_arrow_rounded,
-                    size: 30,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Next',
-                  onPressed:
+                // Next button
+                PressableScale(
+                  onTap:
                       snapshot.currentIndex < snapshot.queueLength - 1 ||
                           snapshot.repeatMode == RepeatMode.all
                       ? () => ref.read(playerProvider).next()
                       : null,
-                  icon: const Icon(Icons.skip_next_rounded, size: 26),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                        width: AppTokens.borderHairline,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.skip_next_rounded,
+                      size: 20,
+                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    ),
+                  ),
                 ),
-                const SizedBox(width: AppTokens.s1),
+                const SizedBox(width: AppTokens.s2),
               ],
             ),
           ),
@@ -121,8 +180,8 @@ class MiniPlayer extends ConsumerWidget {
   }
 }
 
-class _Artwork extends StatelessWidget {
-  const _Artwork({required this.path, required this.heroTag});
+class _CompactArtwork extends StatelessWidget {
+  const _CompactArtwork({required this.path, required this.heroTag});
 
   final String? path;
   final Object heroTag;
@@ -130,31 +189,102 @@ class _Artwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final file = path == null || path!.isEmpty ? null : File(path!);
+    final file = _resolveFile();
     return Hero(
       tag: heroTag,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppTokens.rSm),
         child: SizedBox(
-          width: 48,
-          height: 48,
-          child: file != null && file.existsSync()
+          width: 52,
+          height: 52,
+          child: file != null
               ? Image.file(
                   file,
                   fit: BoxFit.cover,
-                  cacheWidth: 96,
+                  cacheWidth: 104,
                   gaplessPlayback: true,
                 )
               : ColoredBox(
                   color: theme.colorScheme.surfaceContainerHighest,
                   child: Icon(
                     Icons.music_note_rounded,
-                    size: 22,
-                    color: theme.colorScheme.onSurfaceVariant,
+                    size: 24,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                   ),
                 ),
         ),
       ),
     );
+  }
+
+  File? _resolveFile() {
+    final p = path;
+    if (p == null || p.isEmpty) return null;
+    final f = File(p);
+    return f.existsSync() ? f : null;
+  }
+}
+
+class _MiniProgress extends ConsumerWidget {
+  const _MiniProgress({
+    required this.snapshot,
+    required this.onSeek,
+  });
+
+  final PlayerSnapshot snapshot;
+  final ValueChanged<Duration> onSeek;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ref
+        .watch(playbackPositionProvider)
+        .when(
+          data: (position) {
+            final duration = snapshot.durationMs > 0
+                ? Duration(milliseconds: snapshot.durationMs)
+                : Duration.zero;
+            final progress = duration.inMilliseconds > 0
+                ? position.inMilliseconds / duration.inMilliseconds
+                : 0.0;
+
+            return Stack(
+              children: [
+                Container(
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(AppTokens.rFull),
+                  ),
+                ),
+                FractionallySizedBox(
+                  widthFactor: progress.clamp(0.0, 1.0),
+                  child: Container(
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary,
+                      borderRadius: BorderRadius.circular(AppTokens.rFull),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+          loading: () => Container(
+            height: 3,
+            decoration: BoxDecoration(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(AppTokens.rFull),
+            ),
+          ),
+          error: (_, __) => Container(
+            height: 3,
+            decoration: BoxDecoration(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(AppTokens.rFull),
+            ),
+          ),
+        );
   }
 }

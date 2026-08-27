@@ -215,6 +215,12 @@ abstract class PlayerController {
 
   Future<void> move(int fromIndex, int toIndex);
 
+  /// Moves a queue item from one position to another (alias for move).
+  Future<void> moveQueueItem(int fromIndex, int toIndex);
+
+  /// Clears the entire queue except the currently playing track.
+  Future<void> clearQueue();
+
   Future<void> setShuffle(bool enabled);
 
   Future<void> setRepeat(RepeatMode mode);
