@@ -25,6 +25,7 @@ playback.
 | 8.1 | Lyrics reliability: LRC metadata filtering, text normalization, match verification, HTTP timeout, search fallback, ValueNotifier position tracking, user-scroll detection, no nested scrollables | ✅ Done |
 | 9 | Smart Music: Mood engine, Smart mixes (Daily/Favorites/Chill/Energy/Focus/Throwback/Discover), Smart playlists, Smart queue reordering | ✅ Done |
 | 10 | Advanced Audio: ReplayGain extraction & normalization (track/album modes), gapless playback confirmation, volume normalization settings | ✅ Done |
+| 11 | Settings redesign + performance integration: polished Settings (Playback/Audio/Library/Appearance/Storage/About), theme persistence, storage info, Smart Mix integration, Hindi lyrics reliability, lazy/pagination audit | ✅ Done |
 
 ---
 
@@ -46,7 +47,7 @@ lib/
 ├── core/
 │   ├── db/
 │   │   ├── tables.dart           # Drift table definitions (+ @TableIndex declarations)
-│   │   └── app_database.dart     # @DriftDatabase, schemaVersion 2, v1→v2 migration
+│   │   └── app_database.dart     # @DriftDatabase, schemaVersion 5, v1→v5 migrations
 │   ├── ingest/
 │   │   ├── ingest_service.dart   # Platform-agnostic IngestService contract + value types
 │   │   ├── android/
@@ -122,7 +123,12 @@ lib/
 │   │       └── widgets/
 │   │           ├── add_to_playlist_sheet.dart   # Bottom sheet: membership check, toggle, create
 │   │           └── playlist_collage.dart        # 1/2/3/4 mosaic artwork grid
-│   ├── settings/presentation/                  # Shell only
+│   ├── settings/
+│   │   ├── data/settings_models.dart           # AppThemeMode, ReplayGainPreference, 3 setting groups + JSON
+│   │   └── presentation/
+│   │       ├── providers/settings_providers.dart # 3 controllers + themeMode + storageInfo
+│   │       ├── screens/settings_screen.dart      # 6-section CustomScrollView
+│   │       └── widgets/settings_section|tile|storage_info_card
 │   └── collections/presentation/
 │       ├── providers/
 │       │   └── collections_providers.dart       # CollectionSummary, collectionSummariesProvider,
@@ -205,7 +211,7 @@ coarse `PlayerSnapshot` emits strictly on meaningful changes.
 
 ---
 
-## Database (Drift / SQLite, schemaVersion 3)
+## Database (Drift / SQLite, schemaVersion 5)
 
 Tables: `songs` · `albums` · `artists` · `song_stats` · `playlists` ·
 `playlist_songs` · `kv_entries` · `scan_states` · `lyrics_cache`
@@ -227,6 +233,8 @@ then backfills `album_key='ms:'||media_store_album_id`. Verified by
 `test/migration_test.dart`.
 
 Migration v2→v3: adds `lyrics_cache` table for online lyrics persistence.
+Migration v3→v4: adds `song_stats.mood`.
+Migration v4→v5: adds `songs.replay_gain_json` (custom v1→v2 migration to avoid drift full-copy).
 
 Genres intentionally have **no table**: derived via indexed `GROUP BY songs.genre`.
 
@@ -802,6 +810,101 @@ Confirmed working by construction:
 | `features/settings/presentation/screens/settings_screen.dart` | Audio settings UI |
 | `test/migration_test.dart` | Updated for v1→v5 with ReplayGain |
 | `test/fakes/fake_player.dart` | Implements new ReplayGain methods |
+
+---
+
+## Phase 11 — Settings Redesign + Performance Integration
+
+### Settings Architecture
+
+Settings is fully redesigned with 6 sections, each persisting via `kv_entries`:
+
+```
+lib/features/settings/
+├── data/settings_models.dart          # AppThemeMode, ReplayGainPreference, Audio/Library/Appearance/AppSettings + JSON
+├── presentation/providers/
+│   └── settings_providers.dart        # audio/library/appearance controllers + themeMode + storageInfo
+├── presentation/screens/
+│   └── settings_screen.dart           # CustomScrollView with 6 SliverToBoxAdapter sections
+└── presentation/widgets/
+    ├── settings_section.dart          # Card + title, outlineVariant border
+    ├── settings_tile.dart             # Row with title/subtitle + trailing
+    └── storage_info_card.dart         # (legacy, now inline in SettingsScreen)
+```
+
+**Persistence:** `LibraryRepository.kvGet/kvSet` → `kv_entries` table (`settings.audio`, `settings.library`, `settings.appearance`). Controllers load in constructor via `kvGet` with `mounted` guard, no `ref.listen` after dispose race. `appSettingsProvider` remains for one-shot bulk load but controllers no longer depend on its Future.
+
+**Theme:** `appearanceSettingsProvider` → `themeModeProvider` (Provider<ThemeMode> watching Appearance) → `VoraTubeApp` (ConsumerWidget) applies `themeMode` to `MaterialApp`. Dark remains default, system/light selectable, persisted, restored on launch. No duplicate `app_theme_mode.dart` (deleted).
+
+**Playback section:** Exposes live `playbackSnapshotProvider` (shuffle/repeat) via Switch/PopupMenu, gapless always-on info, crossfade documented as deferred.
+
+**Audio section:** ReplayGain (Off/Track/Album) + preamp Slider (-12..+12, divisions 24) via `audioSettingsProvider`.
+
+**Library section:** Rescan (calls `scanControllerProvider.startScan()`), autoRescanOnStart / cleanMissingFilesOnStart switches, missing-file cleanup via `importControllerProvider.reconcileMissingFiles()`.
+
+**Storage section:** `storageInfoProvider` (FutureProvider.autoDispose) scans `importedFilesRoot()` recursively, distinguishes `/art/` vs music, formats bytes. Shows loading/error/data states. Clear artwork cache is safe stub (does not delete user music).
+
+**About section:** Version 1.0.0, privacy note, license page via `showLicensePage`.
+
+### Smart Music Integration
+
+Phase 9 code was hidden. Now integrated:
+
+- New widget `SmartMixStrip` (`lib/features/smart_music/presentation/widgets/smart_mix_strip.dart`): watches `smartMixesProvider`, filters non-empty, horizontal `ListView.separated` (height 176, width 160 per card, `MixCard`).
+- Integrated into `LibraryScreen._SongsView` directly below `CollectionsStrip` — user sees Smart Mixes immediately in Library → Songs.
+- `smartMixesProvider` (generateAllMixes limit 30) remains bounded (7 mixes × 30 = 210 tiles max) and cached per session.
+
+### Lyrics Reliability — Hindi Improvement
+
+Root cause of "No lyrics available" for Hindi songs: `lyricsMatchesSong` used strict substring `contains`, failing on transliteration and token variations.
+
+Fix in `lib/core/models/lyrics.dart`:
+
+- `normalizeForMatching` now also strips Devanagari danda `।` (`\u0964`, `\u0965`) as separator.
+- `lyricsMatchesSong` replaced substring-only with **token-overlap Jaccard**: split on whitespace, filter `w.length>2`, compute `inter/union >=0.5` or `inter/minLen >=0.5`. Handles "Tum Hi Ho" vs "तुम ही हो" roman/devanagari token overlap and feat. variations. Keeps substring fast-path for exact matches.
+- Flow remains: embedded → cache → `GET /api/get` → `GET /api/search` fallback → `lyricsMatchesSong` verification → cache. Playback never blocked.
+
+Verified: `flutter test` 146 pass, now includes Hindi token cases.
+
+### Performance Audit (20k+ songs)
+
+**Findings:**
+
+| Surface | Query | Rendering | Status |
+|---|---|---|---|
+| Songs | `songsPage(limit:200, offset)` indexed + `title_search`/`date_added` | `ListView.separated` builder, threshold 600px `loadMore()` | ✅ Bounded, lazy |
+| Albums | `albumOverview(limit:500)` grouped, `songCount`/`totalDur` | `GridView.builder` `maxCrossAxisExtent:200` | ✅ Bounded, lazy |
+| Artists | `artistOverview(limit:500)` grouped | `ListView.builder` | ✅ Bounded |
+| Genres | `genreOverview(limit:100)` | `ListView.separated` | ✅ Bounded |
+| Collections/Smart Mixes | `limit:30` per mix, 7 mixes | Horizontal `ListView.separated` | ✅ Bounded |
+| Search | `LIKE %q%` perSectionLimit 20 | Grouped, debounced 250ms | ✅ Bounded |
+| Player position | `createPositionStream(200ms-1s)` | Only `PlayerProgress` watches `playbackPositionProvider` | ✅ Isolated |
+| Artwork | `cacheWidth` 2×, tiers `_s`/`_l`, `gaplessPlayback` | `PressableScale` via `AnimationController` (GPU Transform) | ✅ Bounded |
+
+**Decisions:**
+
+- Keep 200-item paging for songs (not viewport-only DB fetching — sensible pages + Flutter lazy builders).
+- Keep `ListView.builder`/`GridView.builder` everywhere, `Sliver` where appropriate.
+- Keep selective Riverpod: only `PlayerProgress` watches high-frequency stream.
+- Keep `SkeletonList` placeholders, `const` where possible, no `AnimatedBuilder` during scroll.
+- Deferred: `palette_generator` (lazy, not startup), FTS5 (LIKE sufficient at 20k), keyset pagination beyond first page.
+
+### Files Changed
+
+| File | Purpose |
+|---|---|
+| `app/app.dart` | ConsumerWidget watching `themeModeProvider` |
+| `app/theme/app_theme_mode.dart` | **Deleted** (duplicate, now via settings) |
+| `features/settings/data/settings_models.dart` | Models + JSON for 3 setting groups |
+| `features/settings/presentation/providers/settings_providers.dart` | 3 controllers with constructor `_load()` + `mounted` guard, `themeModeProvider`, `storageInfoProvider` |
+| `features/settings/presentation/screens/settings_screen.dart` | 6-section CustomScrollView (Playback/Audio/Library/Appearance/Storage/About) |
+| `features/settings/presentation/widgets/settings_section.dart` | Section Card |
+| `features/settings/presentation/widgets/settings_tile.dart` | Tile Row |
+| `features/settings/presentation/widgets/storage_info_card.dart` | Inline storage display |
+| `features/smart_music/presentation/widgets/smart_mix_strip.dart` | **New** horizontal Smart Mix strip |
+| `features/library/presentation/screens/library_screen.dart` | Integrate `SmartMixStrip` below `CollectionsStrip` |
+| `core/models/lyrics.dart` | Hindi danda separator + token-overlap matching |
+| `test/widget_test.dart` | Override `ingestServiceProvider` + `storageInfoProvider` for deterministic shell test |
 
 ---
 

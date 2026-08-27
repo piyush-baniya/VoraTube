@@ -7,6 +7,7 @@ import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../collections/presentation/widgets/collections_strip.dart';
+import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
 import '../../data/song_ref_mapper.dart';
@@ -131,6 +132,7 @@ class _SongsViewState extends ConsumerState<_SongsView> {
     return Column(
       children: [
         const CollectionsStrip(),
+        const SmartMixStrip(),
         Expanded(
           child: AsyncValueSwitcher<List<SongTileData>>(
             value: asyncValue,

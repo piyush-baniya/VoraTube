@@ -195,9 +195,9 @@ String normalizeForMatching(String text) {
     '',
   );
 
-  // Remove dashes and common separators used in subtitle patterns
-  // "Song Title - From Movie" or "Song Title | Artist"
-  result = result.replaceAll(RegExp(r'\s*[-–—|]\s*'), ' ');
+  // Remove dashes / Devanagari danda and common separators
+  // "Song Title - From Movie", "Song Title | Artist", "गीत ।"
+  result = result.replaceAll(RegExp(r'\s*[-–—|।\u0964\u0965]\s*'), ' ');
 
   // Remove common prefixes: "Original Motion Picture Soundtrack", etc.
   result = result.replaceAll(
@@ -218,7 +218,8 @@ String normalizeForMatching(String text) {
 ///
 /// Returns true if the track name and artist name from the result
 /// are close enough to the requested song to be considered a match.
-/// Uses normalized comparison to avoid false negatives from minor variations.
+/// Uses normalized comparison plus token-overlap to handle Hindi/English
+/// variations without being too permissive.
 bool lyricsMatchesSong({
   required String resultTrackName,
   required String resultArtistName,
@@ -230,18 +231,26 @@ bool lyricsMatchesSong({
   final normReqTrack = normalizeForMatching(requestedTrackName);
   final normReqArtist = normalizeForMatching(requestedArtistName);
 
-  // Both track and artist must have some overlap
-  if (normReqTrack.isEmpty || normReqTrack.isEmpty) return false;
+  if (normReqTrack.isEmpty || normResultTrack.isEmpty) return false;
+  if (normReqArtist.isEmpty || normResultArtist.isEmpty) return false;
 
-  // Check if normalized track names are substrings of each other
-  final trackMatch =
-      normResultTrack.contains(normReqTrack) ||
-      normReqTrack.contains(normResultTrack);
+  bool tokenOverlap(String a, String b) {
+    if (a.contains(b) || b.contains(a)) return true;
+    final ta = a.split(' ').where((w) => w.length > 2).toSet();
+    final tb = b.split(' ').where((w) => w.length > 2).toSet();
+    if (ta.isEmpty || tb.isEmpty) return false;
+    final inter = ta.intersection(tb).length;
+    final union = ta.union(tb).length;
+    final jaccard = union == 0 ? 0.0 : inter / union;
+    if (jaccard >= 0.5) return true;
+    // Hindi / transliteration fallback: at least half tokens overlap
+    final minLen = ta.length < tb.length ? ta.length : tb.length;
+    if (minLen > 0 && inter / minLen >= 0.5) return true;
+    return false;
+  }
 
-  // Check if normalized artist names have overlap
-  final artistMatch =
-      normResultArtist.contains(normReqArtist) ||
-      normReqArtist.contains(normResultArtist);
+  final trackMatch = tokenOverlap(normResultTrack, normReqTrack);
+  final artistMatch = tokenOverlap(normResultArtist, normReqArtist);
 
   return trackMatch && artistMatch;
 }
