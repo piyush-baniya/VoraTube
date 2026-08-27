@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/widgets/empty_state.dart';
-import '../../../../shared/widgets/screen_header.dart';
+import '../../../../shared/widgets/empty_state.dart'
+    show EmptyState, ScreenHeader, SectionHeader;
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_tokens.dart';

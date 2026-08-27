@@ -28,17 +28,22 @@ abstract final class AppTokens {
   static const double rLg = 16;
   static const double rXl = 20;
   static const double rXxl = 24;
+  static const double rFull = 999;
 
   // ── Animation durations ────────────────────────────────────────────
+  static const Duration instant = Duration(milliseconds: 80);
   static const Duration fast = Duration(milliseconds: 120);
   static const Duration normal = Duration(milliseconds: 200);
   static const Duration medium = Duration(milliseconds: 280);
   static const Duration slow = Duration(milliseconds: 380);
+  static const Duration xslow = Duration(milliseconds: 500);
 
   // ── Animation curves ───────────────────────────────────────────────
   static const Curve easeOut = Curves.easeOutCubic;
   static const Curve easeIn = Curves.easeInCubic;
+  static const Curve easeOutExpo = Curves.easeOutExpo;
   static const Curve spring = Curves.easeOutBack;
+  static const Curve press = Curves.easeOutQuad;
 
   // ── Elevation / shadow ─────────────────────────────────────────────
   static List<BoxShadow> shadowSm(Color color) => [
@@ -65,13 +70,31 @@ abstract final class AppTokens {
     ),
   ];
 
+  static List<BoxShadow> shadowXl(Color color) => [
+    BoxShadow(
+      color: color.withValues(alpha: 0.25),
+      blurRadius: 48,
+      offset: const Offset(0, 16),
+    ),
+  ];
+
   // ── Artwork sizes ──────────────────────────────────────────────────
-  static const double artworkXs = 40;
+  static const double artworkXs = 36;
   static const double artworkSm = 48;
   static const double artworkMd = 56;
   static const double artworkLg = 64;
-  static const double artworkXl = 120;
+  static const double artworkXl = 80;
+  static const double artworkHero = 140;
+  static const double artworkHeroMax = 280;
 
   // ── Touch target minimum ───────────────────────────────────────────
   static const double touchTarget = 48;
+
+  // ── Layout constraints ─────────────────────────────────────────────
+  static const double contentMaxWidth = 720;
+  static const double sidebarMaxWidth = 360;
+
+  // ── Border width ───────────────────────────────────────────────────
+  static const double borderHairline = 0.5;
+  static const double borderThin = 1;
 }

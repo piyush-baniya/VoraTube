@@ -2,7 +2,6 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
-import '../../../../app/theme/app_colors.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../core/player/player_controller.dart';
@@ -11,7 +10,8 @@ import '../providers/settings_providers.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/storage_info_card.dart';
-import '../../../../shared/widgets/screen_header.dart';
+import '../../../../shared/widgets/empty_state.dart'
+    show ScreenHeader;
 
 /// Redesigned Settings screen with organized sections.
 class SettingsScreen extends ConsumerWidget {

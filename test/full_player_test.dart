@@ -35,6 +35,11 @@ void main() {
   late AppDatabase db;
   late LibraryRepository repository;
 
+  setUpAll(() {
+    // Disable background pulse animation for tests to prevent pumpAndSettle timeout.
+    disableBackgroundPulseForTesting();
+  });
+
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
     repository = LibraryRepository(db);
@@ -368,6 +373,7 @@ void main() {
       await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
       await tester.pumpAndSettle();
 
+      // Tap the play button (now in a circular container)
       await tester.tap(find.byIcon(Icons.play_arrow_rounded));
       expect(player.togglePlayCount, 1);
     });

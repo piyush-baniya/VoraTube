@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
+import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/widgets/lyrics_view.dart';
 import '../providers/player_providers.dart';
@@ -29,8 +33,25 @@ class FullPlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<FullPlayerScreen> createState() => _FullPlayerScreenState();
 }
 
-class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
+class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
+    with SingleTickerProviderStateMixin {
   bool _showLyrics = false;
+  late final AnimationController _backgroundController;
+
+  @override
+  void initState() {
+    super.initState();
+    _backgroundController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _backgroundController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,93 +65,297 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    final isDark = theme.brightness == Brightness.dark;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
+      value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        systemNavigationBarColor: Color(0xFF09090B),
-        systemNavigationBarIconBrightness: Brightness.light,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: isDark ? AppColors.voidBlack : AppColors.paperLight,
+        systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       ),
       child: Scaffold(
         backgroundColor: colorScheme.surface,
-        body: Column(
+        extendBodyBehindAppBar: true,
+        body: Stack(
           children: [
+            // Immersive background with artwork-based gradient
+            _ImmersiveBackground(
+              artPath: current.artPath,
+              heroTag: FullPlayerScreen._heroTag,
+              isPlaying: snapshot.isPlaying,
+            ),
+            // Main content
             SafeArea(
               bottom: false,
-              child: _TopBar(
-                onQueueTap: () => QueueSheet.show(context),
-                onLyricsTap: () => setState(() => _showLyrics = !_showLyrics),
-                showLyricsActive: _showLyrics,
+              child: Column(
+                children: [
+                  // Top bar
+                  _TopBar(
+                    onQueueTap: () => QueueSheet.show(context),
+                    onLyricsTap: () => setState(() => _showLyrics = !_showLyrics),
+                    showLyricsActive: _showLyrics,
+                    isDark: isDark,
+                  ),
+                  // Player content
+                  Expanded(
+                    child: _showLyrics
+                        ? _buildLyricsMode(context, current, snapshot, bottomPadding)
+                        : _buildPlayerMode(context, current, snapshot, bottomPadding),
+                  ),
+                ],
               ),
-            ),
-            Expanded(
-              child: _showLyrics
-                  ? Column(
-                      children: [
-                        const SizedBox(height: AppTokens.s2),
-                        const Expanded(child: LyricsView()),
-                        const SizedBox(height: AppTokens.s4),
-                        _SongMetadata(
-                          title: current.title,
-                          artist: current.artist,
-                          identityKey: current.identityKey,
-                        ),
-                        const SizedBox(height: AppTokens.s4),
-                        _PositionConsumer(),
-                        const SizedBox(height: AppTokens.s2),
-                        _ControlsConsumer(),
-                        SizedBox(height: bottomPadding + AppTokens.s4),
-                      ],
-                    )
-                  : LayoutBuilder(
-                      builder: (context, constraints) {
-                        final maxArtSize = constraints.maxWidth * 0.82;
-                        final artSize = maxArtSize.clamp(200.0, 360.0);
-
-                        return SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppTokens.s6,
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                height: (constraints.maxHeight * 0.04).clamp(
-                                  8.0,
-                                  40.0,
-                                ),
-                              ),
-                              PlayerArtwork(
-                                path: current.artPath,
-                                heroTag: FullPlayerScreen._heroTag,
-                                size: artSize,
-                              ),
-                              SizedBox(
-                                height: (constraints.maxHeight * 0.04).clamp(
-                                  12.0,
-                                  40.0,
-                                ),
-                              ),
-                              _SongMetadata(
-                                title: current.title,
-                                artist: current.artist,
-                                identityKey: current.identityKey,
-                              ),
-                              const SizedBox(height: AppTokens.s4),
-                              _PositionConsumer(),
-                              const SizedBox(height: AppTokens.s2),
-                              _ControlsConsumer(),
-                              SizedBox(height: bottomPadding + AppTokens.s4),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPlayerMode(
+    BuildContext context,
+    SongRef current,
+    PlayerSnapshot snapshot,
+    double bottomPadding,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxArtSize = constraints.maxWidth * 0.75;
+        final artSize = maxArtSize.clamp(220.0, AppTokens.artworkHeroMax);
+
+        return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: (constraints.maxHeight * 0.06).clamp(16.0, 60.0),
+              ),
+              // Artwork with Hero transition
+              PlayerArtwork(
+                path: current.artPath,
+                heroTag: FullPlayerScreen._heroTag,
+                size: artSize,
+                showRings: true,
+                showShadow: true,
+              ),
+              SizedBox(
+                height: (constraints.maxHeight * 0.05).clamp(16.0, 48.0),
+              ),
+              // Metadata
+              _SongMetadata(
+                title: current.title,
+                artist: current.artist,
+                album: current.album,
+                identityKey: current.identityKey,
+              ),
+              const SizedBox(height: AppTokens.s5),
+              // Progress
+              _PositionConsumer(),
+              const SizedBox(height: AppTokens.s3),
+              // Controls
+              _ControlsConsumer(),
+              SizedBox(height: bottomPadding + AppTokens.s6),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildLyricsMode(
+    BuildContext context,
+    SongRef current,
+    PlayerSnapshot snapshot,
+    double bottomPadding,
+  ) {
+    return Column(
+      children: [
+        const SizedBox(height: AppTokens.s3),
+        Expanded(child: LyricsView()),
+        const SizedBox(height: AppTokens.s3),
+        _SongMetadata(
+          title: current.title,
+          artist: current.artist,
+          album: current.album,
+          identityKey: current.identityKey,
+        ),
+        const SizedBox(height: AppTokens.s4),
+        _PositionConsumer(),
+        const SizedBox(height: AppTokens.s2),
+        _ControlsConsumer(),
+        SizedBox(height: bottomPadding + AppTokens.s4),
+      ],
+    );
+  }
+}
+
+/// Immersive background that extends behind the artwork
+/// with a subtle gradient derived from the album art.
+class _ImmersiveBackground extends StatelessWidget {
+  const _ImmersiveBackground({
+    required this.artPath,
+    required this.heroTag,
+    required this.isPlaying,
+  });
+
+  final String? artPath;
+  final Object heroTag;
+  final bool isPlaying;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final file = _resolveFile();
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Base void gradient
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: isDark ? AppColors.voidGradientDark : AppColors.voidGradientLight,
+            ),
+          ),
+        ),
+        // Artwork as background (blurred, low opacity)
+        if (file != null)
+          Hero(
+            tag: heroTag,
+            child: Image.file(
+              file,
+              fit: BoxFit.cover,
+              cacheWidth: 400,
+              colorBlendMode: BlendMode.srcOver,
+            ),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: isDark
+                    ? [
+                        AppColors.voidBlack,
+                        AppColors.surfaceDark,
+                        AppColors.surfaceRaisedDark,
+                      ]
+                    : [
+                        AppColors.paperLight,
+                        AppColors.surfaceLight,
+                        AppColors.surfaceRaisedLight,
+                      ],
+              ),
+            ),
+          ),
+        // Vignette overlay
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.transparent,
+                isDark
+                    ? AppColors.voidBlack.withValues(alpha: 0.7)
+                    : AppColors.paperLight.withValues(alpha: 0.7),
+              ],
+              stops: const [0.4, 1.0],
+            ),
+          ),
+        ),
+        // Subtle animated ring pulse when playing
+        if (isPlaying && _BackgroundPulse.enabled)
+          Center(
+            child: _BackgroundPulse(
+              size: MediaQuery.sizeOf(context).width * 1.2,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+      ],
+    );
+  }
+
+  File? _resolveFile() {
+    final p = artPath;
+    if (p == null || p.isEmpty) return null;
+    final f = File(p);
+    return f.existsSync() ? f : null;
+  }
+}
+
+class _BackgroundPulse extends StatefulWidget {
+  const _BackgroundPulse({
+    required this.size,
+    required this.color,
+  });
+
+  final double size;
+  final Color color;
+
+  /// Can be disabled in tests to prevent infinite animation.
+  static bool enabled = true;
+
+  @override
+  State<_BackgroundPulse> createState() => _BackgroundPulseState();
+}
+
+/// Public function to disable background pulse for testing.
+void disableBackgroundPulseForTesting() {
+  _BackgroundPulse.enabled = false;
+}
+
+class _BackgroundPulseState extends State<_BackgroundPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(seconds: 4),
+      vsync: this,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final scale = 0.85 + (_controller.value * 0.15);
+        final opacity = 0.02 + (_controller.value * 0.03);
+
+        return Transform.scale(
+          scale: scale,
+          child: Opacity(
+            opacity: opacity,
+            child: Container(
+              width: widget.size,
+              height: widget.size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: widget.color,
+                  width: 1,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -140,11 +365,13 @@ class _TopBar extends StatelessWidget {
     required this.onQueueTap,
     required this.onLyricsTap,
     required this.showLyricsActive,
+    required this.isDark,
   });
 
   final VoidCallback onQueueTap;
   final VoidCallback onLyricsTap;
   final bool showLyricsActive;
+  final bool isDark;
 
   @override
   Widget build(BuildContext context) {
@@ -152,34 +379,81 @@ class _TopBar extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(
-        horizontal: AppTokens.s1,
-        vertical: AppTokens.s1,
+        horizontal: AppTokens.s3,
+        vertical: AppTokens.s2,
       ),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
-            color: colorScheme.onSurfaceVariant,
-            tooltip: 'Close',
+          // Close button with premium styling
+          PressableScale(
+            onTap: () => Navigator.of(context).maybePop(),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  width: AppTokens.borderHairline,
+                ),
+              ),
+              child: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 28,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
           const Spacer(),
-          IconButton(
-            onPressed: onLyricsTap,
-            icon: Icon(
-              Icons.lyrics_rounded,
-              size: 22,
-              color: showLyricsActive
-                  ? colorScheme.primary
-                  : colorScheme.onSurfaceVariant,
+          // Lyrics button
+          PressableScale(
+            onTap: onLyricsTap,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: showLyricsActive
+                    ? colorScheme.primary.withValues(alpha: 0.16)
+                    : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: showLyricsActive
+                      ? colorScheme.primary.withValues(alpha: 0.3)
+                      : colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  width: AppTokens.borderHairline,
+                ),
+              ),
+              child: Icon(
+                Icons.lyrics_rounded,
+                size: 22,
+                color: showLyricsActive
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+              ),
             ),
-            tooltip: 'Lyrics',
           ),
-          IconButton(
-            onPressed: onQueueTap,
-            icon: const Icon(Icons.queue_music_rounded, size: 22),
-            color: colorScheme.onSurfaceVariant,
-            tooltip: 'Queue',
+          const SizedBox(width: AppTokens.s2),
+          // Queue button
+          PressableScale(
+            onTap: onQueueTap,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  width: AppTokens.borderHairline,
+                ),
+              ),
+              child: Icon(
+                Icons.queue_music_rounded,
+                size: 22,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
         ],
       ),
@@ -191,11 +465,13 @@ class _SongMetadata extends StatelessWidget {
   const _SongMetadata({
     required this.title,
     required this.artist,
+    this.album,
     required this.identityKey,
   });
 
   final String title;
   final String? artist;
+  final String? album;
   final String identityKey;
 
   @override
@@ -203,37 +479,49 @@ class _SongMetadata extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
-              ),
-              if (artist != null) ...[
-                const SizedBox(height: AppTokens.s1),
-                Text(
-                  artist!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
+        // Title with premium typography
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+            height: 1.2,
           ),
         ),
-        const SizedBox(width: AppTokens.s2),
+        if (artist != null) ...[
+          const SizedBox(height: AppTokens.s1),
+          Text(
+            artist!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+        if (album != null) ...[
+          const SizedBox(height: AppTokens.s1),
+          Text(
+            album!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+        const SizedBox(height: AppTokens.s4),
+        // Favorite button
         _FavoriteButton(identityKey: identityKey),
       ],
     );
@@ -248,9 +536,10 @@ class _FavoriteButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isFavorite = ref.watch(currentSongIsFavoriteProvider);
+    final colorScheme = Theme.of(context).colorScheme;
 
-    return IconButton(
-      onPressed: () {
+    return PressableScale(
+      onTap: () {
         final rowIdAsync = ref.read(songRowIdProvider(identityKey));
         rowIdAsync.whenOrNull(
           data: (rowId) {
@@ -260,14 +549,37 @@ class _FavoriteButton extends ConsumerWidget {
           },
         );
       },
-      icon: Icon(
-        isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-        size: 24,
+      child: AnimatedContainer(
+        duration: AppTokens.fast,
+        curve: AppTokens.press,
+        padding: const EdgeInsets.all(AppTokens.s2),
+        decoration: BoxDecoration(
+          color: isFavorite
+              ? colorScheme.primary.withValues(alpha: 0.12)
+              : colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isFavorite
+                ? colorScheme.primary.withValues(alpha: 0.3)
+                : colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: AnimatedSwitcher(
+          duration: AppTokens.fast,
+          transitionBuilder: (child, animation) {
+            return ScaleTransition(scale: animation, child: child);
+          },
+          child: Icon(
+            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            key: ValueKey(isFavorite),
+            size: 22,
+            color: isFavorite
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+          ),
+        ),
       ),
-      color: isFavorite
-          ? Theme.of(context).colorScheme.primary
-          : Theme.of(context).colorScheme.onSurfaceVariant,
-      tooltip: isFavorite ? 'Remove from favorites' : 'Add to favorites',
     );
   }
 }
@@ -332,14 +644,16 @@ class _EmptyPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
+      value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        systemNavigationBarColor: Color(0xFF09090B),
-        systemNavigationBarIconBrightness: Brightness.light,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: isDark ? AppColors.voidBlack : AppColors.paperLight,
+        systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
       ),
       child: Scaffold(
         backgroundColor: colorScheme.surface,
@@ -348,18 +662,30 @@ class _EmptyPlayer extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppTokens.s1,
-                  vertical: AppTokens.s1,
+                  horizontal: AppTokens.s3,
+                  vertical: AppTokens.s2,
                 ),
                 child: Row(
                   children: [
-                    IconButton(
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      icon: const Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 30,
+                    PressableScale(
+                      onTap: () => Navigator.of(context).maybePop(),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                            width: AppTokens.borderHairline,
+                          ),
+                        ),
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 28,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                      color: colorScheme.onSurfaceVariant,
                     ),
                   ],
                 ),
@@ -371,7 +697,7 @@ class _EmptyPlayer extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.music_note_rounded,
-                        size: 56,
+                        size: 64,
                         color: Color(0x409C9CA6),
                       ),
                       SizedBox(height: AppTokens.s4),

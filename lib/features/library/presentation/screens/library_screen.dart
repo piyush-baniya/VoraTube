@@ -1,22 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/widgets/empty_state.dart';
-import '../../../../shared/widgets/screen_header.dart';
+import '../../../../shared/widgets/empty_state.dart'
+    show EmptyState, ScreenHeader, SectionHeader;
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../collections/presentation/widgets/collections_strip.dart';
 import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
+import '../../../player/presentation/screens/full_player_screen.dart';
+import '../../../../../core/player/player_controller.dart';
 import '../../data/library_models.dart';
 import '../../data/song_ref_mapper.dart';
-import 'filtered_songs_screen.dart';
 import '../providers/library_view_providers.dart';
 import '../widgets/library_tiles.dart';
-import '../widgets/section_selector.dart';
+import '../widgets/section_selector.dart'
+    hide SectionLabel;
 import '../widgets/song_tile.dart';
 import '../widgets/sort_sheet.dart';
+import '../providers/library_providers.dart';
+import 'filtered_songs_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
@@ -30,7 +35,7 @@ class LibraryScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const ScreenHeader(title: 'Library'),
+          const _LibraryHeader(),
           SectionSelector(
             selected: section,
             onChanged: (s) =>
@@ -53,13 +58,131 @@ class LibraryScreen extends ConsumerWidget {
   }
 }
 
+class _LibraryHeader extends ConsumerWidget {
+  const _LibraryHeader();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final snapshot = ref.watch(playbackSnapshotProvider).value;
+
+    // Time-aware greeting
+    final hour = DateTime.now().hour;
+    String greeting;
+    if (hour < 5) greeting = 'Late night listening';
+    else if (hour < 12) greeting = 'Good morning';
+    else if (hour < 17) greeting = 'Good afternoon';
+    else if (hour < 22) greeting = 'Good evening';
+    else greeting = 'Late night listening';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s5,
+        AppTokens.s4,
+        AppTokens.s5,
+        AppTokens.s2,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Greeting + now playing indicator
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      greeting,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        letterSpacing: 0.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: AppTokens.s1),
+                    Text(
+                      'Library',
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (snapshot != null && snapshot.hasTrack) ...[
+                const SizedBox(width: AppTokens.s3),
+                _NowPlayingBadge(current: snapshot.current!),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NowPlayingBadge extends StatelessWidget {
+  const _NowPlayingBadge({required this.current});
+
+  final SongRef current;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
+      onTap: () => Navigator.of(context).push(
+        pushHero<void>(context, const FullPlayerScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s3,
+          vertical: AppTokens.s2,
+        ),
+        decoration: BoxDecoration(
+          color: colorScheme.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppTokens.rFull),
+          border: Border.all(
+            color: colorScheme.primary.withValues(alpha: 0.2),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.music_note_rounded,
+              size: 14,
+              color: colorScheme.primary,
+            ),
+            const SizedBox(width: AppTokens.s1),
+            Text(
+              'Now Playing',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SongsToolbar extends ConsumerWidget {
   const _SongsToolbar();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final favoritesOnly = ref.watch(favoritesOnlyProvider);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppTokens.s4,
@@ -69,6 +192,7 @@ class _SongsToolbar extends ConsumerWidget {
       ),
       child: Row(
         children: [
+          // Favorites filter chip
           FilterChip(
             label: const Text('Favorites'),
             selected: favoritesOnly,
@@ -79,17 +203,43 @@ class _SongsToolbar extends ConsumerWidget {
                   : Icons.favorite_border_rounded,
               size: 16,
               color: favoritesOnly
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.onSurfaceVariant,
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
+            ),
+            selectedColor: colorScheme.primary.withValues(alpha: 0.12),
+            checkmarkColor: colorScheme.primary,
+            backgroundColor: colorScheme.surfaceContainerHigh,
+            side: BorderSide(
+              color: favoritesOnly
+                  ? colorScheme.primary
+                  : colorScheme.outlineVariant,
+              width: favoritesOnly ? 1.5 : AppTokens.borderHairline,
+            ),
+            labelStyle: theme.textTheme.labelMedium?.copyWith(
+              color: favoritesOnly
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
+              fontWeight: favoritesOnly ? FontWeight.w600 : FontWeight.w500,
             ),
             onSelected: (v) =>
                 ref.read(favoritesOnlyProvider.notifier).state = v,
           ),
           const Spacer(),
-          IconButton(
-            tooltip: 'Sort',
-            onPressed: () => showSortSheet(context, ref),
-            icon: const Icon(Icons.swap_vert_rounded, size: 22),
+          // Sort button
+          PressableScale(
+            onTap: () => showSortSheet(context, ref),
+            child: Container(
+              padding: const EdgeInsets.all(AppTokens.s2),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(AppTokens.rMd),
+              ),
+              child: Icon(
+                Icons.swap_vert_rounded,
+                size: 22,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
         ],
       ),
@@ -136,7 +286,7 @@ class _SongsViewState extends ConsumerState<_SongsView> {
         Expanded(
           child: AsyncValueSwitcher<List<SongTileData>>(
             value: asyncValue,
-            loading: const SkeletonList(rows: 10),
+            loading: const SkeletonList(rows: 10, type: SkeletonType.song),
             errorBuilder: (e, _) =>
                 _LibraryError(retry: () => ref.invalidate(pagedSongsProvider)),
             data: (tiles) {
@@ -152,20 +302,27 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                   message: favoritesOnly
                       ? 'Tap the heart on any song to keep it close.'
                       : 'Scan or import music to fill your library.',
+                  actionLabel: favoritesOnly ? null : 'Scan Library',
+                  onAction: favoritesOnly
+                      ? null
+                      : () => ref.read(scanControllerProvider.notifier).startScan(),
                 );
               }
               return ListView.separated(
                 controller: _controller,
                 physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: AppTokens.s8),
                 itemCount:
                     tiles.length +
                     (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
                 separatorBuilder: (_, i) => i == tiles.length - 1
                     ? const SizedBox.shrink()
-                    : const Divider(
-                        height: 0.5,
-                        indent: 80,
+                    : Divider(
+                        height: AppTokens.borderHairline,
+                        thickness: AppTokens.borderHairline,
+                        indent: AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
                         endIndent: AppTokens.s4,
+                        color: Theme.of(context).colorScheme.outlineVariant,
                       ),
                 itemBuilder: (context, index) {
                   if (index >= tiles.length) {
@@ -207,7 +364,7 @@ class _AlbumsView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(albumsOverviewProvider);
     return async.when(
-      loading: () => const SkeletonList(rows: 8),
+      loading: () => const SkeletonGrid(columns: 2, rows: 4, aspectRatio: 0.85),
       error: (e, _) =>
           _LibraryError(retry: () => ref.invalidate(albumsOverviewProvider)),
       data: (albums) {
@@ -221,10 +378,10 @@ class _AlbumsView extends ConsumerWidget {
         return GridView.builder(
           padding: const EdgeInsets.all(AppTokens.s3),
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 200,
+            maxCrossAxisExtent: 180,
             mainAxisSpacing: AppTokens.s2,
             crossAxisSpacing: AppTokens.s2,
-            childAspectRatio: 0.78,
+            childAspectRatio: 0.82,
           ),
           itemCount: albums.length,
           itemBuilder: (context, index) {
@@ -249,7 +406,7 @@ class _ArtistsView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(artistsOverviewProvider);
     return async.when(
-      loading: () => const SkeletonList(rows: 8),
+      loading: () => const SkeletonList(rows: 8, type: SkeletonType.artist),
       error: (e, _) =>
           _LibraryError(retry: () => ref.invalidate(artistsOverviewProvider)),
       data: (artists) {
@@ -260,8 +417,17 @@ class _ArtistsView extends ConsumerWidget {
             message: 'Artists appear once your library has music.',
           );
         }
-        return ListView.builder(
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.s4,
+            vertical: AppTokens.s3,
+          ),
           itemCount: artists.length,
+          separatorBuilder: (_, _) => Divider(
+            height: AppTokens.borderHairline,
+            thickness: AppTokens.borderHairline,
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
           itemBuilder: (context, index) {
             final artist = artists[index];
             return ArtistTile(
@@ -287,7 +453,7 @@ class _GenresView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(genresOverviewProvider);
     return async.when(
-      loading: () => const SkeletonList(rows: 8),
+      loading: () => const SkeletonList(rows: 8, type: SkeletonType.song),
       error: (e, _) =>
           _LibraryError(retry: () => ref.invalidate(genresOverviewProvider)),
       data: (genres) {
@@ -306,7 +472,11 @@ class _GenresView extends ConsumerWidget {
             vertical: AppTokens.s3,
           ),
           itemCount: genres.length,
-          separatorBuilder: (_, _) => const SizedBox(height: AppTokens.s2),
+          separatorBuilder: (_, _) => Divider(
+            height: AppTokens.borderHairline,
+            thickness: AppTokens.borderHairline,
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
           itemBuilder: (context, index) =>
               GenreTile(genre: genres[index], onTap: () {}),
         );
@@ -322,6 +492,9 @@ class _LibraryError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return EmptyState(
       icon: Icons.error_outline_rounded,
       title: 'Could not load the library',

@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
 
 import '../../../../shared/widgets/artwork_view.dart';
-import '../../../../shared/widgets/empty_state.dart';
-import '../../../../shared/widgets/screen_header.dart';
+import '../../../../shared/widgets/empty_state.dart'
+    show EmptyState, ScreenHeader;
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../playlists/presentation/screens/playlist_detail_screen.dart';
