@@ -10,21 +10,24 @@ import '../../data/smart_mix_service.dart';
 import '../providers/smart_music_providers.dart';
 import '../screens/smart_mix_detail_screen.dart';
 
-class MoodStrip extends ConsumerWidget {
+class MoodStrip extends ConsumerStatefulWidget {
   const MoodStrip({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MoodStrip> createState() => _MoodStripState();
+}
+
+class _MoodStripState extends ConsumerState<MoodStrip> {
+  SongMood? _selected;
+
+  @override
+  Widget build(BuildContext context) {
     final mixesAsync = ref.watch(smartMixesProvider);
     return mixesAsync.when(
       skipLoadingOnRefresh: true,
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
       data: (mixes) {
-        // Only show if we have at least a small library.
-        final anySongs = mixes.any((m) => m.songs.isNotEmpty);
-        if (!anySongs) return const SizedBox.shrink();
-
         final moodEngine = ref.watch(moodEngineProvider);
         final moods = moodEngine.getAllMoods();
         final moodMixes = {for (final mix in mixes) mix.kind: mix};
@@ -50,8 +53,7 @@ class MoodStrip extends ConsumerWidget {
                   vertical: AppTokens.s1,
                 ),
                 itemCount: moods.length,
-                separatorBuilder: (_, __) =>
-                    const SizedBox(width: AppTokens.s2),
+                separatorBuilder: (_, _) => const SizedBox(width: AppTokens.s2),
                 itemBuilder: (context, index) {
                   final mood = moods[index];
                   final mixKind = _moodToMixKind(mood);
@@ -61,14 +63,30 @@ class MoodStrip extends ConsumerWidget {
                     mood: mood,
                     count: mix?.songs.length,
                     enabled: enabled,
-                    onTap: enabled
-                        ? () => Navigator.of(context).push(
-                            pushSharedAxis<void>(
-                              context,
-                              SmartMixDetailScreen(mix: mix),
+                    selected: _selected == mood,
+                    onTap: () {
+                      setState(() => _selected = mood);
+                      if (!enabled) {
+                        ScaffoldMessenger.of(context)
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Add songs to your library to build a '
+                                '${mood.label} mix.',
+                              ),
+                              duration: const Duration(seconds: 2),
                             ),
-                          )
-                        : null,
+                          );
+                        return;
+                      }
+                      Navigator.of(context).push(
+                        pushSharedAxis<void>(
+                          context,
+                          SmartMixDetailScreen(mix: mix),
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -105,13 +123,15 @@ class _MoodCard extends StatelessWidget {
     required this.mood,
     this.count,
     required this.enabled,
-    this.onTap,
+    required this.selected,
+    required this.onTap,
   });
 
   final SongMood mood;
   final int? count;
   final bool enabled;
-  final VoidCallback? onTap;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -119,16 +139,21 @@ class _MoodCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final accent = AppColors.accent;
 
-    final card = Container(
+    final card = AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
       width: 112,
       padding: const EdgeInsets.all(AppTokens.s3),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTokens.rMd),
-        color: enabled
+        color: selected
+            ? accent.withValues(alpha: 0.9)
+            : enabled
             ? accent.withValues(alpha: 0.14)
             : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         border: Border.all(
-          color: enabled
+          color: selected
+              ? Colors.transparent
+              : enabled
               ? accent.withValues(alpha: 0.28)
               : colorScheme.outlineVariant.withValues(alpha: 0.3),
           width: 0.5,
@@ -136,14 +161,19 @@ class _MoodCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(mood.emoji, style: const TextStyle(fontSize: 22)),
-          const Spacer(),
+          Text(mood.emoji, style: const TextStyle(fontSize: 20, height: 1.0)),
           Text(
             mood.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w700,
-              color: enabled
+              height: 1.05,
+              color: selected
+                  ? colorScheme.onPrimary
+                  : enabled
                   ? colorScheme.onSurface
                   : colorScheme.onSurfaceVariant,
             ),
@@ -151,22 +181,35 @@ class _MoodCard extends StatelessWidget {
           if (count != null && enabled)
             Text(
               '$count songs',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                height: 1.0,
+                color: selected
+                    ? colorScheme.onPrimary.withValues(alpha: 0.85)
+                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             )
           else if (!enabled)
             Text(
               'Add songs',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
                 fontSize: 10,
+                height: 1.0,
                 color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
               ),
             ),
         ],
       ),
     );
-    if (!enabled || onTap == null) return Opacity(opacity: 0.7, child: card);
-    return PressableScale(onTap: onTap!, child: card);
+    if (!enabled) {
+      return Opacity(
+        opacity: 0.7,
+        child: PressableScale(onTap: onTap, child: card),
+      );
+    }
+    return PressableScale(onTap: onTap, child: card);
   }
 }

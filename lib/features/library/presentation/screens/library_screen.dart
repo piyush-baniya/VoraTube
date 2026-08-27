@@ -15,10 +15,8 @@ import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
-import '../../../playlists/presentation/screens/playlists_screen.dart';
 import '../../../../../core/player/player_controller.dart';
 import '../../data/library_models.dart';
-import '../../data/library_repository.dart' show CollectionKind;
 import '../../data/song_ref_mapper.dart';
 import '../providers/library_view_providers.dart';
 import '../widgets/library_tiles.dart';
@@ -299,9 +297,6 @@ class _SongsViewState extends ConsumerState<_SongsView> {
           )
         else
           SliverToBoxAdapter(child: _EmptyStateHero()),
-
-        // Quick Access
-        SliverToBoxAdapter(child: _QuickAccessStrip()),
 
         // Listening Insights
         SliverToBoxAdapter(child: ListeningInsightsStrip()),
@@ -673,205 +668,6 @@ class _EmptyStateHero extends ConsumerWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// Quick Access Strip
-class _QuickAccessStrip extends ConsumerWidget {
-  const _QuickAccessStrip();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
-    final snapshot = ref.watch(playbackStateProvider);
-
-    final items = <_QuickAccessItem>[
-      _QuickAccessItem(
-        icon: Icons.history_rounded,
-        label: 'Recently Played',
-        onTap: () => Navigator.of(context).push(
-          pushSharedAxis<void>(
-            context,
-            FilteredSongsScreen.collection(
-              CollectionKind.recentlyPlayed,
-              'Recently Played',
-            ),
-          ),
-        ),
-      ),
-      _QuickAccessItem(
-        icon: Icons.favorite_rounded,
-        label: 'Favorites',
-        onTap: () => Navigator.of(context).push(
-          pushSharedAxis<void>(
-            context,
-            FilteredSongsScreen.collection(
-              CollectionKind.favorites,
-              'Favorites',
-            ),
-          ),
-        ),
-      ),
-      _QuickAccessItem(
-        icon: Icons.trending_up_rounded,
-        label: 'Most Played',
-        onTap: () => Navigator.of(context).push(
-          pushSharedAxis<void>(
-            context,
-            FilteredSongsScreen.collection(
-              CollectionKind.mostPlayed,
-              'Most Played',
-            ),
-          ),
-        ),
-      ),
-      _QuickAccessItem(
-        icon: Icons.schedule_rounded,
-        label: 'Recently Added',
-        onTap: () => Navigator.of(context).push(
-          pushSharedAxis<void>(
-            context,
-            FilteredSongsScreen.collection(
-              CollectionKind.recentlyAdded,
-              'Recently Added',
-            ),
-          ),
-        ),
-      ),
-      _QuickAccessItem(
-        icon: Icons.queue_music_rounded,
-        label: 'Playlists',
-        onTap: () =>
-            Navigator.of(context)
-                .push(pushSharedAxis<void>(context, PlaylistsScreen())),
-      ),
-      _QuickAccessItem(
-        icon: Icons.album_rounded,
-        label: 'Albums',
-        onTap: () =>
-            Navigator.of(context)
-                .push(pushSharedAxis<void>(context, const LibraryScreen())),
-      ),
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppTokens.s4,
-        AppTokens.s2,
-        AppTokens.s4,
-        AppTokens.s4,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Quick Access',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                'Shortcuts',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTokens.s2),
-          SizedBox(
-            height: 100,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(width: AppTokens.s2),
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return _QuickAccessCard(item: item);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuickAccessItem {
-  const _QuickAccessItem({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-}
-
-class _QuickAccessCard extends StatelessWidget {
-  const _QuickAccessCard({required this.item});
-
-  final _QuickAccessItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
-
-    return PressableScale(
-      onTap: item.onTap,
-      child: Container(
-        width: 120,
-        padding: const EdgeInsets.all(AppTokens.s3),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppTokens.rMd),
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-            width: AppTokens.borderHairline,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppTokens.rSm),
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    accent.withValues(alpha: 0.16),
-                    accent.withValues(alpha: 0.04),
-                  ],
-                ),
-              ),
-              child: Center(child: Icon(item.icon, size: 22, color: accent)),
-            ),
-            const Spacer(),
-            Text(
-              item.label,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                height: 1.2,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
