@@ -5,6 +5,7 @@ import '../../../../app/theme/app_tokens.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../core/player/player_controller.dart';
+import '../../../donation/presentation/screens/donation_screen.dart';
 import '../../data/settings_models.dart';
 import '../providers/settings_providers.dart';
 import '../widgets/settings_section.dart';
@@ -408,6 +409,35 @@ class _AboutSection extends ConsumerWidget {
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
           onTap: () => showLicensePage(context: context),
+        ),
+        SettingsTile(
+          title: 'Support the Developer',
+          subtitle: 'Buy Me a Momo donation',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.favorite_rounded,
+              size: 20,
+              color: colorScheme.primary,
+            ),
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const DonationScreen(),
+              ),
+            );
+          },
         ),
       ],
     );
