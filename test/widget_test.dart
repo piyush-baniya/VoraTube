@@ -9,12 +9,29 @@ import 'package:vora_tube/app/app.dart';
 import 'package:vora_tube/app/widgets/glass_nav_bar.dart';
 import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/ingest/ingest_service.dart';
+import 'package:vora_tube/core/permissions/permission_gate.dart';
+import 'package:vora_tube/core/permissions/permission_service.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
 import 'package:vora_tube/features/library/presentation/providers/library_providers.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
 import 'package:vora_tube/features/settings/presentation/providers/settings_providers.dart';
 
 import 'fakes/fake_player.dart';
+
+/// A [PermissionService] that always reports access is granted so the shell
+/// (which now hosts [PermissionGate] inside [VoraTubeApp]) can render in tests
+/// without reaching the real platform permission channel.
+class _GrantedPermissionService extends PermissionService {
+  const _GrantedPermissionService();
+
+  @override
+  Future<MediaPermissionStatus> audioStatus() async =>
+      MediaPermissionStatus.granted;
+
+  @override
+  Future<MediaPermissionStatus> requestAudio() async =>
+      MediaPermissionStatus.granted;
+}
 
 class _FakeIngestService implements IngestService {
   const _FakeIngestService();
@@ -59,6 +76,9 @@ void main() {
         libraryRepositoryProvider.overrideWithValue(LibraryRepository(db)),
         playerProvider.overrideWithValue(FakePlayerController()),
         ingestServiceProvider.overrideWithValue(const _FakeIngestService()),
+        permissionServiceProvider.overrideWithValue(
+          const _GrantedPermissionService(),
+        ),
         storageInfoProvider.overrideWith(
           (ref) => const StorageInfo(
             databaseSizeBytes: 0,
@@ -72,6 +92,12 @@ void main() {
     );
 
     await tester.pumpWidget(container);
+
+    // VoraTubeApp.home is now SplashGate → PermissionGate → HomeShell.
+    // Let the splash timer (800ms) fire and its crossfade settle so the
+    // HomeShell is revealed (the permission gate passes through on this
+    // non-Android test host).
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle(const Duration(seconds: 5));
 
     // Wait for settings to load by awaiting the appSettingsProvider future

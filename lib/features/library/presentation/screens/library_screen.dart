@@ -11,7 +11,6 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../collections/presentation/widgets/collections_strip.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
-import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
@@ -300,9 +299,6 @@ class _SongsViewState extends ConsumerState<_SongsView> {
 
         // Listening Insights
         SliverToBoxAdapter(child: ListeningInsightsStrip()),
-
-        // How Are You Feeling?
-        SliverToBoxAdapter(child: MoodStrip()),
 
         // Made For Your Mood
         SliverToBoxAdapter(child: SmartMixStrip()),

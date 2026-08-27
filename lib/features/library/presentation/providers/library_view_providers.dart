@@ -105,6 +105,19 @@ final genresOverviewProvider = FutureProvider.autoDispose<List<GenreSummary>>((
   return repository.genreOverview();
 });
 
+/// Cheap truth test for "does the library contain any songs?".
+///
+/// Smart-mood UIs use this to decide the *accurate* empty message: when the
+/// library is truly empty ask the user to add songs, but when songs exist and
+/// simply cannot be classified for a given mood, say recommendations are not
+/// available yet instead of pretending the library is empty.
+final libraryHasSongsProvider = FutureProvider.autoDispose<bool>((ref) async {
+  ref.watch(libraryRefreshTickProvider);
+  final repository = ref.watch(libraryRepositoryProvider);
+  final counts = await repository.currentCounts();
+  return counts.songs > 0;
+});
+
 /// Favorite ids kept in fine-grained state so a heart tap repaints exactly
 /// one tile, never the whole list.
 ///

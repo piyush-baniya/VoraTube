@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'home_shell.dart';
+import 'splash_screen.dart';
 import 'theme/app_theme.dart';
+import '../core/permissions/permission_gate.dart';
 import '../features/settings/presentation/providers/settings_providers.dart';
 
 class VoraTubeApp extends ConsumerWidget {
@@ -18,7 +20,10 @@ class VoraTubeApp extends ConsumerWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
-      home: const HomeShell(),
+      // The splash and permission gates live inside the MaterialApp so they
+      // have Directionality/Theme/MediaQuery ancestors. This is the single,
+      // correct application root: ProviderScope → MaterialApp → gates → shell.
+      home: const SplashGate(child: PermissionGate(child: HomeShell())),
     );
   }
 }

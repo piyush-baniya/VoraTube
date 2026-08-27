@@ -5,6 +5,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../data/mood_engine.dart';
 import '../../data/smart_mix_service.dart';
 import '../providers/smart_music_providers.dart';
@@ -23,6 +24,10 @@ class _MoodStripState extends ConsumerState<MoodStrip> {
   @override
   Widget build(BuildContext context) {
     final mixesAsync = ref.watch(smartMixesProvider);
+    // Default to "has songs" so we never claim the library is empty while the
+    // count is still resolving — a misleading "add songs" is worse than a
+    // momentary neutral state.
+    final hasSongs = ref.watch(libraryHasSongsProvider).value ?? true;
     return mixesAsync.when(
       skipLoadingOnRefresh: true,
       loading: () => const SizedBox.shrink(),
@@ -63,6 +68,7 @@ class _MoodStripState extends ConsumerState<MoodStrip> {
                     mood: mood,
                     count: mix?.songs.length,
                     enabled: enabled,
+                    hasSongs: hasSongs,
                     selected: _selected == mood,
                     onTap: () {
                       setState(() => _selected = mood);
@@ -72,8 +78,11 @@ class _MoodStripState extends ConsumerState<MoodStrip> {
                           ..showSnackBar(
                             SnackBar(
                               content: Text(
-                                'Add songs to your library to build a '
-                                '${mood.label} mix.',
+                                hasSongs
+                                    ? 'No ${mood.label} recommendations '
+                                          'available yet.'
+                                    : 'Add songs to your library to build a '
+                                          '${mood.label} mix.',
                               ),
                               duration: const Duration(seconds: 2),
                             ),
@@ -123,6 +132,7 @@ class _MoodCard extends StatelessWidget {
     required this.mood,
     this.count,
     required this.enabled,
+    required this.hasSongs,
     required this.selected,
     required this.onTap,
   });
@@ -130,6 +140,7 @@ class _MoodCard extends StatelessWidget {
   final SongMood mood;
   final int? count;
   final bool enabled;
+  final bool hasSongs;
   final bool selected;
   final VoidCallback onTap;
 
@@ -192,7 +203,7 @@ class _MoodCard extends StatelessWidget {
             )
           else if (!enabled)
             Text(
-              'Add songs',
+              hasSongs ? 'Not available' : 'Add songs',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(

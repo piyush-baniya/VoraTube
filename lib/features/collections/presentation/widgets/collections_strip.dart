@@ -9,9 +9,11 @@ import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 
-/// Horizontal strip of collection summary cards (Favorites, Recently Added,
-/// Most Played, Recently Played). Cards use gradient overlays and the
-/// accent color strategically for visual impact.
+/// Horizontal strip of collection summary cards shown on the Library/Songs
+/// home. Per the product's information-architecture decision only Favorites is
+/// surfaced here; Recently Added / Most Played / Recently Played remain
+/// available through their providers and the collections detail routes but are
+/// no longer rendered as home sections.
 class CollectionsStrip extends ConsumerWidget {
   const CollectionsStrip({super.key});
 
@@ -24,7 +26,9 @@ class CollectionsStrip extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
       data: (summaries) {
-        final visible = summaries.where((s) => s.count > 0).toList();
+        final visible = summaries
+            .where((s) => s.kind == CollectionKind.favorites && s.count > 0)
+            .toList();
         if (visible.isEmpty) return const SizedBox.shrink();
         return SizedBox(
           height: 100,
