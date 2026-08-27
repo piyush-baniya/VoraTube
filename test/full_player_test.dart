@@ -11,6 +11,7 @@ import 'package:vora_tube/features/player/presentation/providers/player_provider
 import 'package:vora_tube/features/player/presentation/screens/full_player_screen.dart';
 import 'package:vora_tube/features/player/presentation/widgets/player_controls.dart';
 import 'package:vora_tube/features/player/presentation/widgets/player_progress.dart';
+import 'package:vora_tube/features/player/presentation/widgets/rotating_artwork.dart';
 
 import 'fakes/fake_player.dart';
 
@@ -38,6 +39,7 @@ void main() {
   setUpAll(() {
     // Disable background pulse animation for tests to prevent pumpAndSettle timeout.
     disableBackgroundPulseForTesting();
+    disableRotatingArtworkForTesting();
   });
 
   setUp(() {

@@ -8,9 +8,9 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
-import '../../../lyrics/presentation/widgets/lyrics_view.dart';
+import '../../../player/presentation/widgets/compact_lyrics_panel.dart';
+import '../../../player/presentation/widgets/rotating_artwork.dart';
 import '../providers/player_providers.dart';
-import '../widgets/player_artwork.dart';
 import '../widgets/player_controls.dart';
 import '../widgets/player_progress.dart';
 import '../widgets/queue_sheet.dart';
@@ -130,13 +130,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
               SizedBox(
                 height: (constraints.maxHeight * 0.06).clamp(16.0, 60.0),
               ),
-              // Artwork with Hero transition
-              PlayerArtwork(
+              // Rotating Artwork with Hero transition
+              RotatingArtwork(
                 path: current.artPath,
                 heroTag: FullPlayerScreen._heroTag,
                 size: artSize,
-                showRings: true,
-                showShadow: true,
               ),
               SizedBox(
                 height: (constraints.maxHeight * 0.05).clamp(16.0, 48.0),
@@ -171,9 +169,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
     return Column(
       children: [
         const SizedBox(height: AppTokens.s3),
-        // Undecorated so lyrics float over the immersive backdrop instead of
-        // sitting inside a card that reads like a bottom sheet.
-        const Expanded(child: LyricsView(decorated: false)),
+        // Compact lyrics panel
+        CompactLyricsPanel(height: 240),
         const SizedBox(height: AppTokens.s3),
         _SongMetadata(
           title: current.title,
