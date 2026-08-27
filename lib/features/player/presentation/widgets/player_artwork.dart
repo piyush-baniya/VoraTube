@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../core/ingest/artwork/artwork_file_cache.dart';
 
 /// Large album artwork for the full-screen player with Hero transition
 /// and smooth fade when the song changes.
@@ -23,6 +24,9 @@ class PlayerArtwork extends StatelessWidget {
   });
 
   final String? path;
+
+  /// Must be unique among the widgets mounted on this route. The immersive
+  /// background deliberately carries no Hero for exactly this reason.
   final Object? heroTag;
   final double size;
   final bool showRings;
@@ -31,10 +35,11 @@ class PlayerArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveFile = _resolveFile();
+    // Existence is resolved through the shared cache rather than a `stat` per
+    // build: the player rebuilds far more often than the song changes, and this
+    // widget sits at the top of that subtree.
+    final effectiveFile = ArtworkFileCache.resolve(path);
     final effectiveRadius = BorderRadius.circular(borderRadius);
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     Widget artwork = AnimatedSwitcher(
       duration: AppTokens.slow,
@@ -42,8 +47,11 @@ class PlayerArtwork extends StatelessWidget {
       switchOutCurve: AppTokens.easeIn,
       child: effectiveFile != null
           ? _ArtworkImage(
+              // Keyed by path so a song change cross-fades instead of swapping
+              // the bitmap inside one element.
               key: ValueKey(path),
               file: effectiveFile,
+              path: path,
               size: size,
               borderRadius: effectiveRadius,
               showShadow: showShadow,
@@ -63,25 +71,23 @@ class PlayerArtwork extends StatelessWidget {
 
     return artwork;
   }
-
-  File? _resolveFile() {
-    final p = path;
-    if (p == null || p.isEmpty) return null;
-    final f = File(p);
-    return f.existsSync() ? f : null;
-  }
 }
 
 class _ArtworkImage extends StatelessWidget {
   const _ArtworkImage({
     super.key,
     required this.file,
+    required this.path,
     required this.size,
     required this.borderRadius,
     this.showShadow = true,
   });
 
   final File file;
+
+  /// Kept alongside [file] purely so a decode failure can invalidate the
+  /// memoized existence answer for the same path.
+  final String? path;
   final double size;
   final BorderRadius borderRadius;
   final bool showShadow;
@@ -99,7 +105,10 @@ class _ArtworkImage extends StatelessWidget {
         child: Image.file(
           file,
           fit: BoxFit.cover,
-          cacheWidth: (size * 2).round(),
+          cacheWidth: ArtworkFileCache.decodeWidth(
+            size,
+            MediaQuery.devicePixelRatioOf(context),
+          ),
           gaplessPlayback: true,
           frameBuilder: (context, child, frame, wasLoaded) {
             if (wasLoaded) return child;
@@ -108,6 +117,16 @@ class _ArtworkImage extends StatelessWidget {
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOut,
               child: child,
+            );
+          },
+          // Without this a truncated or removed file rendered Flutter's red
+          // error box across the centrepiece of the player.
+          errorBuilder: (_, _, _) {
+            ArtworkFileCache.forget(path);
+            return _ArtworkFallback(
+              size: size,
+              borderRadius: borderRadius,
+              showShadow: false,
             );
           },
         ),
@@ -120,20 +139,7 @@ class _ArtworkImage extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           borderRadius: borderRadius,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.3),
-              blurRadius: 32,
-              offset: const Offset(0, 16),
-              spreadRadius: -8,
-            ),
-            BoxShadow(
-              color: theme.colorScheme.primary.withValues(alpha: 0.08),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-              spreadRadius: -4,
-            ),
-          ],
+          boxShadow: _artworkShadow(theme, isDark),
         ),
         child: child,
       );
@@ -163,7 +169,11 @@ class _ArtworkFallback extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
-    Widget child = Container(
+    // One Container carries both the gradient and the shadow. The previous
+    // version followed this with `if (showShadow && child is! Container)`,
+    // which could never be true — the branch was 24 lines of unreachable code
+    // duplicating the shadow that had already been applied.
+    return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -184,28 +194,13 @@ class _ArtworkFallback extends StatelessWidget {
                 ],
           stops: const [0.0, 0.5, 1.0],
         ),
-        boxShadow: showShadow
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.3),
-                  blurRadius: 32,
-                  offset: const Offset(0, 16),
-                  spreadRadius: -8,
-                ),
-                BoxShadow(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.08),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
-                  spreadRadius: -4,
-                ),
-              ]
-            : null,
+        boxShadow: showShadow ? _artworkShadow(theme, isDark) : null,
       ),
       child: Stack(
         alignment: Alignment.center,
         children: [
-          if (showRings) ...[
-            // Subtle decorative rings.
+          if (showRings)
+            // Concentric rings read as a record sleeve behind the note.
             ...List.generate(3, (i) {
               final scale = 0.4 + i * 0.2;
               return Transform.scale(
@@ -225,7 +220,6 @@ class _ArtworkFallback extends StatelessWidget {
                 ),
               );
             }),
-          ],
           Icon(
             Icons.music_note_rounded,
             size: size * 0.28,
@@ -234,32 +228,22 @@ class _ArtworkFallback extends StatelessWidget {
         ],
       ),
     );
-
-    if (showShadow && child is! Container) {
-      child = Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          borderRadius: borderRadius,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.3),
-              blurRadius: 32,
-              offset: const Offset(0, 16),
-              spreadRadius: -8,
-            ),
-            BoxShadow(
-              color: theme.colorScheme.primary.withValues(alpha: 0.08),
-              blurRadius: 24,
-              offset: const Offset(0, 8),
-              spreadRadius: -4,
-            ),
-          ],
-        ),
-        child: child,
-      );
-    }
-
-    return child;
   }
 }
+
+/// Shared elevation for the player centrepiece, so the image and its fallback
+/// cannot drift apart.
+List<BoxShadow> _artworkShadow(ThemeData theme, bool isDark) => [
+  BoxShadow(
+    color: Colors.black.withValues(alpha: isDark ? 0.5 : 0.3),
+    blurRadius: 32,
+    offset: const Offset(0, 16),
+    spreadRadius: -8,
+  ),
+  BoxShadow(
+    color: theme.colorScheme.primary.withValues(alpha: 0.08),
+    blurRadius: 24,
+    offset: const Offset(0, 8),
+    spreadRadius: -4,
+  ),
+];

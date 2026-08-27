@@ -1,9 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
@@ -210,7 +209,7 @@ class _ImmersiveBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final file = _resolveFile();
+    final file = ArtworkFileCache.resolve(artPath);
 
     return Stack(
       fit: StackFit.expand,
@@ -234,7 +233,10 @@ class _ImmersiveBackground extends StatelessWidget {
             fit: BoxFit.cover,
             cacheWidth: 400,
             gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            errorBuilder: (_, _, _) {
+              ArtworkFileCache.forget(artPath);
+              return const SizedBox.shrink();
+            },
           )
         else
           Container(
@@ -282,13 +284,6 @@ class _ImmersiveBackground extends StatelessWidget {
           ),
       ],
     );
-  }
-
-  File? _resolveFile() {
-    final p = artPath;
-    if (p == null || p.isEmpty) return null;
-    final f = File(p);
-    return f.existsSync() ? f : null;
   }
 }
 

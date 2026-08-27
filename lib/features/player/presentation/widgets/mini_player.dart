@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -80,8 +78,16 @@ class MiniPlayer extends ConsumerWidget {
             child: Row(
               children: [
                 const SizedBox(width: AppTokens.s3),
-                // Artwork with Hero
-                _CompactArtwork(path: current.artPath, heroTag: _heroTag),
+                // Artwork with Hero. Uses the shared CompactArtwork rather than
+                // a local copy: the private duplicate it replaced had no
+                // `errorBuilder`, so an undecodable file left Flutter's red
+                // error box in the MiniPlayer for the rest of the session.
+                CompactArtwork(
+                  path: current.artPath,
+                  size: 52,
+                  heroTag: _heroTag,
+                  borderRadius: AppTokens.rSm,
+                ),
                 const SizedBox(width: AppTokens.s3),
                 // Metadata + progress
                 Expanded(
@@ -183,53 +189,6 @@ class MiniPlayer extends ConsumerWidget {
         ),
       ),
     );
-  }
-}
-
-class _CompactArtwork extends StatelessWidget {
-  const _CompactArtwork({required this.path, required this.heroTag});
-
-  final String? path;
-  final Object heroTag;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final file = _resolveFile();
-    return Hero(
-      tag: heroTag,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppTokens.rSm),
-        child: SizedBox(
-          width: 52,
-          height: 52,
-          child: file != null
-              ? Image.file(
-                  file,
-                  fit: BoxFit.cover,
-                  cacheWidth: 104,
-                  gaplessPlayback: true,
-                )
-              : ColoredBox(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: Icon(
-                    Icons.music_note_rounded,
-                    size: 24,
-                    color: theme.colorScheme.onSurfaceVariant.withValues(
-                      alpha: 0.4,
-                    ),
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-
-  File? _resolveFile() {
-    final p = path;
-    if (p == null || p.isEmpty) return null;
-    final f = File(p);
-    return f.existsSync() ? f : null;
   }
 }
 
