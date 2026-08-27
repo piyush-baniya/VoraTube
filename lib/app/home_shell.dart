@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../features/library/presentation/screens/library_screen.dart';
 import '../features/playlists/presentation/screens/playlists_screen.dart';
@@ -16,6 +16,16 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _currentIndex = 0;
 
+  /// Tabs that have been opened at least once.
+  ///
+  /// [IndexedStack] builds every child eagerly, which runs each screen's
+  /// `initState` at launch — that made Search grab focus and open the keyboard
+  /// over the Library, and paid the cost of four screens' providers before the
+  /// user had asked for any of them. Building a tab only once it is first
+  /// selected avoids both, while [IndexedStack] still preserves its state for
+  /// every subsequent visit.
+  final Set<int> _visited = {0};
+
   static const List<Widget> _screens = [
     LibraryScreen(),
     SearchScreen(),
@@ -24,7 +34,11 @@ class _HomeShellState extends State<HomeShell> {
   ];
 
   void _onDestinationSelected(int index) {
-    setState(() => _currentIndex = index);
+    if (index == _currentIndex) return;
+    setState(() {
+      _currentIndex = index;
+      _visited.add(index);
+    });
   }
 
   @override
@@ -33,7 +47,16 @@ class _HomeShellState extends State<HomeShell> {
       body: Column(
         children: [
           Expanded(
-            child: IndexedStack(index: _currentIndex, children: _screens),
+            child: IndexedStack(
+              index: _currentIndex,
+              children: <Widget>[
+                for (var i = 0; i < _screens.length; i++)
+                  if (_visited.contains(i))
+                    _screens[i]
+                  else
+                    const SizedBox.shrink(),
+              ],
+            ),
           ),
           const MiniPlayer(),
         ],

@@ -32,8 +32,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    // Auto-focus the search field
+    // Auto-focus the search field once the first frame has been laid out.
+    // Guarded because the screen can be unmounted within the same frame it was
+    // created, and a disposed FocusNode must never be touched.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _focusNode.requestFocus();
     });
   }
