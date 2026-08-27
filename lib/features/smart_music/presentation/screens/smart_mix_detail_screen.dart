@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,10 +5,8 @@ import '../../../../../app/theme/app_tokens.dart';
 import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../../core/player/player_controller.dart';
 import '../../../../../features/library/data/library_models.dart';
-import '../../../../../features/library/data/library_repository.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
 import '../../../../../features/player/presentation/providers/player_providers.dart';
-import '../../../../../shared/widgets/empty_state.dart';
 import '../../data/smart_mix_service.dart';
 
 class SmartMixDetailScreen extends ConsumerStatefulWidget {

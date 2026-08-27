@@ -13,6 +13,8 @@ import '../providers/playlist_providers.dart';
 import '../widgets/playlist_collage.dart';
 import 'playlist_detail_screen.dart';
 import '../../../../features/library/data/song_ref_mapper.dart';
+import '../../../smart_music/presentation/widgets/mood_strip.dart';
+import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 
 class PlaylistsScreen extends ConsumerStatefulWidget {
   const PlaylistsScreen({super.key});
@@ -61,19 +63,10 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
                 actionLabel: 'Retry',
                 onAction: () => ref.invalidate(playlistsOverviewProvider),
               ),
-              data: (playlists) {
-                if (playlists.isEmpty) {
-                  return EmptyState(
-                    icon: Icons.queue_music_rounded,
-                    title: 'No playlists yet',
-                    message:
-                        'Create your first playlist to organize your music.',
-                    actionLabel: 'Create playlist',
-                    onAction: () => _showCreateDialog(context, ref),
-                  );
-                }
-                return _PlaylistList(playlists: playlists);
-              },
+              data: (playlists) => _PlaylistList(
+                playlists: playlists,
+                onCreate: () => _showCreateDialog(context, ref),
+              ),
             ),
           ),
         ],
@@ -131,9 +124,10 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
 }
 
 class _PlaylistList extends StatelessWidget {
-  const _PlaylistList({required this.playlists});
+  const _PlaylistList({required this.playlists, required this.onCreate});
 
   final List<PlaylistSummary> playlists;
+  final VoidCallback onCreate;
 
   @override
   Widget build(BuildContext context) {
@@ -144,33 +138,23 @@ class _PlaylistList extends StatelessWidget {
 
     return CustomScrollView(
       slivers: [
-        if (pinned.isNotEmpty) ...[
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppTokens.s5,
-                AppTokens.s4,
-                AppTokens.s5,
-                AppTokens.s2,
-              ),
-              child: Text(
-                'Pinned',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  letterSpacing: 0.5,
-                ),
-              ),
+        // Smart Mood + recommended mixes, clearly distinct from the
+        // user-created playlists listed below.
+        const SliverToBoxAdapter(child: MoodStrip()),
+        const SliverToBoxAdapter(child: SmartMixStrip()),
+        if (playlists.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: EmptyState(
+              icon: Icons.queue_music_rounded,
+              title: 'No playlists yet',
+              message: 'Create your first playlist to organize your music.',
+              actionLabel: 'Create playlist',
+              onAction: onCreate,
             ),
-          ),
-          SliverList.separated(
-            itemCount: pinned.length,
-            separatorBuilder: (_, _) => const SizedBox(height: AppTokens.s2),
-            itemBuilder: (context, index) =>
-                _PlaylistCard(playlist: pinned[index]),
-          ),
-        ],
-        if (unpinned.isNotEmpty) ...[
-          if (pinned.isNotEmpty)
+          )
+        else ...[
+          if (pinned.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(
@@ -179,36 +163,63 @@ class _PlaylistList extends StatelessWidget {
                   AppTokens.s5,
                   AppTokens.s2,
                 ),
-                child: Divider(
-                  height: AppTokens.borderHairline,
-                  thickness: AppTokens.borderHairline,
-                  color: colorScheme.outlineVariant,
+                child: Text(
+                  'Pinned',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
             ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppTokens.s5,
-                AppTokens.s4,
-                AppTokens.s5,
-                AppTokens.s2,
+            SliverList.separated(
+              itemCount: pinned.length,
+              separatorBuilder: (_, _) => const SizedBox(height: AppTokens.s2),
+              itemBuilder: (context, index) =>
+                  _PlaylistCard(playlist: pinned[index]),
+            ),
+          ],
+          if (unpinned.isNotEmpty) ...[
+            if (pinned.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppTokens.s5,
+                    AppTokens.s4,
+                    AppTokens.s5,
+                    AppTokens.s2,
+                  ),
+                  child: Divider(
+                    height: AppTokens.borderHairline,
+                    thickness: AppTokens.borderHairline,
+                    color: colorScheme.outlineVariant,
+                  ),
+                ),
               ),
-              child: Text(
-                'All Playlists',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  letterSpacing: 0.5,
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppTokens.s5,
+                  AppTokens.s4,
+                  AppTokens.s5,
+                  AppTokens.s2,
+                ),
+                child: Text(
+                  'All Playlists',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
             ),
-          ),
-          SliverList.separated(
-            itemCount: unpinned.length,
-            separatorBuilder: (_, _) => const SizedBox(height: AppTokens.s2),
-            itemBuilder: (context, index) =>
-                _PlaylistCard(playlist: unpinned[index]),
-          ),
+            SliverList.separated(
+              itemCount: unpinned.length,
+              separatorBuilder: (_, _) => const SizedBox(height: AppTokens.s2),
+              itemBuilder: (context, index) =>
+                  _PlaylistCard(playlist: unpinned[index]),
+            ),
+          ],
         ],
         // Bottom padding for MiniPlayer
         SliverToBoxAdapter(child: SizedBox(height: AppTokens.s10)),

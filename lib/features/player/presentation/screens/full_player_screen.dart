@@ -76,7 +76,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
                   // Top bar
                   _TopBar(
                     onQueueTap: () => QueueSheet.show(context),
-                    onPlaylistTap: () => _openPlaylistPicker(current.identityKey),
+                    onPlaylistTap: () =>
+                        _openPlaylistPicker(current.identityKey),
                     onLyricsTap: () =>
                         setState(() => _showLyrics = !_showLyrics),
                     showLyricsActive: _showLyrics,
@@ -114,9 +115,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
     }
     final changed = await showAddToPlaylistSheet(context, rowId);
     if (changed && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Playlist updated')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Playlist updated')));
     }
   }
 

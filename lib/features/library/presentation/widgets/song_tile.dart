@@ -20,11 +20,16 @@ class SongTile extends ConsumerStatefulWidget {
     required this.tile,
     required this.index,
     required this.onPlay,
+    this.removeFromPlaylistId,
   });
 
   final SongTileData tile;
   final int index;
   final OnPlaySong onPlay;
+
+  /// When non-null (playlist detail), the overflow menu additionally offers
+  /// "Remove from playlist".
+  final int? removeFromPlaylistId;
 
   @override
   ConsumerState<SongTile> createState() => _SongTileState();
@@ -187,7 +192,12 @@ class _SongTileState extends ConsumerState<SongTile> {
   }
 
   void _showMenu(BuildContext context) {
-    SongActions.show(context, ref, tile: widget.tile);
+    SongActions.show(
+      context,
+      ref,
+      tile: widget.tile,
+      removeFromPlaylistId: widget.removeFromPlaylistId,
+    );
   }
 
   void _showSongInfo(BuildContext context) {

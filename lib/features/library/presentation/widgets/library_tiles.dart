@@ -25,13 +25,20 @@ class AlbumCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AspectRatio(
-              aspectRatio: 1,
-              child: ArtworkView(
-                path: album.artPath,
-                size: 160,
-                radius: AppTokens.rMd,
-                showShadow: true,
+            // Artwork flexes to fill the vertical space left by the fixed
+            // text block below, so the card never overflows its grid cell
+            // regardless of cell height or text scale.
+            Expanded(
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: ArtworkView(
+                    path: album.artPath,
+                    size: 160,
+                    radius: AppTokens.rMd,
+                    showShadow: true,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: AppTokens.s2),

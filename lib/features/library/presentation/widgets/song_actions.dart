@@ -7,8 +7,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../core/genre/genre_enrichment_service.dart';
+import '../../../../core/genre/genre_providers.dart';
 import '../../../../core/ingest/artwork/artwork_file_cache.dart';
-import '../../../../core/ingest/artwork/local_artwork_store.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -16,11 +17,15 @@ import '../../../../core/db/app_database.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../player/presentation/providers/player_providers.dart';
+import '../../../player/presentation/screens/ringtone_cutter_screen.dart';
+import '../../../playlists/presentation/providers/playlist_providers.dart';
+import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
+import '../../../smart_music/data/mood_engine.dart';
+import '../../../smart_music/presentation/providers/smart_music_providers.dart';
 import '../../data/library_repository.dart';
 import '../providers/library_providers.dart';
 import '../providers/library_view_providers.dart';
 import '../screens/filtered_songs_screen.dart';
-import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 
 enum SongAction {
   playNext,
@@ -36,7 +41,10 @@ enum SongAction {
   findOnYouTube,
   details,
   shareSong,
+  suggestMood,
+  refreshGenre,
   setAsRingtone,
+  removeFromPlaylist,
 }
 
 class SongActions {
@@ -44,6 +52,10 @@ class SongActions {
     BuildContext context,
     WidgetRef ref, {
     required SongTileData tile,
+
+    /// When set (playlist detail), the sheet also offers removing this song
+    /// from that playlist.
+    int? removeFromPlaylistId,
   }) async {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -64,13 +76,16 @@ class SongActions {
       builder: (sheetContext) => _SongActionSheet(
         tile: tile,
         isFavorite: isFavorite,
+        removeFromPlaylistId: removeFromPlaylistId,
         onAction: (action) async {
           Navigator.pop(sheetContext);
-          // Allow sheet to close before heavy work
-          await Future.delayed(const Duration(milliseconds: 140));
-          if (!sheetContext.mounted) return;
+          // Allow the sheet to close before heavy work, then use the OUTER
+          // context (still mounted) so navigation/feedback never depends on
+          // the sheet's disposal race.
+          await Future<void>.delayed(const Duration(milliseconds: 140));
+          if (!context.mounted) return;
           await _handleAction(
-            sheetContext,
+            context,
             ref,
             tile: tile,
             action: action,
@@ -78,6 +93,7 @@ class SongActions {
             repo: repo,
             songRef: songRef,
             isFavorite: isFavorite,
+            removeFromPlaylistId: removeFromPlaylistId,
           );
         },
       ),
@@ -93,6 +109,7 @@ class SongActions {
     required LibraryRepository repo,
     required SongRef songRef,
     required bool isFavorite,
+    int? removeFromPlaylistId,
   }) async {
     final song = tile.song;
     switch (action) {
@@ -168,9 +185,48 @@ class SongActions {
       case SongAction.shareSong:
         await _shareSong(context, song);
         break;
-      case SongAction.setAsRingtone:
-        await _setAsRingtone(context, song);
+      case SongAction.suggestMood:
+        await _suggestMood(ctx: context, ref: ref, song: song);
         break;
+      case SongAction.refreshGenre:
+        await _refreshGenre(context, ref, tile);
+        break;
+      case SongAction.setAsRingtone:
+        await _openRingtoneCutter(context, songRef);
+        break;
+      case SongAction.removeFromPlaylist:
+        await _removeFromPlaylist(context, ref, song, removeFromPlaylistId);
+        break;
+    }
+  }
+
+  /// Removes a song from a specific playlist (playlist detail context).
+  static Future<void> _removeFromPlaylist(
+    BuildContext context,
+    WidgetRef ref,
+    Song song,
+    int? playlistId,
+  ) async {
+    if (playlistId == null) return;
+    try {
+      final repository = ref.read(playlistRepositoryProvider);
+      final songs = await repository.songsOf(playlistId, limit: 10000);
+      final index = songs.indexWhere((s) => s.song.id == song.id);
+      if (index < 0) {
+        if (context.mounted) {
+          _snack(context, 'Song is no longer in this playlist');
+        }
+        return;
+      }
+      await repository.removeSongAt(playlistId, index);
+      // Refresh overview + detail + membership sheets immediately.
+      ref.read(playlistRefreshTickProvider.notifier).state++;
+      ref.invalidate(playlistMembershipProvider(playlistId));
+      if (context.mounted) {
+        _snack(context, 'Removed from playlist');
+      }
+    } catch (_) {
+      if (context.mounted) _snack(context, 'Could not remove from playlist');
     }
   }
 
@@ -478,25 +534,107 @@ class SongActions {
     return 'audio/*';
   }
 
-  static Future<void> _setAsRingtone(BuildContext context, Song song) async {
-    // Scoped-storage compliant stub: copy to ringtones and inform user.
-    // Full RingtoneManager integration requires WRITE_SETTINGS permission
-    // and a platform channel; expose graceful fallback.
-    final path = song.path;
-    if (path == null || path.isEmpty) {
-      _snack(context, 'No file path for ringtone');
-      return;
-    }
-    final f = File(path);
-    if (!await f.exists()) {
-      _snack(context, 'File not found for ringtone');
-      return;
-    }
-    _snack(
-      context,
-      'To set as ringtone, open system Settings > Sound > Phone ringtone and choose "${song.title}". Direct ringtone assignment requires additional permission on this Android version.',
-      duration: const Duration(seconds: 4),
+  static Future<void> _openRingtoneCutter(
+    BuildContext context,
+    SongRef songRef,
+  ) {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RingtoneCutterScreen(song: songRef),
+      ),
     );
+  }
+
+  /// Resolves the effective genre for a song: local metadata first, then the
+  /// local KV cache, then a best-effort iTunes lookup when online.
+  static Future<String?> _resolveGenre(BuildContext context, Song song) async {
+    final local = song.genre;
+    if (local != null && local.isNotEmpty) return local;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final service = container.read(genreEnrichmentServiceProvider);
+    final repo = container.read(libraryRepositoryProvider);
+    return service.enrichIfNeeded(
+      rowId: song.id,
+      title: song.title,
+      artist: song.artist,
+      existingGenre: song.genre,
+      readCache: repo.kvGet,
+      writeCache: repo.kvSet,
+    );
+  }
+
+  /// Lets the user assign (or clear) a mood that overrides the algorithmic
+  /// suggestion. Persisted to `song_stats.mood` so it feeds Smart Mixes.
+  static Future<void> _suggestMood({
+    required BuildContext ctx,
+    required WidgetRef ref,
+    required Song song,
+  }) async {
+    final engine = ref.read(moodEngineProvider);
+    final classification = engine.classify(
+      title: song.title,
+      artist: song.artist,
+      album: song.albumName,
+      genre: song.genre,
+      year: song.year,
+      durationMs: song.durationMs,
+    );
+    final recommended = classification.primaryMood == SongMood.unknown
+        ? null
+        : classification.primaryMood;
+    final chosen = await showModalBottomSheet<SongMood>(
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MoodPicker(initial: recommended),
+    );
+    if (chosen == null) return; // dismissed without a choice
+    final repo = ref.read(libraryRepositoryProvider);
+    if (chosen == SongMood.unknown) {
+      await repo.setSongMood(song.id, '');
+      _snack(ctx, 'Mood cleared');
+    } else {
+      await repo.setSongMood(song.id, chosen.name);
+      _snack(ctx, 'Mood set to ${chosen.label}');
+    }
+    ref.invalidate(libraryRefreshTickProvider);
+  }
+
+  /// Forces an online genre lookup and caches the result, then refreshes the
+  /// library so the new genre surfaces in the Details sheet.
+  static Future<void> _refreshGenre(
+    BuildContext context,
+    WidgetRef ref,
+    SongTileData tile,
+  ) async {
+    final song = tile.song;
+    if (song.genre != null && song.genre!.isNotEmpty) {
+      _snack(context, 'This song already has a genre tagged locally');
+      return;
+    }
+    final service = ref.read(genreEnrichmentServiceProvider);
+    final repo = ref.read(libraryRepositoryProvider);
+    // A stale sentinel forces the next enrichIfNeeded() to skip the cache and
+    // perform a fresh online lookup.
+    await GenreEnrichmentService.invalidateCache(
+      rowId: song.id,
+      writeCache: repo.kvSet,
+    );
+    final genre = await service.enrichIfNeeded(
+      rowId: song.id,
+      title: song.title,
+      artist: song.artist,
+      existingGenre: song.genre,
+      readCache: repo.kvGet,
+      writeCache: repo.kvSet,
+    );
+    if (!context.mounted) return;
+    if (genre != null && genre.isNotEmpty) {
+      _snack(context, 'Genre updated: $genre');
+      ref.invalidate(libraryRefreshTickProvider);
+    } else {
+      _snack(context, 'Genre unavailable right now');
+    }
   }
 
   static Future<void> _showDetails(
@@ -607,12 +745,20 @@ class SongActions {
                       label: 'Artist',
                       value: song.artist!,
                     ),
-                  if (song.genre != null && song.genre!.isNotEmpty)
-                    _DetailRow(
-                      icon: Icons.style_rounded,
-                      label: 'Genre',
-                      value: song.genre!,
-                    ),
+                  FutureBuilder<String?>(
+                    future: _resolveGenre(ctx, song),
+                    builder: (context, snapshot) {
+                      final genre = snapshot.data;
+                      final display = genre != null && genre.isNotEmpty
+                          ? genre
+                          : 'Unknown';
+                      return _DetailRow(
+                        icon: Icons.style_rounded,
+                        label: 'Genre',
+                        value: display,
+                      );
+                    },
+                  ),
                   if (song.year != null && song.year! > 0)
                     _DetailRow(
                       icon: Icons.calendar_today_rounded,
@@ -638,6 +784,12 @@ class SongActions {
                     ),
                   if (stat != null) ...[
                     const Divider(height: 24),
+                    if (stat.mood != null && stat.mood!.isNotEmpty)
+                      _DetailRow(
+                        icon: Icons.mood_rounded,
+                        label: 'Mood',
+                        value: stat.mood!,
+                      ),
                     _DetailRow(
                       icon: Icons.play_circle_rounded,
                       label: 'Play count',
@@ -711,11 +863,16 @@ class _SongActionSheet extends StatelessWidget {
     required this.tile,
     required this.isFavorite,
     required this.onAction,
+    this.removeFromPlaylistId,
   });
 
   final SongTileData tile;
   final bool isFavorite;
   final ValueChanged<SongAction> onAction;
+
+  /// When non-null (playlist detail context) the sheet exposes a
+  /// "Remove from playlist" action for this playlist.
+  final int? removeFromPlaylistId;
 
   @override
   Widget build(BuildContext context) {
@@ -788,6 +945,13 @@ class _SongActionSheet extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (removeFromPlaylistId != null)
+                    _ActionTile(
+                      icon: Icons.playlist_remove_rounded,
+                      label: 'Remove from playlist',
+                      iconColor: colorScheme.primary,
+                      onTap: () => onAction(SongAction.removeFromPlaylist),
+                    ),
                   _ActionTile(
                     icon: Icons.skip_next_rounded,
                     label: 'Play next',
@@ -833,6 +997,16 @@ class _SongActionSheet extends StatelessWidget {
                     icon: Icons.edit_rounded,
                     label: 'Edit tags',
                     onTap: () => onAction(SongAction.editTags),
+                  ),
+                  _ActionTile(
+                    icon: Icons.style_rounded,
+                    label: 'Refresh genre',
+                    onTap: () => onAction(SongAction.refreshGenre),
+                  ),
+                  _ActionTile(
+                    icon: Icons.mood_rounded,
+                    label: 'Suggest mood',
+                    onTap: () => onAction(SongAction.suggestMood),
                   ),
                   const Divider(height: 1, indent: 56),
                   _ActionTile(
@@ -967,6 +1141,72 @@ class _DetailRow extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bottom-sheet picker used by "Suggest mood".
+///
+/// Tapping a concrete mood pops it as the choice; tapping "Auto" pops
+/// [SongMood.unknown] so the caller can clear a previously assigned mood.
+class _MoodPicker extends StatelessWidget {
+  const _MoodPicker({this.initial});
+
+  final SongMood? initial;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final concrete = SongMood.values.where((m) => m != SongMood.unknown);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppTokens.rXxl),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: AppTokens.s3),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(AppTokens.s5),
+            child: Text(
+              'Suggest a mood',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppTokens.s2),
+          ...concrete.map(
+            (mood) => RadioListTile<SongMood>(
+              value: mood,
+              groupValue: initial,
+              title: Text(mood.label),
+              activeColor: colorScheme.primary,
+              onChanged: (v) => Navigator.of(context).pop(v),
+            ),
+          ),
+          RadioListTile<SongMood>(
+            value: SongMood.unknown,
+            groupValue: initial,
+            title: Text('Auto (let VoraTube decide)'),
+            onChanged: (v) => Navigator.of(context).pop(v),
+          ),
+          SizedBox(height: MediaQuery.paddingOf(context).bottom + AppTokens.s3),
         ],
       ),
     );

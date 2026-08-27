@@ -66,8 +66,12 @@ class ListeningInsightsStrip extends ConsumerWidget {
             ),
             const SizedBox(height: AppTokens.s2),
             // Compact stat chips.
+            // Compact stat chips. Height scales with text size so the cards
+            // never overflow or clip at larger system font scales.
             SizedBox(
-              height: 88,
+              height: MediaQuery.textScalerOf(context)
+                  .scale(96)
+                  .clamp(80.0, 160.0),
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(

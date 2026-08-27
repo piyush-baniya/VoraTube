@@ -268,6 +268,15 @@ class MoodEngine {
     ],
   };
 
+  /// Safely parses a persisted mood name back into a [SongMood].
+  static SongMood _safeMood(String name) {
+    try {
+      return SongMood.values.byName(name);
+    } catch (_) {
+      return SongMood.unknown;
+    }
+  }
+
   MoodClassification classify({
     required String title,
     required String? artist,
@@ -275,7 +284,21 @@ class MoodEngine {
     required String? genre,
     required int? year,
     required int durationMs,
+    String? userMood,
   }) {
+    // A mood explicitly assigned by the user always takes precedence over the
+    // algorithmic guess — this is how user suggestions feed the engine.
+    if (userMood != null && userMood.isNotEmpty) {
+      final mood = _safeMood(userMood);
+      if (mood != SongMood.unknown) {
+        return MoodClassification(
+          primaryMood: mood,
+          confidence: 1.0,
+          secondaryMoods: const {},
+        );
+      }
+    }
+
     final scores = <SongMood, double>{};
 
     for (final mood in SongMood.values) {

@@ -355,39 +355,33 @@ class _SongsViewState extends ConsumerState<_SongsView> {
               itemCount:
                   tiles.length +
                   (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
+              // SliverList children must be box widgets, not slivers.
               separatorBuilder: (_, i) => i == tiles.length - 1
-                  ? const SliverToBoxAdapter(child: SizedBox.shrink())
-                  : SliverToBoxAdapter(
-                      child: Divider(
-                        height: AppTokens.borderHairline,
-                        thickness: AppTokens.borderHairline,
-                        indent:
-                            AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
-                        endIndent: AppTokens.s4,
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
+                  ? const SizedBox.shrink()
+                  : Divider(
+                      height: AppTokens.borderHairline,
+                      thickness: AppTokens.borderHairline,
+                      indent: AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
+                      endIndent: AppTokens.s4,
+                      color: Theme.of(context).colorScheme.outlineVariant,
                     ),
               itemBuilder: (context, index) {
                 if (index >= tiles.length) {
-                  return SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      child: Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.2),
-                        ),
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    child: Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
                       ),
                     ),
                   );
                 }
-                return SliverToBoxAdapter(
-                  child: SongTile(
-                    tile: tiles[index],
-                    index: index,
-                    onPlay: (_) => _playFrom(tiles, index),
-                  ),
+                return SongTile(
+                  tile: tiles[index],
+                  index: index,
+                  onPlay: (_) => _playFrom(tiles, index),
                 );
               },
             );

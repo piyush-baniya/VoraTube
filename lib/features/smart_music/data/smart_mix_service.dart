@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:meta/meta.dart';
 
 import '../../../core/db/app_database.dart';
-import '../../../core/player/player_controller.dart';
 import '../../../features/library/data/library_models.dart';
 import '../../../features/library/data/library_repository.dart';
 import 'mood_engine.dart';
@@ -186,6 +185,7 @@ class SmartMixService {
       );
     }
 
+    final stats = await _dbSongStatsForSongs(allSongs.songs);
     final classified = <SongTileData>[];
     for (final song in allSongs.songs) {
       final classification = _moodEngine.classify(
@@ -195,6 +195,7 @@ class SmartMixService {
         genre: song.song.genre,
         year: song.song.year,
         durationMs: song.song.durationMs,
+        userMood: stats[song.song.id]?.mood,
       );
       if (classification.primaryMood == mood &&
           classification.confidence > 0.3) {
@@ -220,6 +221,7 @@ class SmartMixService {
         genre: a.song.genre,
         year: a.song.year,
         durationMs: a.song.durationMs,
+        userMood: stats[a.song.id]?.mood,
       );
       final cb = _moodEngine.classify(
         title: b.song.title,
@@ -228,6 +230,7 @@ class SmartMixService {
         genre: b.song.genre,
         year: b.song.year,
         durationMs: b.song.durationMs,
+        userMood: stats[b.song.id]?.mood,
       );
       return cb.confidence.compareTo(ca.confidence);
     });

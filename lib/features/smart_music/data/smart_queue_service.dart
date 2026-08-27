@@ -1,7 +1,5 @@
 import 'dart:math';
 
-import 'package:meta/meta.dart';
-
 import '../../../core/player/player_controller.dart';
 import 'mood_engine.dart';
 import 'smart_mix_service.dart';

@@ -385,9 +385,8 @@ class _AboutSection extends ConsumerWidget {
             size: 18,
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const PrivacyScreen()),
-          ),
+          onTap: () => Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const PrivacyScreen())),
         ),
         SettingsTile(
           title: 'Open Source Licenses',
@@ -436,11 +435,9 @@ class _AboutSection extends ConsumerWidget {
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const DonationScreen(),
-              ),
-            );
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const DonationScreen()));
           },
         ),
       ],

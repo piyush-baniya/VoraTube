@@ -112,6 +112,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         tile: tiles[index],
                         index: index,
                         onPlay: (_) => _playFrom(tiles, index),
+                        removeFromPlaylistId: widget.playlistId,
                       );
                     },
                   );

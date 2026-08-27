@@ -1270,6 +1270,18 @@ extension CollectionQueries on LibraryRepository {
     });
   }
 
+  /// Persists a user-assigned mood for a song (the value stored in
+  /// `song_stats.mood`). Pass an empty string to clear a previous assignment.
+  /// Creates the stats row when absent so user moods are remembered even for
+  /// songs that have never been played or favourited.
+  Future<void> setSongMood(int songRowId, String mood) async {
+    await _db.customStatement(
+      'INSERT INTO song_stats (song_id, mood) VALUES (?, ?) '
+      'ON CONFLICT(song_id) DO UPDATE SET mood = excluded.mood',
+      [songRowId, mood.isEmpty ? null : mood],
+    );
+  }
+
   Future<Set<int>> favoritesSongRowIds() async {
     final rows = await (_db.select(
       _db.songStats,
