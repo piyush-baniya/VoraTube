@@ -151,10 +151,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(AppTokens.rXl),
-                  borderSide: BorderSide(
-                    color: colorScheme.primary,
-                    width: 2,
-                  ),
+                  borderSide: BorderSide(color: colorScheme.primary, width: 2),
                 ),
               ),
             ),
@@ -314,10 +311,7 @@ class _Results extends ConsumerWidget {
       slivers: [
         if (results.songs.isNotEmpty) ...[
           SliverToBoxAdapter(
-            child: _SectionHeader(
-              title: 'Songs',
-              count: results.songs.length,
-            ),
+            child: _SectionHeader(title: 'Songs', count: results.songs.length),
           ),
           SliverList.separated(
             itemCount: results.songs.length,
@@ -328,8 +322,10 @@ class _Results extends ConsumerWidget {
               indent: AppTokens.artworkMd + AppTokens.s3 + AppTokens.s5,
               endIndent: AppTokens.s5,
             ),
-            itemBuilder: (context, index) =>
-                _SongResultTile(tile: results.songs[index], allTiles: results.songs),
+            itemBuilder: (context, index) => _SongResultTile(
+              tile: results.songs[index],
+              allTiles: results.songs,
+            ),
           ),
         ],
         if (results.albums.isNotEmpty) ...[
@@ -557,9 +553,9 @@ class _AlbumResultTile extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
 
     return PressableScale(
-      onTap: () => Navigator.of(context).push(
-        pushSharedAxis<void>(context, FilteredSongsScreen.album(album)),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(pushSharedAxis<void>(context, FilteredSongsScreen.album(album))),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s5,
@@ -624,9 +620,9 @@ class _ArtistResultTile extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
 
     return PressableScale(
-      onTap: () => Navigator.of(context).push(
-        pushSharedAxis<void>(context, FilteredSongsScreen.artist(artist)),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(pushSharedAxis<void>(context, FilteredSongsScreen.artist(artist))),
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s5,
@@ -693,10 +689,7 @@ class _PlaylistResultTile extends ConsumerWidget {
       onTap: () => Navigator.of(context).push(
         pushSharedAxis<void>(
           context,
-          PlaylistDetailScreen(
-            playlistId: playlist.id,
-            name: playlist.name,
-          ),
+          PlaylistDetailScreen(playlistId: playlist.id, name: playlist.name),
         ),
       ),
       child: Padding(

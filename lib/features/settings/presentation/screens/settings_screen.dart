@@ -62,13 +62,17 @@ class _PlaybackSection extends ConsumerWidget {
         SettingsSwitchTile(
           title: 'Shuffle',
           subtitle: 'Play songs in random order',
-          value: ref.watch(playbackSnapshotProvider).value?.shuffleEnabled ?? false,
+          value:
+              ref.watch(playbackSnapshotProvider).value?.shuffleEnabled ??
+              false,
           onChanged: (value) => ref.read(playerProvider).setShuffle(value),
         ),
         SettingsSelectTile<RepeatMode>(
           title: 'Repeat',
           subtitle: 'Repeat playback behavior',
-          value: ref.watch(playbackSnapshotProvider).value?.repeatMode ?? RepeatMode.off,
+          value:
+              ref.watch(playbackSnapshotProvider).value?.repeatMode ??
+              RepeatMode.off,
           onChanged: (mode) => ref.read(playerProvider).setRepeat(mode),
           items: const [RepeatMode.off, RepeatMode.all, RepeatMode.one],
           itemBuilder: (context, mode) => Text(mode.name.capitalize()),
@@ -79,7 +83,8 @@ class _PlaybackSection extends ConsumerWidget {
           trailing: Icon(
             Icons.lock_outline_rounded,
             size: 18,
-            color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            color: Theme.of(context).colorScheme.onSurfaceVariant
+                .withValues(alpha: 0.4),
           ),
         ),
         SettingsTile(
@@ -144,7 +149,8 @@ class _AudioSection extends ConsumerWidget {
           trailing: Icon(
             Icons.info_outline_rounded,
             size: 18,
-            color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            color: Theme.of(context).colorScheme.onSurfaceVariant
+                .withValues(alpha: 0.4),
           ),
         ),
       ],
@@ -266,9 +272,8 @@ class _AppearanceSection extends ConsumerWidget {
           title: 'Theme',
           subtitle: 'Choose color theme',
           value: appearanceSettings.themeMode,
-          onChanged: (mode) => ref
-              .read(appearanceSettingsProvider.notifier)
-              .setThemeMode(mode),
+          onChanged: (mode) =>
+              ref.read(appearanceSettingsProvider.notifier).setThemeMode(mode),
           items: const [
             AppThemeMode.system,
             AppThemeMode.dark,
@@ -390,7 +395,9 @@ class _AboutSection extends ConsumerWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.15),
+              color: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.15,
+              ),
               borderRadius: BorderRadius.circular(AppTokens.rMd),
             ),
             child: Icon(

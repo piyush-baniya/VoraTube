@@ -104,11 +104,7 @@ class SettingsSectionWithIcon extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(
-                icon,
-                size: 18,
-                color: colorScheme.primary,
-              ),
+              Icon(icon, size: 18, color: colorScheme.primary),
               const SizedBox(width: AppTokens.s2),
               Text(
                 title.toUpperCase(),

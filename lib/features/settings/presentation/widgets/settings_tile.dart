@@ -48,7 +48,8 @@ class SettingsTile extends StatelessWidget {
               onTap: onTap,
               onLongPress: onLongPress,
               child: Padding(
-                padding: contentPadding ??
+                padding:
+                    contentPadding ??
                     const EdgeInsets.symmetric(
                       horizontal: AppTokens.s5,
                       vertical: AppTokens.s3,
@@ -74,7 +75,8 @@ class SettingsTile extends StatelessWidget {
                             const SizedBox(height: 2),
                             Text(
                               subtitle!,
-                              style: subtitleStyle ??
+                              style:
+                                  subtitleStyle ??
                                   theme.textTheme.bodySmall?.copyWith(
                                     color: colorScheme.onSurfaceVariant,
                                     height: 1.4,
@@ -102,9 +104,7 @@ class SettingsTile extends StatelessWidget {
             child: Divider(
               height: AppTokens.borderHairline,
               thickness: AppTokens.borderHairline,
-              color: isDark
-                  ? AppColors.dividerDark
-                  : AppColors.dividerLight,
+              color: isDark ? AppColors.dividerDark : AppColors.dividerLight,
               indent: 0,
               endIndent: 0,
             ),
@@ -211,7 +211,9 @@ class SettingsSliderTile extends StatelessWidget {
           activeColor: colorScheme.primary,
           inactiveColor: colorScheme.surfaceContainerHighest,
           thumbColor: colorScheme.primary,
-          overlayColor: WidgetStateProperty.all(colorScheme.primary.withValues(alpha: 0.12)),
+          overlayColor: WidgetStateProperty.all(
+            colorScheme.primary.withValues(alpha: 0.12),
+          ),
         ),
       ),
     );
@@ -254,8 +256,7 @@ class SettingsSelectTile<T> extends StatelessWidget {
         itemBuilder: (context) => items.map((item) {
           return PopupMenuItem<T>(
             value: item,
-            child: itemBuilder?.call(context, item) ??
-                Text(item.toString()),
+            child: itemBuilder?.call(context, item) ?? Text(item.toString()),
           );
         }).toList(),
         child: Padding(

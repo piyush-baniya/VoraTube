@@ -226,8 +226,8 @@ class _LyricsViewState extends ConsumerState<LyricsView>
           Text(
             'Fetching lyrics...',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -257,8 +257,10 @@ class _LyricsViewState extends ConsumerState<LyricsView>
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.03),
+                    Theme.of(context).colorScheme.primary
+                        .withValues(alpha: 0.15),
+                    Theme.of(context).colorScheme.primary
+                        .withValues(alpha: 0.03),
                     Colors.transparent,
                   ],
                   stops: const [0.0, 0.6, 1.0],
@@ -267,24 +269,24 @@ class _LyricsViewState extends ConsumerState<LyricsView>
               child: Icon(
                 icon,
                 size: 36,
-                color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                color: Theme.of(context).colorScheme.onSurfaceVariant
+                    .withValues(alpha: 0.6),
               ),
             ),
             const SizedBox(height: AppTokens.s5),
             Text(
               message,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-              ),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: AppTokens.s2),
             Text(
               subtitle,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-],
+            ),
+          ],
         ),
       ),
     );
@@ -323,7 +325,8 @@ class _LyricsViewState extends ConsumerState<LyricsView>
               final line = data.lines[index];
               final isCurrent = index == currentLineIndex;
               final isPast = currentLineIndex >= 0 && index < currentLineIndex;
-              final isUpcoming = currentLineIndex >= 0 && index > currentLineIndex + 1;
+              final isUpcoming =
+                  currentLineIndex >= 0 && index > currentLineIndex + 1;
 
               return _SyncedLyricLine(
                 key: ValueKey(index),
@@ -411,13 +414,9 @@ class _SyncedLyricLineState extends State<_SyncedLyricLine>
       duration: AppTokens.fast,
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: 1.05,
-    ).animate(CurvedAnimation(
-      parent: _scaleController,
-      curve: AppTokens.press,
-    ));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
+      CurvedAnimation(parent: _scaleController, curve: AppTokens.press),
+    );
 
     if (widget.isCurrent) {
       _scaleController.forward();

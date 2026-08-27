@@ -94,11 +94,7 @@ class StorageInfoCard extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.error_outline,
-            color: theme.colorScheme.error,
-            size: 20,
-          ),
+          Icon(Icons.error_outline, color: theme.colorScheme.error, size: 20),
           const SizedBox(width: AppTokens.s3),
           Text(
             'Storage info unavailable',
@@ -240,7 +236,9 @@ class _PremiumDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s5 + 44 + AppTokens.s4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s5 + 44 + AppTokens.s4,
+      ),
       child: Divider(
         height: AppTokens.borderHairline,
         thickness: AppTokens.borderHairline,

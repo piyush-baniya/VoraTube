@@ -38,7 +38,8 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                  color: Theme.of(context).colorScheme.primary
+                      .withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -342,8 +343,12 @@ class _PlaylistCard extends ConsumerWidget {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: colorScheme.primary.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(AppTokens.rFull),
+                              color: colorScheme.primary.withValues(
+                                alpha: 0.12,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppTokens.rFull,
+                              ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -432,10 +437,9 @@ class _PlaylistCard extends ConsumerWidget {
     final songsFuture = repository.songsOf(playlist.id);
     songsFuture.then((songs) {
       if (songs.isNotEmpty && context.mounted) {
-        player.playQueue(
-          [for (final s in songs) songTileToRef(s)],
-          startIndex: 0,
-        );
+        player.playQueue([
+          for (final s in songs) songTileToRef(s),
+        ], startIndex: 0);
       }
     });
   }
@@ -523,12 +527,18 @@ class _PlaylistCard extends ConsumerWidget {
               },
             ),
             _ContextMenuTile(
-              icon: playlist.pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
+              icon: playlist.pinned
+                  ? Icons.push_pin_outlined
+                  : Icons.push_pin_rounded,
               label: playlist.pinned ? 'Unpin' : 'Pin to top',
-              iconColor: playlist.pinned ? colorScheme.onSurfaceVariant : colorScheme.primary,
+              iconColor: playlist.pinned
+                  ? colorScheme.onSurfaceVariant
+                  : colorScheme.primary,
               onTap: () {
                 Navigator.pop(context);
-                ref.read(playlistRepositoryProvider).setPinned(playlist.id, !playlist.pinned);
+                ref
+                    .read(playlistRepositoryProvider)
+                    .setPinned(playlist.id, !playlist.pinned);
                 ref.read(playlistRefreshTickProvider.notifier).state++;
               },
             ),
@@ -558,7 +568,9 @@ class _PlaylistCard extends ConsumerWidget {
                 _confirmDelete(context, ref);
               },
             ),
-            SizedBox(height: MediaQuery.paddingOf(context).bottom + AppTokens.s4),
+            SizedBox(
+              height: MediaQuery.paddingOf(context).bottom + AppTokens.s4,
+            ),
           ],
         ),
       ),
@@ -598,9 +610,8 @@ class _PlaylistCard extends ConsumerWidget {
     await repository.deletePlaylist(playlist.id);
     ref.read(playlistRefreshTickProvider.notifier).state++;
     if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('"${playlist.name}" deleted')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('"${playlist.name}" deleted')));
     }
   }
 
@@ -630,8 +641,13 @@ class _PlaylistCard extends ConsumerWidget {
         ],
       ),
     ).then((newName) {
-      if (newName != null && newName.isNotEmpty && newName != playlist.name && context.mounted) {
-        ref.read(playlistRepositoryProvider).renamePlaylist(playlist.id, newName);
+      if (newName != null &&
+          newName.isNotEmpty &&
+          newName != playlist.name &&
+          context.mounted) {
+        ref
+            .read(playlistRepositoryProvider)
+            .renamePlaylist(playlist.id, newName);
         ref.read(playlistRefreshTickProvider.notifier).state++;
       }
     });
@@ -642,7 +658,10 @@ class _PlaylistCard extends ConsumerWidget {
     final newName = '${playlist.name} (Copy)';
     try {
       final newId = await repository.createPlaylist(newName);
-      await repository.addSongs(newId, (await repository.songsOf(playlist.id)).map((s) => s.song.id).toList());
+      await repository.addSongs(
+        newId,
+        (await repository.songsOf(playlist.id)).map((s) => s.song.id).toList(),
+      );
       ref.read(playlistRefreshTickProvider.notifier).state++;
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -651,7 +670,8 @@ class _PlaylistCard extends ConsumerWidget {
       }
     } on DuplicatePlaylistNameException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
       }
     }
   }
@@ -765,6 +785,7 @@ class _LoadingSkeleton extends StatelessWidget {
             ],
           ),
         ),
-      ));
+      ),
+    );
   }
 }
