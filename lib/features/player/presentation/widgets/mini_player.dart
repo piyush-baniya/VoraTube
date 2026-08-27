@@ -49,141 +49,166 @@ class MiniPlayer extends ConsumerWidget {
           ),
         );
       },
-      child: AnimatedContainer(
-        duration: AppTokens.normal,
-        curve: AppTokens.easeOut,
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHigh,
-          border: Border(
-            top: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppTokens.s3,
+          0,
+          AppTokens.s3,
+          AppTokens.s2,
+        ),
+        child: AnimatedContainer(
+          duration: AppTokens.normal,
+          curve: AppTokens.easeOut,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppTokens.rXl),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: isDark
+                  ? [
+                      AppColors.surfaceRaisedDark.withValues(alpha: 0.95),
+                      AppColors.surfaceDark.withValues(alpha: 0.92),
+                    ]
+                  : [
+                      AppColors.surfaceRaisedLight.withValues(alpha: 0.98),
+                      AppColors.surfaceLight.withValues(alpha: 0.96),
+                    ],
+            ),
+            border: Border.all(
+              color: colorScheme.primary.withValues(alpha: 0.18),
               width: AppTokens.borderHairline,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.25),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+                spreadRadius: -6,
+              ),
+              BoxShadow(
+                color: colorScheme.primary.withValues(alpha: 0.08),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+                spreadRadius: -4,
+              ),
+            ],
           ),
-          boxShadow: isDark
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 16,
-                    offset: const Offset(0, -4),
-                    spreadRadius: -4,
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 68,
+              child: Row(
+                children: [
+                  const SizedBox(width: AppTokens.s3),
+                  // Artwork with Hero. Uses the shared CompactArtwork rather than
+                  // a local copy: the private duplicate it replaced had no
+                  // `errorBuilder`, so an undecodable file left Flutter's red
+                  // error box in the MiniPlayer for the rest of the session.
+                  CompactArtwork(
+                    path: current.artPath,
+                    size: 48,
+                    heroTag: _heroTag,
+                    borderRadius: AppTokens.rMd,
                   ),
-                ]
-              : null,
-        ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 72,
-            child: Row(
-              children: [
-                const SizedBox(width: AppTokens.s3),
-                // Artwork with Hero. Uses the shared CompactArtwork rather than
-                // a local copy: the private duplicate it replaced had no
-                // `errorBuilder`, so an undecodable file left Flutter's red
-                // error box in the MiniPlayer for the rest of the session.
-                CompactArtwork(
-                  path: current.artPath,
-                  size: 52,
-                  heroTag: _heroTag,
-                  borderRadius: AppTokens.rSm,
-                ),
-                const SizedBox(width: AppTokens.s3),
-                // Metadata + progress
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  current.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                if (current.artist != null)
+                  const SizedBox(width: AppTokens.s3),
+                  // Metadata + progress
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Text(
-                                    current.artist!,
+                                    current.title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: colorScheme.onSurfaceVariant,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                              ],
+                                  if (current.artist != null)
+                                    Text(
+                                      current.artist!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                          // Play/pause
-                          PressableScale(
-                            onTap: () => ref.read(playerProvider).togglePlay(),
-                            child: Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: colorScheme.primary.withValues(
-                                  alpha: 0.12,
+                            // Play/pause
+                            PressableScale(
+                              onTap: () =>
+                                  ref.read(playerProvider).togglePlay(),
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primary.withValues(
+                                    alpha: 0.14,
+                                  ),
+                                  shape: BoxShape.circle,
                                 ),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                snapshot.isPlaying
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                size: 18,
-                                color: colorScheme.primary,
+                                child: Icon(
+                                  snapshot.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  size: 18,
+                                  color: colorScheme.primary,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      // Progress bar
-                      _MiniProgress(
-                        snapshot: snapshot,
-                        onSeek: (pos) => ref.read(playerProvider).seek(pos),
-                      ),
-                    ],
-                  ),
-                ),
-                // Next button
-                PressableScale(
-                  onTap:
-                      snapshot.currentIndex < snapshot.queueLength - 1 ||
-                          snapshot.repeatMode == RepeatMode.all
-                      ? () => ref.read(playerProvider).next()
-                      : null,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: colorScheme.outlineVariant.withValues(
-                          alpha: 0.3,
+                          ],
                         ),
-                        width: AppTokens.borderHairline,
-                      ),
+                        const SizedBox(height: 2),
+                        // Progress bar
+                        _MiniProgress(
+                          snapshot: snapshot,
+                          onSeek: (pos) => ref.read(playerProvider).seek(pos),
+                        ),
+                      ],
                     ),
-                    child: Icon(
-                      Icons.skip_next_rounded,
-                      size: 20,
-                      color: colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.7,
+                  ),
+                  // Next button
+                  PressableScale(
+                    onTap:
+                        snapshot.currentIndex < snapshot.queueLength - 1 ||
+                            snapshot.repeatMode == RepeatMode.all
+                        ? () => ref.read(playerProvider).next()
+                        : null,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.3,
+                          ),
+                          width: AppTokens.borderHairline,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.skip_next_rounded,
+                        size: 20,
+                        color: colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.7,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: AppTokens.s2),
-              ],
+                  const SizedBox(width: AppTokens.s2),
+                ],
+              ),
             ),
           ),
         ),
