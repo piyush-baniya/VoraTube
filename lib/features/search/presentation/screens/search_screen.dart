@@ -19,7 +19,12 @@ import 'package:vora_tube/features/library/data/song_ref_mapper.dart'
 import '../providers/search_providers.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.onBack});
+
+  /// Called when the user taps the back arrow while Search is shown as a tab
+  /// (i.e. when the navigator cannot pop). When Search is pushed as a route,
+  /// the back arrow pops instead.
+  final VoidCallback? onBack;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -70,7 +75,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             child: Row(
               children: [
                 PressableScale(
-                  onTap: () => Navigator.of(context).pop(),
+                  onTap: () {
+                    final navigator = Navigator.of(context);
+                    if (navigator.canPop()) {
+                      navigator.pop();
+                    } else {
+                      widget.onBack?.call();
+                    }
+                  },
                   child: Container(
                     width: 44,
                     height: 44,

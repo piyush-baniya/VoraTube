@@ -6,15 +6,7 @@ import '../../../library/data/library_models.dart';
 import '../../../library/data/library_repository.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 
-/// Raw text field content.
-final searchQueryControllerProvider = StateProvider<String>((ref) => '');
-
-/// Debounced (250 ms) normalized query actually used for searching.
-final debouncedSearchQueryProvider = StateProvider<String>((ref) {
-  final raw = ref.watch(searchQueryControllerProvider).trim();
-  return raw;
-});
-
+/// Debounces raw search input by 250 ms before it becomes the active query.
 class _SearchDebounce extends StateNotifier<String> {
   _SearchDebounce() : super('');
 
@@ -38,8 +30,12 @@ final _searchDebounceProvider = StateNotifierProvider<_SearchDebounce, String>(
   (ref) => _SearchDebounce(),
 );
 
+/// Debounced (250 ms) normalized query actually used for searching.
+final debouncedSearchQueryProvider = Provider<String>(
+  (ref) => ref.watch(_searchDebounceProvider),
+);
+
 void submitSearchText(WidgetRef ref, String text) {
-  ref.read(searchQueryControllerProvider.notifier).state = text;
   ref.read(_searchDebounceProvider.notifier).submit(text);
 }
 

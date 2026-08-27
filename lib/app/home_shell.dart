@@ -27,13 +27,6 @@ class _HomeShellState extends State<HomeShell> {
   /// every subsequent visit.
   final Set<int> _visited = {0};
 
-  static const List<Widget> _screens = [
-    LibraryScreen(),
-    SearchScreen(),
-    PlaylistsScreen(),
-    SettingsScreen(),
-  ];
-
   void _onDestinationSelected(int index) {
     if (index == _currentIndex) return;
     setState(() {
@@ -41,6 +34,16 @@ class _HomeShellState extends State<HomeShell> {
       _visited.add(index);
     });
   }
+
+  /// Screens held by the [IndexedStack]. Search is passed an [onBack] that
+  /// returns to the Library tab: Search lives as a tab (not a pushed route),
+  /// so popping the navigator would blank the whole app.
+  List<Widget> get _screens => [
+    const LibraryScreen(),
+    SearchScreen(onBack: () => _onDestinationSelected(0)),
+    const PlaylistsScreen(),
+    const SettingsScreen(),
+  ];
 
   @override
   Widget build(BuildContext context) {
