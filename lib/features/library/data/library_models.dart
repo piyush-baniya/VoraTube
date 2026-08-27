@@ -1,4 +1,4 @@
-﻿import '../../../core/db/app_database.dart' show Song, Playlist;
+import '../../../core/db/app_database.dart' show Song, Playlist;
 import '../../../core/ingest/ingest_service.dart' show ReplayGainInfo;
 
 enum LibrarySection { songs, albums, artists, genres }

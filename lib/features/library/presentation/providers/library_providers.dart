@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter/foundation.dart';

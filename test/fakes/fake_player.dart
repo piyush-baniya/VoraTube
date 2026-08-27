@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:vora_tube/core/player/player_controller.dart';
 
