@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
+import 'app/splash_screen.dart';
 import 'core/db/app_database.dart';
 import 'core/permissions/permission_gate.dart';
 import 'core/player/just_audio_controller.dart';
@@ -37,7 +38,8 @@ Future<void> main() async {
       container: container,
       // The permission gate requests audio access on first launch (Android)
       // before revealing the app. See [PermissionGate] for the platform rules.
-      child: const PermissionGate(child: VoraTubeApp()),
+      // The splash gate shows a brief premium launch visual first.
+      child: const SplashGate(child: PermissionGate(child: VoraTubeApp())),
     ),
   );
 }
