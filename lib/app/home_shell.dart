@@ -5,6 +5,7 @@ import '../features/playlists/presentation/screens/playlists_screen.dart';
 import '../features/player/presentation/widgets/mini_player.dart';
 import '../features/search/presentation/screens/search_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
+import 'widgets/glass_nav_bar.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -61,28 +62,28 @@ class _HomeShellState extends State<HomeShell> {
           const MiniPlayer(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
+      bottomNavigationBar: GlassNavBar(
+        currentIndex: _currentIndex,
         onDestinationSelected: _onDestinationSelected,
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.library_music_outlined),
-            selectedIcon: Icon(Icons.library_music),
+          GlNavDestination(
+            icon: Icons.library_music_outlined,
+            selectedIcon: Icons.library_music,
             label: 'Library',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.search_outlined),
-            selectedIcon: Icon(Icons.search),
+          GlNavDestination(
+            icon: Icons.search_outlined,
+            selectedIcon: Icons.search,
             label: 'Search',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.playlist_play_outlined),
-            selectedIcon: Icon(Icons.playlist_play),
+          GlNavDestination(
+            icon: Icons.playlist_play_outlined,
+            selectedIcon: Icons.playlist_play,
             label: 'Playlists',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+          GlNavDestination(
+            icon: Icons.settings_outlined,
+            selectedIcon: Icons.settings,
             label: 'Settings',
           ),
         ],

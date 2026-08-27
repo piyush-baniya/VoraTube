@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/app/app.dart';
+import 'package:vora_tube/app/widgets/glass_nav_bar.dart';
 import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/ingest/ingest_service.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
@@ -83,11 +84,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle(const Duration(seconds: 2));
 
-    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(GlassNavBar), findsOneWidget);
     expect(find.text('Search'), findsOneWidget);
     expect(
       find.descendant(
-        of: find.byType(NavigationBar),
+        of: find.byType(GlassNavBar),
         matching: find.text('Playlists'),
       ),
       findsOneWidget,
