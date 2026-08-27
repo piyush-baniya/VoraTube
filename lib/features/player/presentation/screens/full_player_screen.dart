@@ -19,7 +19,7 @@ import '../widgets/queue_sheet.dart';
 /// Full-screen immersive music player.
 ///
 /// Performance architecture:
-/// - Watches [playbackSnapshotProvider] for coarse state (track, modes, queue info).
+/// - Watches [playbackStateProvider] for coarse state (track, modes, queue info).
 /// - Only [PlayerProgress] watches [playbackPositionProvider].
 /// - Artwork uses [AnimatedSwitcher] to cross-fade on song changes.
 /// - Favorite state resolves via [currentSongIsFavoriteProvider].
@@ -33,31 +33,14 @@ class FullPlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<FullPlayerScreen> createState() => _FullPlayerScreenState();
 }
 
-class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
-    with SingleTickerProviderStateMixin {
+class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
   bool _showLyrics = false;
-  late final AnimationController _backgroundController;
-
-  @override
-  void initState() {
-    super.initState();
-    _backgroundController = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-  }
-
-  @override
-  void dispose() {
-    _backgroundController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    final snapshot = ref.watch(playbackSnapshotProvider).value;
+    final snapshot = ref.watch(playbackStateProvider);
 
-    if (snapshot == null || !snapshot.hasTrack) {
+    if (!snapshot.hasTrack) {
       return const _EmptyPlayer();
     }
 
@@ -83,10 +66,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         extendBodyBehindAppBar: true,
         body: Stack(
           children: [
-            // Immersive background with artwork-based gradient
+            // Immersive background with artwork-based gradient.
+            // Deliberately holds no Hero: the artwork Hero tag belongs to
+            // exactly one widget per route (see [PlayerArtwork] below).
             _ImmersiveBackground(
               artPath: current.artPath,
-              heroTag: FullPlayerScreen._heroTag,
               isPlaying: snapshot.isPlaying,
             ),
             // Main content
@@ -188,7 +172,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     return Column(
       children: [
         const SizedBox(height: AppTokens.s3),
-        Expanded(child: LyricsView()),
+        // Undecorated so lyrics float over the immersive backdrop instead of
+        // sitting inside a card that reads like a bottom sheet.
+        const Expanded(child: LyricsView(decorated: false)),
         const SizedBox(height: AppTokens.s3),
         _SongMetadata(
           title: current.title,
@@ -208,15 +194,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
 /// Immersive background that extends behind the artwork
 /// with a subtle gradient derived from the album art.
+///
+/// This widget must never wrap its image in a [Hero]. Flutter requires Hero
+/// tags to be unique within a route subtree; a duplicate tag makes
+/// `_allHeroesFor` throw during the flight, which corrupts the overlay's
+/// element bookkeeping and surfaces later as a `_dependents.isEmpty`
+/// assertion failure on an unrelated widget.
 class _ImmersiveBackground extends StatelessWidget {
-  const _ImmersiveBackground({
-    required this.artPath,
-    required this.heroTag,
-    required this.isPlaying,
-  });
+  const _ImmersiveBackground({required this.artPath, required this.isPlaying});
 
   final String? artPath;
-  final Object heroTag;
   final bool isPlaying;
 
   @override
@@ -240,16 +227,14 @@ class _ImmersiveBackground extends StatelessWidget {
             ),
           ),
         ),
-        // Artwork as background (blurred, low opacity)
+        // Artwork as background (low opacity, no Hero — see class docs)
         if (file != null)
-          Hero(
-            tag: heroTag,
-            child: Image.file(
-              file,
-              fit: BoxFit.cover,
-              cacheWidth: 400,
-              colorBlendMode: BlendMode.srcOver,
-            ),
+          Image.file(
+            file,
+            fit: BoxFit.cover,
+            cacheWidth: 400,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
           )
         else
           Container(
@@ -598,8 +583,7 @@ class _FavoriteButton extends ConsumerWidget {
 class _PositionConsumer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final snapshot = ref.watch(playbackSnapshotProvider).value;
-    if (snapshot == null) return const SizedBox.shrink();
+    final snapshot = ref.watch(playbackStateProvider);
 
     return ref
         .watch(playbackPositionProvider)
@@ -628,8 +612,7 @@ class _PositionConsumer extends ConsumerWidget {
 class _ControlsConsumer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final snapshot = ref.watch(playbackSnapshotProvider).value;
-    if (snapshot == null) return const SizedBox.shrink();
+    final snapshot = ref.watch(playbackStateProvider);
 
     return PlayerControls(
       snapshot: snapshot,
