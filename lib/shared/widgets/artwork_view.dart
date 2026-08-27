@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -98,8 +98,16 @@ class ArtworkView extends StatelessWidget {
   Widget _fallback(ThemeData theme) {
     final isDark = theme.brightness == Brightness.dark;
     final colors = isDark
-        ? [AppColors.voidBlack, AppColors.surfaceDark, AppColors.surfaceRaisedDark]
-        : [AppColors.paperLight, AppColors.surfaceLight, AppColors.surfaceRaisedLight];
+        ? [
+            AppColors.voidBlack,
+            AppColors.surfaceDark,
+            AppColors.surfaceRaisedDark,
+          ]
+        : [
+            AppColors.paperLight,
+            AppColors.surfaceLight,
+            AppColors.surfaceRaisedLight,
+          ];
 
     return ColoredBox(
       color: theme.colorScheme.surfaceContainerHighest,

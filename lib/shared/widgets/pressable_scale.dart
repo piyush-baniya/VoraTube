@@ -41,18 +41,14 @@ class _PressableScaleState extends State<PressableScale>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: widget.duration,
-      vsync: this,
+    _controller = AnimationController(duration: widget.duration, vsync: this);
+    _scaleAnimation = Tween<double>(begin: 1.0, end: widget.scale).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: widget.curve,
+        reverseCurve: Curves.easeOutCubic,
+      ),
     );
-    _scaleAnimation = Tween<double>(
-      begin: 1.0,
-      end: widget.scale,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: widget.curve,
-      reverseCurve: Curves.easeOutCubic,
-    ));
   }
 
   @override
@@ -61,14 +57,13 @@ class _PressableScaleState extends State<PressableScale>
     if (oldWidget.scale != widget.scale ||
         oldWidget.duration != widget.duration ||
         oldWidget.curve != widget.curve) {
-      _scaleAnimation = Tween<double>(
-        begin: 1.0,
-        end: widget.scale,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: widget.curve,
-        reverseCurve: Curves.easeOutCubic,
-      ));
+      _scaleAnimation = Tween<double>(begin: 1.0, end: widget.scale).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: widget.curve,
+          reverseCurve: Curves.easeOutCubic,
+        ),
+      );
     }
   }
 
@@ -176,23 +171,23 @@ class _PressableCardState extends State<PressableCard>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: AppTokens.fast,
-      vsync: this,
-    );
-    _elevationAnimation = Tween<double>(
-      begin: widget.elevation,
-      end: widget.pressedElevation,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: AppTokens.press,
-      reverseCurve: Curves.easeOutCubic,
-    ));
+    _controller = AnimationController(duration: AppTokens.fast, vsync: this);
+    _elevationAnimation =
+        Tween<double>(
+          begin: widget.elevation,
+          end: widget.pressedElevation,
+        ).animate(
+          CurvedAnimation(
+            parent: _controller,
+            curve: AppTokens.press,
+            reverseCurve: Curves.easeOutCubic,
+          ),
+        );
 
     final theme = Theme.of(context);
     final defaultColor = widget.color ?? theme.colorScheme.surfaceContainerLow;
-    final defaultPressedColor = widget.pressedColor ??
-        theme.colorScheme.surfaceContainerHigh;
+    final defaultPressedColor =
+        widget.pressedColor ?? theme.colorScheme.surfaceContainerHigh;
 
     _colorAnimation = ColorTween(
       begin: defaultColor,
@@ -237,11 +232,14 @@ class _PressableCardState extends State<PressableCard>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final effectiveBorderRadius = widget.borderRadius ?? BorderRadius.circular(AppTokens.rLg);
+    final effectiveBorderRadius =
+        widget.borderRadius ?? BorderRadius.circular(AppTokens.rLg);
 
     return Listener(
-      onPointerDown: (_) => _handleTapDown(TapDownDetails(kind: PointerDeviceKind.touch)),
-      onPointerUp: (_) => _handleTapUp(TapUpDetails(kind: PointerDeviceKind.touch)),
+      onPointerDown: (_) =>
+          _handleTapDown(TapDownDetails(kind: PointerDeviceKind.touch)),
+      onPointerUp: (_) =>
+          _handleTapUp(TapUpDetails(kind: PointerDeviceKind.touch)),
       onPointerCancel: _handlePointerCancel,
       child: GestureDetector(
         onTap: widget.onTap,
@@ -260,8 +258,9 @@ class _PressableCardState extends State<PressableCard>
                 boxShadow: _elevationAnimation.value > 0
                     ? [
                         BoxShadow(
-                          color: theme.colorScheme.shadow
-                              .withValues(alpha: 0.15),
+                          color: theme.colorScheme.shadow.withValues(
+                            alpha: 0.15,
+                          ),
                           blurRadius: _elevationAnimation.value * 4,
                           offset: Offset(0, _elevationAnimation.value),
                         ),
@@ -312,8 +311,10 @@ class PressableInkWell extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         borderRadius: borderRadius ?? BorderRadius.circular(AppTokens.rMd),
-        splashColor: splashColor ?? theme.colorScheme.primary.withValues(alpha: 0.12),
-        highlightColor: highlightColor ?? theme.colorScheme.primary.withValues(alpha: 0.06),
+        splashColor:
+            splashColor ?? theme.colorScheme.primary.withValues(alpha: 0.12),
+        highlightColor:
+            highlightColor ?? theme.colorScheme.primary.withValues(alpha: 0.06),
         radius: radius,
         child: child,
       ),

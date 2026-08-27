@@ -126,7 +126,9 @@ class QueueSheet extends ConsumerWidget {
                           ),
                           decoration: BoxDecoration(
                             color: colorScheme.error.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(AppTokens.rFull),
+                            borderRadius: BorderRadius.circular(
+                              AppTokens.rFull,
+                            ),
                             border: Border.all(
                               color: colorScheme.error.withValues(alpha: 0.3),
                               width: AppTokens.borderHairline,
@@ -223,9 +225,7 @@ class QueueSheet extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: colorScheme.error,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: colorScheme.error),
             onPressed: () {
               Navigator.pop(context);
               ref.read(playerProvider).clearQueue();
@@ -369,8 +369,12 @@ class _QueueTile extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: isCurrent ? FontWeight.w600 : FontWeight.w500,
-                        color: isCurrent ? colorScheme.primary : colorScheme.onSurface,
+                        fontWeight: isCurrent
+                            ? FontWeight.w600
+                            : FontWeight.w500,
+                        color: isCurrent
+                            ? colorScheme.primary
+                            : colorScheme.onSurface,
                       ),
                     ),
                     if (song.artist != null)

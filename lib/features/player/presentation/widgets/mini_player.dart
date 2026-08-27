@@ -122,7 +122,9 @@ class MiniPlayer extends ConsumerWidget {
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: colorScheme.primary.withValues(alpha: 0.12),
+                                color: colorScheme.primary.withValues(
+                                  alpha: 0.12,
+                                ),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -159,14 +161,18 @@ class MiniPlayer extends ConsumerWidget {
                       color: colorScheme.surfaceContainerHighest,
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                        color: colorScheme.outlineVariant.withValues(
+                          alpha: 0.3,
+                        ),
                         width: AppTokens.borderHairline,
                       ),
                     ),
                     child: Icon(
                       Icons.skip_next_rounded,
                       size: 20,
-                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.7,
+                      ),
                     ),
                   ),
                 ),
@@ -209,7 +215,9 @@ class _CompactArtwork extends StatelessWidget {
                   child: Icon(
                     Icons.music_note_rounded,
                     size: 24,
-                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.4,
+                    ),
                   ),
                 ),
         ),
@@ -226,10 +234,7 @@ class _CompactArtwork extends StatelessWidget {
 }
 
 class _MiniProgress extends ConsumerWidget {
-  const _MiniProgress({
-    required this.snapshot,
-    required this.onSeek,
-  });
+  const _MiniProgress({required this.snapshot, required this.onSeek});
 
   final PlayerSnapshot snapshot;
   final ValueChanged<Duration> onSeek;

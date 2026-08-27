@@ -321,7 +321,9 @@ abstract final class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTokens.rLg),
           side: BorderSide(
-            color: isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight,
+            color: isDark
+                ? AppColors.borderSubtleDark
+                : AppColors.borderSubtleLight,
             width: AppTokens.borderHairline,
           ),
         ),
@@ -435,9 +437,7 @@ abstract final class AppTheme {
           if (states.contains(WidgetState.selected)) {
             return Colors.transparent;
           }
-          return isDark
-              ? AppColors.outlineDark
-              : AppColors.outlineLight;
+          return isDark ? AppColors.outlineDark : AppColors.outlineLight;
         }),
         overlayColor: WidgetStateProperty.resolveWith((states) {
           return scheme.primary.withValues(alpha: 0.12);
@@ -488,7 +488,9 @@ abstract final class AppTheme {
             ),
           ),
           elevation: WidgetStateProperty.all(8),
-          shadowColor: WidgetStateProperty.all(AppColors.voidBlack.withValues(alpha: 0.4)),
+          shadowColor: WidgetStateProperty.all(
+            AppColors.voidBlack.withValues(alpha: 0.4),
+          ),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
@@ -515,7 +517,9 @@ abstract final class AppTheme {
               : AppColors.surfaceHighestLight,
           borderRadius: BorderRadius.circular(AppTokens.rMd),
           border: Border.all(
-            color: isDark ? AppColors.borderSubtleDark : AppColors.borderSubtleLight,
+            color: isDark
+                ? AppColors.borderSubtleDark
+                : AppColors.borderSubtleLight,
             width: AppTokens.borderHairline,
           ),
         ),

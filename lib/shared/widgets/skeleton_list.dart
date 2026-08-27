@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../../app/theme/app_tokens.dart';
 
@@ -16,13 +16,7 @@ class SkeletonList extends StatefulWidget {
   State<SkeletonList> createState() => _SkeletonListState();
 }
 
-enum SkeletonType {
-  song,
-  album,
-  artist,
-  playlist,
-  search,
-}
+enum SkeletonType { song, album, artist, playlist, search }
 
 class _SkeletonListState extends State<SkeletonList>
     with SingleTickerProviderStateMixin {
@@ -169,10 +163,7 @@ class _SkeletonListState extends State<SkeletonList>
           Container(
             width: 56,
             height: 56,
-            decoration: BoxDecoration(
-              color: barColor,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: barColor, shape: BoxShape.circle),
           ),
           const SizedBox(width: AppTokens.s3),
           Expanded(

@@ -79,12 +79,20 @@ class EmptyState extends StatelessWidget {
                       end: Alignment.bottomRight,
                       colors: isDark
                           ? [
-                              colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                              colorScheme.surfaceContainerHigh.withValues(alpha: 0.3),
+                              colorScheme.surfaceContainerHighest.withValues(
+                                alpha: 0.6,
+                              ),
+                              colorScheme.surfaceContainerHigh.withValues(
+                                alpha: 0.3,
+                              ),
                             ]
                           : [
-                              colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                              colorScheme.surfaceContainerHigh.withValues(alpha: 0.3),
+                              colorScheme.surfaceContainerHighest.withValues(
+                                alpha: 0.6,
+                              ),
+                              colorScheme.surfaceContainerHigh.withValues(
+                                alpha: 0.3,
+                              ),
                             ],
                     ),
                   ),
@@ -95,7 +103,9 @@ class EmptyState extends StatelessWidget {
                   height: iconDiameter,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.5,
+                    ),
                   ),
                 ),
               ],

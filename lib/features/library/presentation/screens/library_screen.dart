@@ -16,8 +16,7 @@ import '../../data/library_models.dart';
 import '../../data/song_ref_mapper.dart';
 import '../providers/library_view_providers.dart';
 import '../widgets/library_tiles.dart';
-import '../widgets/section_selector.dart'
-    hide SectionLabel;
+import '../widgets/section_selector.dart' hide SectionLabel;
 import '../widgets/song_tile.dart';
 import '../widgets/sort_sheet.dart';
 import '../providers/library_providers.dart';
@@ -70,11 +69,16 @@ class _LibraryHeader extends ConsumerWidget {
     // Time-aware greeting
     final hour = DateTime.now().hour;
     String greeting;
-    if (hour < 5) greeting = 'Late night listening';
-    else if (hour < 12) greeting = 'Good morning';
-    else if (hour < 17) greeting = 'Good afternoon';
-    else if (hour < 22) greeting = 'Good evening';
-    else greeting = 'Late night listening';
+    if (hour < 5)
+      greeting = 'Late night listening';
+    else if (hour < 12)
+      greeting = 'Good morning';
+    else if (hour < 17)
+      greeting = 'Good afternoon';
+    else if (hour < 22)
+      greeting = 'Good evening';
+    else
+      greeting = 'Late night listening';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -135,9 +139,9 @@ class _NowPlayingBadge extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return PressableScale(
-      onTap: () => Navigator.of(context).push(
-        pushHero<void>(context, const FullPlayerScreen()),
-      ),
+      onTap: () =>
+          Navigator.of(context)
+              .push(pushHero<void>(context, const FullPlayerScreen())),
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s3,
@@ -305,7 +309,9 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                   actionLabel: favoritesOnly ? null : 'Scan Library',
                   onAction: favoritesOnly
                       ? null
-                      : () => ref.read(scanControllerProvider.notifier).startScan(),
+                      : () => ref
+                            .read(scanControllerProvider.notifier)
+                            .startScan(),
                 );
               }
               return ListView.separated(
@@ -320,7 +326,8 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                     : Divider(
                         height: AppTokens.borderHairline,
                         thickness: AppTokens.borderHairline,
-                        indent: AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
+                        indent:
+                            AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
                         endIndent: AppTokens.s4,
                         color: Theme.of(context).colorScheme.outlineVariant,
                       ),

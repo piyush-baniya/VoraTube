@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme/app_tokens.dart';
@@ -137,10 +137,7 @@ PageRouteBuilder<T> pushHero<T extends Object?>(
         parent: animation,
         curve: AppTokens.easeOutExpo,
       );
-      return FadeTransition(
-        opacity: curved,
-        child: child,
-      );
+      return FadeTransition(opacity: curved, child: child);
     },
   );
 }
@@ -259,13 +256,11 @@ class _AnimatedListItemState extends State<AnimatedListItem>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    );
-    _opacity = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: widget.curve),
-    );
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    _opacity = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: widget.curve));
     _slide = Tween<Offset>(
       begin: widget.axis == Axis.vertical
           ? const Offset(0, 0.1)
@@ -293,10 +288,7 @@ class _AnimatedListItemState extends State<AnimatedListItem>
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _opacity,
-      child: SlideTransition(
-        position: _slide,
-        child: widget.child,
-      ),
+      child: SlideTransition(position: _slide, child: widget.child),
     );
   }
 }
@@ -366,13 +358,11 @@ class _StaggeredItemState extends State<_StaggeredItem>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    );
-    _opacity = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: widget.curve),
-    );
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    _opacity = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: widget.curve));
     _slide = Tween<Offset>(
       begin: const Offset(0, 0.08),
       end: Offset.zero,
@@ -393,10 +383,7 @@ class _StaggeredItemState extends State<_StaggeredItem>
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _opacity,
-      child: SlideTransition(
-        position: _slide,
-        child: widget.child,
-      ),
+      child: SlideTransition(position: _slide, child: widget.child),
     );
   }
 }

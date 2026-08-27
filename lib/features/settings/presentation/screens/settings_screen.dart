@@ -10,8 +10,7 @@ import '../providers/settings_providers.dart';
 import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/storage_info_card.dart';
-import '../../../../shared/widgets/empty_state.dart'
-    show ScreenHeader;
+import '../../../../shared/widgets/empty_state.dart' show ScreenHeader;
 
 /// Redesigned Settings screen with organized sections.
 class SettingsScreen extends ConsumerWidget {

@@ -71,8 +71,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-        systemNavigationBarColor: isDark ? AppColors.voidBlack : AppColors.paperLight,
-        systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: isDark
+            ? AppColors.voidBlack
+            : AppColors.paperLight,
+        systemNavigationBarIconBrightness: isDark
+            ? Brightness.light
+            : Brightness.dark,
       ),
       child: Scaffold(
         backgroundColor: colorScheme.surface,
@@ -93,15 +97,26 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                   // Top bar
                   _TopBar(
                     onQueueTap: () => QueueSheet.show(context),
-                    onLyricsTap: () => setState(() => _showLyrics = !_showLyrics),
+                    onLyricsTap: () =>
+                        setState(() => _showLyrics = !_showLyrics),
                     showLyricsActive: _showLyrics,
                     isDark: isDark,
                   ),
                   // Player content
                   Expanded(
                     child: _showLyrics
-                        ? _buildLyricsMode(context, current, snapshot, bottomPadding)
-                        : _buildPlayerMode(context, current, snapshot, bottomPadding),
+                        ? _buildLyricsMode(
+                            context,
+                            current,
+                            snapshot,
+                            bottomPadding,
+                          )
+                        : _buildPlayerMode(
+                            context,
+                            current,
+                            snapshot,
+                            bottomPadding,
+                          ),
                   ),
                 ],
               ),
@@ -219,7 +234,9 @@ class _ImmersiveBackground extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: isDark ? AppColors.voidGradientDark : AppColors.voidGradientLight,
+              colors: isDark
+                  ? AppColors.voidGradientDark
+                  : AppColors.voidGradientLight,
             ),
           ),
         ),
@@ -291,10 +308,7 @@ class _ImmersiveBackground extends StatelessWidget {
 }
 
 class _BackgroundPulse extends StatefulWidget {
-  const _BackgroundPulse({
-    required this.size,
-    required this.color,
-  });
+  const _BackgroundPulse({required this.size, required this.color});
 
   final double size;
   final Color color;
@@ -347,10 +361,7 @@ class _BackgroundPulseState extends State<_BackgroundPulse>
               height: widget.size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: widget.color,
-                  width: 1,
-                ),
+                border: Border.all(color: widget.color, width: 1),
               ),
             ),
           ),
@@ -652,8 +663,12 @@ class _EmptyPlayer extends StatelessWidget {
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-        systemNavigationBarColor: isDark ? AppColors.voidBlack : AppColors.paperLight,
-        systemNavigationBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: isDark
+            ? AppColors.voidBlack
+            : AppColors.paperLight,
+        systemNavigationBarIconBrightness: isDark
+            ? Brightness.light
+            : Brightness.dark,
       ),
       child: Scaffold(
         backgroundColor: colorScheme.surface,
@@ -673,10 +688,14 @@ class _EmptyPlayer extends StatelessWidget {
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                          color: colorScheme.surfaceContainerHigh.withValues(
+                            alpha: 0.8,
+                          ),
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                            color: colorScheme.outlineVariant.withValues(
+                              alpha: 0.3,
+                            ),
                             width: AppTokens.borderHairline,
                           ),
                         ),

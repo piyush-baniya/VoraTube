@@ -61,10 +61,7 @@ class _SongTileState extends ConsumerState<SongTile> {
             ? BoxDecoration(
                 color: colorScheme.primary.withValues(alpha: 0.06),
                 border: Border(
-                  left: BorderSide(
-                    color: colorScheme.primary,
-                    width: 3,
-                  ),
+                  left: BorderSide(color: colorScheme.primary, width: 3),
                 ),
               )
             : null,
@@ -123,7 +120,9 @@ class _SongTileState extends ConsumerState<SongTile> {
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
-                        fontWeight: isCurrentSong ? FontWeight.w500 : FontWeight.w400,
+                        fontWeight: isCurrentSong
+                            ? FontWeight.w500
+                            : FontWeight.w400,
                       ),
                     ),
                   ],
@@ -154,7 +153,9 @@ class _SongTileState extends ConsumerState<SongTile> {
                     icon: Icon(
                       Icons.more_vert_rounded,
                       size: 20,
-                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.5,
+                      ),
                     ),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
@@ -288,7 +289,9 @@ class _SongTileState extends ConsumerState<SongTile> {
               },
             ),
             _MenuTile(
-              icon: isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              icon: isFavorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
               label: isFavorite ? 'Remove from favorites' : 'Add to favorites',
               iconColor: isFavorite ? colorScheme.primary : null,
               onTap: () {
@@ -304,7 +307,9 @@ class _SongTileState extends ConsumerState<SongTile> {
                 _showSongInfo(context);
               },
             ),
-            SizedBox(height: MediaQuery.paddingOf(context).bottom + AppTokens.s4),
+            SizedBox(
+              height: MediaQuery.paddingOf(context).bottom + AppTokens.s4,
+            ),
           ],
         ),
       ),
@@ -451,7 +456,9 @@ class _SongTileState extends ConsumerState<SongTile> {
                 ],
               ),
             ),
-            SizedBox(height: MediaQuery.paddingOf(context).bottom + AppTokens.s4),
+            SizedBox(
+              height: MediaQuery.paddingOf(context).bottom + AppTokens.s4,
+            ),
           ],
         ),
       ),
@@ -468,7 +475,8 @@ class _SongTileState extends ConsumerState<SongTile> {
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024)
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 }
@@ -515,7 +523,9 @@ class _PlayingIndicatorState extends State<_PlayingIndicator>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppTokens.rSm),
             border: Border.all(
-              color: colorScheme.primary.withValues(alpha: 0.3 * _controller.value + 0.1),
+              color: colorScheme.primary.withValues(
+                alpha: 0.3 * _controller.value + 0.1,
+              ),
               width: 2,
             ),
           ),
@@ -613,7 +623,9 @@ class _FavoriteButton extends StatelessWidget {
               return ScaleTransition(scale: animation, child: child);
             },
             child: Icon(
-              isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              isFavorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
               key: ValueKey(isFavorite),
               size: 20,
             ),
