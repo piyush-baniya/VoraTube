@@ -2,7 +2,6 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
@@ -65,13 +64,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
         extendBodyBehindAppBar: true,
         body: Stack(
           children: [
-            // Immersive background with artwork-based gradient.
-            // Deliberately holds no Hero: the artwork Hero tag belongs to
-            // exactly one widget per route (see [PlayerArtwork] below).
-            _ImmersiveBackground(
-              artPath: current.artPath,
-              isPlaying: snapshot.isPlaying,
-            ),
+            // Immersive purple-atmosphere background. No Hero here: the
+            // artwork Hero tag belongs to exactly one widget per route.
+            _ImmersiveBackground(isPlaying: snapshot.isPlaying),
             // Main content
             SafeArea(
               bottom: false,
@@ -188,26 +183,27 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
   }
 }
 
-/// Immersive background that extends behind the artwork
-/// with a subtle gradient derived from the album art.
+/// Immersive dark atmospheric background behind the rotating artwork.
 ///
-/// This widget must never wrap its image in a [Hero]. Flutter requires Hero
-/// tags to be unique within a route subtree; a duplicate tag makes
-/// `_allHeroesFor` throw during the flight, which corrupts the overlay's
-/// element bookkeeping and surfaces later as a `_dependents.isEmpty`
-/// assertion failure on an unrelated widget.
+/// Uses a violet-tinted radial glow over a near-black base instead of a blurred
+/// copy of the album art, keeping the artwork the visual hero while avoiding
+/// expensive full-screen blur / decode. This widget holds no [Hero] (the
+/// artwork Hero tag belongs to exactly one widget per route).
 class _ImmersiveBackground extends StatelessWidget {
-  const _ImmersiveBackground({required this.artPath, required this.isPlaying});
+  const _ImmersiveBackground({required this.isPlaying});
 
-  final String? artPath;
   final bool isPlaying;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final file = ArtworkFileCache.resolve(artPath);
 
+    // The background is intentionally a dark atmospheric canvas with a subtle
+    // purple glow — NOT a blurred copy of the artwork. The artwork itself stays
+    // the hero inside the rotating player, keeping the screen premium and cheap
+    // to render (no expensive full-screen blur / decode per frame).
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -223,39 +219,22 @@ class _ImmersiveBackground extends StatelessWidget {
             ),
           ),
         ),
-        // Artwork as background (low opacity, no Hero — see class docs)
-        if (file != null)
-          Image.file(
-            file,
-            fit: BoxFit.cover,
-            cacheWidth: 400,
-            gaplessPlayback: true,
-            errorBuilder: (_, _, _) {
-              ArtworkFileCache.forget(artPath);
-              return const SizedBox.shrink();
-            },
-          )
-        else
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: isDark
-                    ? [
-                        AppColors.voidBlack,
-                        AppColors.surfaceDark,
-                        AppColors.surfaceRaisedDark,
-                      ]
-                    : [
-                        AppColors.paperLight,
-                        AppColors.surfaceLight,
-                        AppColors.surfaceRaisedLight,
-                      ],
-              ),
+        // Subtle purple atmosphere — radial glow near the top, gentle wash.
+        Container(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: const Alignment(0, -0.25),
+              radius: 1.3,
+              colors: [
+                colorScheme.primary.withValues(alpha: isDark ? 0.14 : 0.10),
+                colorScheme.primary.withValues(alpha: isDark ? 0.05 : 0.04),
+                Colors.transparent,
+              ],
+              stops: const [0.0, 0.55, 1.0],
             ),
           ),
-        // Vignette overlay
+        ),
+        // Vignette for depth
         Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -264,10 +243,10 @@ class _ImmersiveBackground extends StatelessWidget {
               colors: [
                 Colors.transparent,
                 isDark
-                    ? AppColors.voidBlack.withValues(alpha: 0.7)
-                    : AppColors.paperLight.withValues(alpha: 0.7),
+                    ? AppColors.voidBlack.withValues(alpha: 0.55)
+                    : AppColors.paperLight.withValues(alpha: 0.55),
               ],
-              stops: const [0.4, 1.0],
+              stops: const [0.45, 1.0],
             ),
           ),
         ),
@@ -276,7 +255,7 @@ class _ImmersiveBackground extends StatelessWidget {
           Center(
             child: _BackgroundPulse(
               size: MediaQuery.sizeOf(context).width * 1.2,
-              color: theme.colorScheme.primary,
+              color: colorScheme.primary,
             ),
           ),
       ],
