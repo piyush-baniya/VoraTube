@@ -41,7 +41,7 @@ abstract final class AppTheme {
   static ColorScheme get _lightScheme => const ColorScheme.light(
     primary: AppColors.accentDeep,
     onPrimary: AppColors.textPrimaryLight,
-    primaryContainer: Color(0xFFFFE1EA),
+    primaryContainer: Color(0xFFE9D5FF),
     onPrimaryContainer: AppColors.accentDeep,
     secondary: AppColors.accentDeep,
     secondaryContainer: AppColors.surfaceHighLight,
