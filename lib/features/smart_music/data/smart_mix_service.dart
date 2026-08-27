@@ -13,6 +13,9 @@ enum SmartMixKind {
   chillMix,
   energyMix,
   focusMix,
+  happyMix,
+  sadMix,
+  romanticMix,
   throwbackMix,
   discoverMix,
 }
@@ -72,6 +75,27 @@ class SmartMixService {
           SongMood.focus,
           'Focus Mix',
           'Music for deep work',
+          limit,
+        );
+      case SmartMixKind.happyMix:
+        return _generateMoodMix(
+          SongMood.happy,
+          'Happy Mix',
+          'Feel-good, upbeat tracks',
+          limit,
+        );
+      case SmartMixKind.sadMix:
+        return _generateMoodMix(
+          SongMood.sad,
+          'Sad Mix',
+          'Melancholic and reflective',
+          limit,
+        );
+      case SmartMixKind.romanticMix:
+        return _generateMoodMix(
+          SongMood.romantic,
+          'Romantic Mix',
+          'Love songs to set the mood',
           limit,
         );
       case SmartMixKind.throwbackMix:
@@ -170,6 +194,7 @@ class SmartMixService {
     String description,
     int limit,
   ) async {
+    final kind = _moodMixKind(mood);
     final allSongs = await _repository.songsPage(
       limit: 2000,
       favoritesOnly: false,
@@ -177,7 +202,7 @@ class SmartMixService {
 
     if (allSongs.songs.isEmpty) {
       return SmartMix(
-        kind: SmartMixKind.chillMix,
+        kind: kind,
         title: title,
         description: description,
         songs: const [],
@@ -205,7 +230,7 @@ class SmartMixService {
 
     if (classified.isEmpty) {
       return SmartMix(
-        kind: SmartMixKind.chillMix,
+        kind: kind,
         title: title,
         description: description,
         songs: const [],
@@ -239,21 +264,6 @@ class SmartMixService {
 
     final selected = classified.take(limit).toList();
     final artwork = _extractArtworkPaths(selected);
-
-    SmartMixKind kind;
-    switch (mood) {
-      case SongMood.chill:
-        kind = SmartMixKind.chillMix;
-        break;
-      case SongMood.energetic:
-        kind = SmartMixKind.energyMix;
-        break;
-      case SongMood.focus:
-        kind = SmartMixKind.focusMix;
-        break;
-      default:
-        kind = SmartMixKind.chillMix;
-    }
 
     return SmartMix(
       kind: kind,
@@ -438,10 +448,36 @@ class SmartMixService {
         return 'Energy Mix';
       case SmartMixKind.focusMix:
         return 'Focus Mix';
+      case SmartMixKind.happyMix:
+        return 'Happy Mix';
+      case SmartMixKind.sadMix:
+        return 'Sad Mix';
+      case SmartMixKind.romanticMix:
+        return 'Romantic Mix';
       case SmartMixKind.throwbackMix:
         return 'Throwback Mix';
       case SmartMixKind.discoverMix:
         return 'Discover Mix';
+    }
+  }
+
+  /// The dedicated mix kind for a mood-based recommendation collection.
+  SmartMixKind _moodMixKind(SongMood mood) {
+    switch (mood) {
+      case SongMood.happy:
+        return SmartMixKind.happyMix;
+      case SongMood.chill:
+        return SmartMixKind.chillMix;
+      case SongMood.energetic:
+        return SmartMixKind.energyMix;
+      case SongMood.sad:
+        return SmartMixKind.sadMix;
+      case SongMood.romantic:
+        return SmartMixKind.romanticMix;
+      case SongMood.focus:
+        return SmartMixKind.focusMix;
+      case SongMood.unknown:
+        return SmartMixKind.chillMix;
     }
   }
 }

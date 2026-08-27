@@ -11,9 +11,7 @@ import 'package:vora_tube/features/library/presentation/providers/library_provid
 /// permission MethodChannel. [status] is mutable so tests can simulate the OS
 /// granting or revoking access between app resumes.
 class _FakePermissionService extends PermissionService {
-  _FakePermissionService({
-    this.status = MediaPermissionStatus.granted,
-  });
+  _FakePermissionService({this.status = MediaPermissionStatus.granted});
 
   MediaPermissionStatus status;
   int statusChecks = 0;

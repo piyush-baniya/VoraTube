@@ -9,9 +9,9 @@ import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
-import '../../../collections/presentation/widgets/collections_strip.dart';
+import '../../../collections/presentation/providers/collections_providers.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
-import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
+import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
 import '../../../../../core/player/player_controller.dart';
@@ -22,7 +22,9 @@ import '../widgets/library_tiles.dart';
 import '../widgets/section_selector.dart' hide SectionLabel;
 import '../widgets/song_tile.dart';
 import '../widgets/sort_sheet.dart';
+import '../../data/library_repository.dart';
 import '../providers/library_providers.dart';
+import 'all_songs_screen.dart';
 import 'filtered_songs_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
@@ -252,44 +254,25 @@ class _SongsToolbar extends ConsumerWidget {
   }
 }
 
-class _SongsView extends ConsumerStatefulWidget {
+class _SongsView extends ConsumerWidget {
   const _SongsView();
 
   @override
-  ConsumerState<_SongsView> createState() => _SongsViewState();
-}
-
-class _SongsViewState extends ConsumerState<_SongsView> {
-  final ScrollController _controller = ScrollController();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (_controller.position.extentAfter < 600) {
-      ref.read(pagedSongsProvider.notifier).loadMore();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final asyncValue = ref.watch(pagedSongsProvider);
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Bounded Home query — at most 10 preview tiles, never the whole library.
+    final homeSongs = ref.watch(homeSongsProvider);
     final snapshot = ref.watch(playbackStateProvider);
 
     return CustomScrollView(
-      controller: _controller,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        // Continue Listening Hero
+        // Favorites — a single tap opens the full Favorites collection.
+        SliverToBoxAdapter(child: _FavoritesCard()),
+
+        // Your Listening
+        SliverToBoxAdapter(child: ListeningInsightsStrip()),
+
+        // Continue Listening
         if (snapshot != null && snapshot.hasTrack)
           SliverToBoxAdapter(
             child: _ContinueListeningHero(current: snapshot.current!),
@@ -297,21 +280,22 @@ class _SongsViewState extends ConsumerState<_SongsView> {
         else
           SliverToBoxAdapter(child: _EmptyStateHero()),
 
-        // Listening Insights
-        SliverToBoxAdapter(child: ListeningInsightsStrip()),
+        // How are you feeling?
+        SliverToBoxAdapter(child: MoodStrip()),
 
-        // Made For Your Mood
-        SliverToBoxAdapter(child: SmartMixStrip()),
+        // All Songs (bounded preview, full collection behind See All)
+        SliverToBoxAdapter(
+          child: _SectionHeader(
+            title: 'All Songs',
+            actionLabel: 'See All',
+            onAction: () => Navigator.of(context)
+                .push(pushSharedAxis<void>(context, const AllSongsScreen())),
+          ),
+        ),
 
-        // Collections
-        SliverToBoxAdapter(child: CollectionsStrip()),
-
-        // All Songs
-        SliverToBoxAdapter(child: _SectionHeader(title: 'All Songs')),
-
-        // Song List
+        // Song preview list
         AsyncValueSwitcher<List<SongTileData>>(
-          value: asyncValue,
+          value: homeSongs,
           loading: SliverFixedExtentList(
             itemExtent: 84,
             delegate: SliverChildBuilderDelegate(
@@ -321,7 +305,7 @@ class _SongsViewState extends ConsumerState<_SongsView> {
           ),
           errorBuilder: (e, _) => SliverToBoxAdapter(
             child: _LibraryError(
-              retry: () => ref.invalidate(pagedSongsProvider),
+              retry: () => ref.invalidate(homeSongsProvider),
             ),
           ),
           data: (tiles) {
@@ -348,10 +332,7 @@ class _SongsViewState extends ConsumerState<_SongsView> {
               );
             }
             return SliverList.separated(
-              itemCount:
-                  tiles.length +
-                  (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
-              // SliverList children must be box widgets, not slivers.
+              itemCount: tiles.length,
               separatorBuilder: (_, i) => i == tiles.length - 1
                   ? const SizedBox.shrink()
                   : Divider(
@@ -362,22 +343,10 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                       color: Theme.of(context).colorScheme.outlineVariant,
                     ),
               itemBuilder: (context, index) {
-                if (index >= tiles.length) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    child: Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
-                      ),
-                    ),
-                  );
-                }
                 return SongTile(
                   tile: tiles[index],
                   index: index,
-                  onPlay: (_) => _playFrom(tiles, index),
+                  onPlay: (_) => _playFrom(context, ref, tiles, index),
                 );
               },
             );
@@ -387,7 +356,12 @@ class _SongsViewState extends ConsumerState<_SongsView> {
     );
   }
 
-  void _playFrom(List<SongTileData> tiles, int startIndex) {
+  void _playFrom(
+    BuildContext context,
+    WidgetRef ref,
+    List<SongTileData> tiles,
+    int startIndex,
+  ) {
     final ctx = playContextFromTiles(tiles, startIndex);
     ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
   }
@@ -665,14 +639,15 @@ class _EmptyStateHero extends ConsumerWidget {
 
 // Section Header
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
+  const _SectionHeader({required this.title, this.actionLabel, this.onAction});
 
   final String title;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final accent = AppColors.accent;
 
     return Padding(
@@ -693,16 +668,117 @@ class _SectionHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppTokens.s2),
-          Text(
-            title.toUpperCase(),
-            style: theme.textTheme.labelMedium?.copyWith(
-              letterSpacing: 1.2,
-              fontWeight: FontWeight.w700,
-              color: accent,
+          Expanded(
+            child: Text(
+              title.toUpperCase(),
+              style: theme.textTheme.labelMedium?.copyWith(
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w700,
+                color: accent,
+              ),
             ),
           ),
+          if (actionLabel != null && onAction != null)
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                actionLabel!,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: accent,
+                ),
+              ),
+            ),
         ],
       ),
+    );
+  }
+}
+
+/// Home "Favorites" entry — a compact tappable card that opens the existing
+/// Favorites collection screen. Shows the real count; hidden while the count
+/// is still resolving so it never flashes a wrong number.
+class _FavoritesCard extends ConsumerWidget {
+  const _FavoritesCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
+    final summaries = ref.watch(collectionSummariesProvider);
+
+    return summaries.maybeWhen(
+      skipLoadingOnRefresh: true,
+      data: (list) {
+        final favorites = list.firstWhere(
+          (s) => s.kind == CollectionKind.favorites,
+        );
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppTokens.s4,
+            AppTokens.s3,
+            AppTokens.s4,
+            AppTokens.s1,
+          ),
+          child: PressableScale(
+            onTap: () => Navigator.of(context).push(
+              pushSharedAxis<void>(
+                context,
+                FilteredSongsScreen.collection(
+                  CollectionKind.favorites,
+                  'Favorites',
+                ),
+              ),
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTokens.s4,
+                vertical: AppTokens.s3,
+              ),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTokens.rLg),
+                color: accent.withValues(alpha: 0.10),
+                border: Border.all(
+                  color: accent.withValues(alpha: 0.22),
+                  width: AppTokens.borderHairline,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.favorite_rounded, size: 22, color: accent),
+                  const SizedBox(width: AppTokens.s3),
+                  Expanded(
+                    child: Text(
+                      'Favorites',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${favorites.count} songs',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(width: AppTokens.s1),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      orElse: () => const SizedBox.shrink(),
     );
   }
 }

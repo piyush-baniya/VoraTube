@@ -638,6 +638,25 @@ ON CONFLICT(song_id) DO UPDATE SET art_resolved_at = excluded.art_resolved_at
     );
   }
 
+  /// Songs whose genre tag is absent or empty — candidates for genre
+  /// enrichment. Bounded by [limit] so the background pass stays cheap.
+  Future<List<Song>> songsMissingGenre({required int limit}) {
+    final where = _db.songs.genre.isNull() | _db.songs.genre.equals('');
+    return (_db.select(_db.songs)
+          ..where((t) => where)
+          ..orderBy([(t) => OrderingTerm.asc(t.id)])
+          ..limit(limit))
+        .get();
+  }
+
+  /// Persists an enriched genre back onto a song row so it becomes part of the
+  /// local library metadata and feeds the existing MoodEngine immediately.
+  Future<void> setSongGenre(int rowId, String genre) async {
+    await (_db.update(_db.songs)..where((tbl) => tbl.id.equals(rowId))).write(
+      SongsCompanion(genre: Value(genre)),
+    );
+  }
+
   Future<void> completeScan({required int totalSongs}) async {
     await _db
         .into(_db.scanStates)

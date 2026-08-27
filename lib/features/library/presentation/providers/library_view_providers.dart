@@ -118,6 +118,26 @@ final libraryHasSongsProvider = FutureProvider.autoDispose<bool>((ref) async {
   return counts.songs > 0;
 });
 
+/// The Home "All Songs" section — deliberately bounded to a small number so the
+/// Home never queries the whole library just to render its preview rows.
+const int homeSongsLimit = 10;
+
+final homeSongsProvider = FutureProvider.autoDispose<List<SongTileData>>((
+  ref,
+) async {
+  ref.watch(libraryRefreshTickProvider);
+  final sort = ref.watch(songSortProvider);
+  final favoritesOnly = ref.watch(favoritesOnlyProvider);
+  final repository = ref.watch(libraryRepositoryProvider);
+  final page = await repository.songsPage(
+    limit: homeSongsLimit,
+    offset: 0,
+    sort: sort,
+    favoritesOnly: favoritesOnly,
+  );
+  return page.songs;
+});
+
 /// Favorite ids kept in fine-grained state so a heart tap repaints exactly
 /// one tile, never the whole list.
 ///

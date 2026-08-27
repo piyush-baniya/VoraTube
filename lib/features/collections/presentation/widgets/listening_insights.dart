@@ -72,83 +72,34 @@ class ListeningInsightsStrip extends ConsumerWidget {
               height: MediaQuery.textScalerOf(context)
                   .scale(96)
                   .clamp(80.0, 160.0),
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTokens.s4,
-                  vertical: AppTokens.s1,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _CompactCard(
+                        icon: Icons.play_circle_outline_rounded,
+                        label: 'Total songs played',
+                        value: '${stats.totalPlays}',
+                        tint: AppColors.accent,
+                      ),
+                    ),
+                    const SizedBox(width: AppTokens.s2),
+                    Expanded(
+                      child: _CompactCard(
+                        icon: Icons.library_music_rounded,
+                        label: 'Total songs',
+                        value: '${stats.totalSongs}',
+                        tint: AppColors.accent,
+                      ),
+                    ),
+                  ],
                 ),
-                children: [
-                  _CompactCard(
-                    icon: Icons.timer_outlined,
-                    label: 'Listened',
-                    value: stats.hasActivity
-                        ? stats.formattedListeningTime
-                        : '—',
-                    subtitle: stats.hasActivity ? 'total time' : 'no plays yet',
-                    tint: AppColors.accent,
-                  ),
-                  const SizedBox(width: AppTokens.s2),
-                  _CompactCard(
-                    icon: Icons.favorite_rounded,
-                    label: 'Favorites',
-                    value: '${stats.favoritesCount}',
-                    subtitle: 'saved',
-                    tint: AppColors.accent,
-                    onTap: stats.favoritesCount > 0
-                        ? () =>
-                              _openCollection(context, CollectionKind.favorites)
-                        : null,
-                  ),
-                  const SizedBox(width: AppTokens.s2),
-                  _CompactCard(
-                    icon: Icons.schedule_rounded,
-                    label: 'Recently played',
-                    value: '${stats.recentlyPlayedCount}',
-                    subtitle: 'tracks',
-                    tint: AppColors.accent,
-                    onTap: stats.recentlyPlayedCount > 0
-                        ? () => _openCollection(
-                            context,
-                            CollectionKind.recentlyPlayed,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: AppTokens.s2),
-                  _CompactCard(
-                    icon: Icons.trending_up_rounded,
-                    label: 'Most played',
-                    value: '${stats.mostPlayedCount}',
-                    subtitle: 'tracks',
-                    tint: AppColors.accent,
-                    onTap: stats.mostPlayedCount > 0
-                        ? () => _openCollection(
-                            context,
-                            CollectionKind.mostPlayed,
-                          )
-                        : null,
-                  ),
-                ],
               ),
             ),
           ],
         );
       },
-    );
-  }
-
-  void _openCollection(BuildContext context, CollectionKind kind) {
-    final label = switch (kind) {
-      CollectionKind.favorites => 'Favorites',
-      CollectionKind.recentlyPlayed => 'Recently played',
-      CollectionKind.mostPlayed => 'Most played',
-      CollectionKind.recentlyAdded => 'Recently added',
-    };
-    Navigator.of(context).push(
-      pushSharedAxis<void>(
-        context,
-        FilteredSongsScreen.collection(kind, label),
-      ),
     );
   }
 }
@@ -288,13 +239,15 @@ class _FeaturedCard extends StatelessWidget {
   }
 }
 
-/// A compact portrait stat card for the secondary stats.
+/// A compact stat chip sized to fit two-across in a [Row] via [Expanded].
+///
+/// Height scales with the system text scale so the chips never overflow or
+/// clip at larger font sizes.
 class _CompactCard extends StatelessWidget {
   const _CompactCard({
     required this.icon,
     required this.label,
     required this.value,
-    required this.subtitle,
     required this.tint,
     this.onTap,
   });
@@ -302,7 +255,6 @@ class _CompactCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
-  final String subtitle;
   final Color tint;
   final VoidCallback? onTap;
 
@@ -311,35 +263,43 @@ class _CompactCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final card = Container(
-      width: 120,
+      width: double.infinity,
       padding: const EdgeInsets.all(AppTokens.s3),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTokens.rMd),
         color: tint.withValues(alpha: 0.10),
         border: Border.all(color: tint.withValues(alpha: 0.18), width: 0.5),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, size: 18, color: tint),
-          const Spacer(),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              height: 1.0,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurfaceVariant,
+          const SizedBox(width: AppTokens.s2),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    height: 1.0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

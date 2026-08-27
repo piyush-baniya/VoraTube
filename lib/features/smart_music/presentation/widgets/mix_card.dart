@@ -223,6 +223,30 @@ class MixCard extends ConsumerWidget {
             const Color(0xFF2563EB).withValues(alpha: 0.1),
           ],
         );
+      case SmartMixKind.happyMix:
+        return (
+          Icons.celebration_rounded,
+          [
+            const Color(0xFF8B5CF6).withValues(alpha: 0.28),
+            const Color(0xFF6D28D9).withValues(alpha: 0.1),
+          ],
+        );
+      case SmartMixKind.sadMix:
+        return (
+          Icons.mood_bad_rounded,
+          [
+            const Color(0xFF6366F1).withValues(alpha: 0.25),
+            const Color(0xFF4338CA).withValues(alpha: 0.1),
+          ],
+        );
+      case SmartMixKind.romanticMix:
+        return (
+          Icons.favorite_border_rounded,
+          [
+            const Color(0xFFEC4899).withValues(alpha: 0.22),
+            const Color(0xFFDB2777).withValues(alpha: 0.1),
+          ],
+        );
       case SmartMixKind.throwbackMix:
         return (
           Icons.history_rounded,

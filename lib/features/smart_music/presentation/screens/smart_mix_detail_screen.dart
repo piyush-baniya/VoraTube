@@ -225,6 +225,21 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
           Icons.center_focus_strong_rounded,
           [const Color(0xFF3B82F6), const Color(0xFF2563EB)],
         );
+      case SmartMixKind.happyMix:
+        return (
+          Icons.celebration_rounded,
+          [const Color(0xFF8B5CF6), const Color(0xFF6D28D9)],
+        );
+      case SmartMixKind.sadMix:
+        return (
+          Icons.mood_bad_rounded,
+          [const Color(0xFF6366F1), const Color(0xFF4338CA)],
+        );
+      case SmartMixKind.romanticMix:
+        return (
+          Icons.favorite_border_rounded,
+          [const Color(0xFFEC4899), const Color(0xFFDB2777)],
+        );
       case SmartMixKind.throwbackMix:
         return (
           Icons.history_rounded,

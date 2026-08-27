@@ -115,12 +115,11 @@ class _MoodStripState extends ConsumerState<MoodStrip> {
       case SongMood.focus:
         return SmartMixKind.focusMix;
       case SongMood.happy:
-        // Happy maps to Daily Mix (upbeat variety) when no direct happy mix.
-        return SmartMixKind.dailyMix;
+        return SmartMixKind.happyMix;
       case SongMood.sad:
-        return SmartMixKind.throwbackMix;
+        return SmartMixKind.sadMix;
       case SongMood.romantic:
-        return SmartMixKind.favoritesMix;
+        return SmartMixKind.romanticMix;
       case SongMood.unknown:
         return null;
     }

@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter/foundation.dart';
@@ -13,6 +13,8 @@ import '../../../../core/ingest/ios/ios_ingest_service.dart';
 import '../../../../core/permissions/permission_service.dart';
 import '../../data/library_repository.dart';
 import '../../data/library_scanner.dart';
+import 'genre_enrichment_controller.dart';
+
 import 'library_view_providers.dart';
 
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
@@ -179,6 +181,11 @@ class ScanController extends Notifier<ScanUiState> {
       // UI showing whatever it had loaded first (usually the empty state) until
       // the app was restarted.
       _publishLibraryChange();
+      // Trigger non-blocking genre enrichment for the freshly scanned library.
+      // Newly added songs likely carried no genre tag; resolving one feeds the
+      // Smart Mood engine. This is fire-and-forget — failures/suppressions keep
+      // it from retrying aggressively, and it never blocks the UI thread.
+      ref.read(genreEnrichmentControllerProvider.notifier).enrichPending();
     } catch (error) {
       debugPrint('VoraTube scan failed: $error');
       state = const ScanFailure(

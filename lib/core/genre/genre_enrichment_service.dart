@@ -21,6 +21,11 @@ class GenreEnrichmentService {
   /// Cached enrichments are reused for this long before a refresh is considered.
   static const cacheTtl = Duration(days: 30);
 
+  /// Failed lookups are remembered (as an empty sentinel) for this long so an
+  /// offline song isn't re-hammered on every launch, but the enrichment still
+  /// recovers once this window has passed.
+  static const suppressTtl = Duration(days: 7);
+
   /// Network lookup is capped so an unreachable host can't stall the UI.
   static const lookupTimeout = Duration(seconds: 3);
 
@@ -60,7 +65,9 @@ class GenreEnrichmentService {
     }
   }
 
-  /// Returns `true` when [cached] encodes an entry younger than [cacheTtl].
+  /// Returns `true` when [cached] encodes an entry younger than the relevant
+  /// TTL. Suppression sentinels (a `s` flag) use a shorter window so a song
+  /// whose lookup failed offline is retried sooner than a real cached genre.
   static bool isCacheFresh(String? cached, DateTime now) {
     if (cached == null || cached.isEmpty) return false;
     try {
@@ -69,7 +76,9 @@ class GenreEnrichmentService {
       final t = json['t'] as int?;
       if (t == null) return false;
       final fetched = DateTime.fromMillisecondsSinceEpoch(t);
-      return now.difference(fetched) < cacheTtl;
+      final isSuppressed = json['s'] == true;
+      final ttl = isSuppressed ? suppressTtl : cacheTtl;
+      return now.difference(fetched) < ttl;
     } catch (_) {
       return false;
     }
@@ -94,6 +103,22 @@ class GenreEnrichmentService {
     required int rowId,
     required Future<void> Function(String key, String value) writeCache,
   }) => writeCache(cacheKeyForRow(rowId), jsonEncode({'g': '', 't': 0}));
+
+  /// Records that no genre could be found for [rowId] so the background
+  /// enrichment pass does not retry it aggressively. The entry decodes to
+  /// `null` (see [decodeCachedGenre]) and is treated as fresh for
+  /// [suppressTtl], after which the lookup may be attempted again.
+  static Future<void> suppressLookup({
+    required int rowId,
+    required Future<void> Function(String key, String value) writeCache,
+    DateTime? at,
+  }) {
+    final now = at ?? DateTime.now();
+    return writeCache(
+      cacheKeyForRow(rowId),
+      jsonEncode({'g': '', 't': now.millisecondsSinceEpoch, 's': true}),
+    );
+  }
 
   /// Resolves the effective genre for a song.
   ///
