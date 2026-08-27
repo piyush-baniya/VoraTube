@@ -40,11 +40,18 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   static const double _minLineExtent = 38;
   static const double _activeScale = 1.05;
 
+  /// Height of the collapsed "current line" preview.
+  static const double _previewHeight = 76;
+
   final ScrollController _scrollController = ScrollController();
 
   /// Set in [dispose] before the controller is released. Every deferred
   /// callback checks this first.
   bool _disposed = false;
+
+  /// Whether the panel shows the full lyrics list. When false, only a compact
+  /// preview of the current line is shown; tapping expands it.
+  bool _expanded = true;
 
   bool _isUserScrolling = false;
   Timer? _userScrollTimer;
@@ -101,6 +108,11 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
       _userScrollTimer?.cancel();
       _userScrollTimer = Timer(_autoFollowResumeDelay, _resumeAutoFollow);
     }
+  }
+
+  void _toggleExpanded() {
+    if (_disposed || !mounted) return;
+    setState(() => _expanded = !_expanded);
   }
 
   void _resumeAutoFollow() {
@@ -222,57 +234,102 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   Widget build(BuildContext context) {
     final lyricsAsync = ref.watch(currentLyricsProvider);
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final accent = AppColors.accent;
 
-    final container = Container(
-      height: widget.height,
-      margin: const EdgeInsets.fromLTRB(
-        AppTokens.s4,
-        0,
-        AppTokens.s4,
-        AppTokens.s4,
-      ),
-      decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.surfaceDark.withValues(alpha: 0.85)
-            : AppColors.surfaceLight.withValues(alpha: 0.85),
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppTokens.rXl),
+    final container = AnimatedSize(
+      duration: AppTokens.medium,
+      curve: AppTokens.easeOut,
+      alignment: Alignment.topCenter,
+      child: Container(
+        height: _expanded ? widget.height : _previewHeight,
+        margin: const EdgeInsets.fromLTRB(
+          AppTokens.s4,
+          0,
+          AppTokens.s4,
+          AppTokens.s4,
         ),
-        border: Border(
-          top: BorderSide(
-            color: accent.withValues(alpha: 0.2),
-            width: AppTokens.borderHairline,
+        decoration: BoxDecoration(
+          color: isDark
+              ? AppColors.surfaceDark.withValues(alpha: 0.85)
+              : AppColors.surfaceLight.withValues(alpha: 0.85),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppTokens.rXl),
           ),
+          border: Border(
+            top: BorderSide(
+              color: accent.withValues(alpha: 0.2),
+              width: AppTokens.borderHairline,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.15),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+              spreadRadius: -2,
+            ),
+          ],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.15),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-            spreadRadius: -2,
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppTokens.rXl),
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(AppTokens.rXl),
-        ),
-        child: lyricsAsync.when(
-          loading: () => _buildLoadingState(),
-          error: (_, __) => _buildMessageState(
-            icon: Icons.error_outline_rounded,
-            message: 'Lyrics unavailable',
-            subtitle: 'Unable to load lyrics at this time',
-            onRetry: _retry,
-          ),
-          data: _buildResult,
+          child: _expanded
+              ? _buildExpanded(lyricsAsync)
+              : _buildCollapsedPreview(lyricsAsync),
         ),
       ),
     );
     return container;
+  }
+
+  Widget _buildExpanded(AsyncValue<LyricsResult> lyricsAsync) {
+    return Column(
+      children: [
+        _LyricsPanelHeader(expanded: true, onToggle: _toggleExpanded),
+        Expanded(
+          child: lyricsAsync.when(
+            loading: () => _buildLoadingState(),
+            error: (_, _) => _buildMessageState(
+              icon: Icons.error_outline_rounded,
+              message: 'Lyrics unavailable',
+              subtitle: 'Unable to load lyrics at this time',
+              onRetry: _retry,
+            ),
+            data: _buildResult,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCollapsedPreview(AsyncValue<LyricsResult> lyricsAsync) {
+    return _LyricsPanelHeader(
+      expanded: false,
+      onToggle: _toggleExpanded,
+      previewText: _previewText(lyricsAsync),
+    );
+  }
+
+  /// Best single line to preview when the panel is collapsed, or null when
+  /// there is nothing useful to preview yet.
+  String? _previewText(AsyncValue<LyricsResult> lyricsAsync) {
+    final result = lyricsAsync.valueOrNull;
+    if (result == null ||
+        result.status != LyricsStatus.loaded ||
+        result.data == null) {
+      return null;
+    }
+    final data = result.data!;
+    if (data.isInstrumental) return 'Instrumental';
+    final lines = _linesOf(data);
+    if (lines.isEmpty) return null;
+    if (data.hasSyncedLines) {
+      final idx = ref.watch(currentLyricLineIndexProvider).valueOrNull ?? -1;
+      if (idx >= 0 && idx < lines.length) return lines[idx].text;
+    }
+    return lines.first.text;
   }
 
   List<LyricsLine> _linesOf(LyricsData data) {
@@ -730,6 +787,106 @@ class _ResumeFollowChip extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Header for the collapsible lyrics panel.
+///
+/// When [expanded] it is a slim drag-to-collapse bar above the lyrics list.
+/// When collapsed it is a tap target previewing the current lyric line, which
+/// expands the panel back to the full list.
+class _LyricsPanelHeader extends StatelessWidget {
+  const _LyricsPanelHeader({
+    required this.expanded,
+    required this.onToggle,
+    this.previewText,
+  });
+
+  final bool expanded;
+  final VoidCallback onToggle;
+  final String? previewText;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final accent = AppColors.accent;
+
+    if (expanded) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onToggle,
+        child: SizedBox(
+          height: 44,
+          width: double.infinity,
+          child: Row(
+            children: [
+              const SizedBox(width: AppTokens.s4),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colorScheme.onSurface.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(AppTokens.rFull),
+                ),
+              ),
+              const Spacer(),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 22,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: AppTokens.s4),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onToggle,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s4,
+          vertical: AppTokens.s2,
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.lyrics_rounded, size: 20, color: accent),
+            const SizedBox(width: AppTokens.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Lyrics',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    previewText ?? 'Tap to view lyrics',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTokens.s2),
+            Icon(
+              Icons.keyboard_arrow_up_rounded,
+              size: 22,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ],
         ),
       ),
     );
