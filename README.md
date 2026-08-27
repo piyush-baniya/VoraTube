@@ -169,8 +169,14 @@ Permission granted (READ_MEDIA_AUDIO / ≤API32 storage)
         │     └─ Dart diff vs stored (mediaStoreId→dateModified) → only changed go to
         │        repository.syncTracks() inside a transaction (~500/batch)
         ├─ removeAbsentMediaStore(seenIds)      chunked deletes + orphan album/artist cleanup
-        ├─ resolveArtwork(albumKeys) chunks     native decode→WebP tiers in files/art/
+        │     refuses an empty seen-set (denied permission ≠ empty library)
+        ├─ artworkTargets(dirtyHint, limit)     albums missing art first, then album-less songs
+        │     └─ resolveArtwork(targets) chunks native decode→WebP tiers in files/art/
+        │           loadThumbnail(song URI) → loadThumbnail(album URI) → embedded picture
+        │           (pre-API-29 only: legacy content://…/albumart)
+        │     └─ attachArtwork() writes NULL on failure and records the attempt
         └─ completeScan(totalSongs) → scan_states
+              └─ ScanController: ArtworkFileCache.invalidate() + notifyLibraryChanged()
 ```
 
 ### iOS import (push model)
