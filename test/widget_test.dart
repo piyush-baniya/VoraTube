@@ -33,7 +33,7 @@ class _FakeIngestService implements IngestService {
 
   @override
   Future<Map<String, ResolvedArtwork?>> resolveArtwork(
-    Set<String> albumKeys,
+    List<ArtworkTarget> targets,
   ) async => {};
 
   @override

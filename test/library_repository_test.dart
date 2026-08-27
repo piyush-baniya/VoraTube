@@ -284,10 +284,18 @@ void main() {
   });
 
   group('artwork and scan state', () {
-    test('albumsNeedingArt returns only albums lacking artwork', () async {
+    test('artworkTargets surfaces albums lacking artwork', () async {
       await repository.syncTracks([_msTrack(1)]);
-      final missing = await repository.albumsNeedingArt({'ms:11'});
-      expect(missing, ['ms:11']);
+
+      final targets = await repository.artworkTargets(
+        dirtyAlbumKeys: {'ms:11'},
+      );
+      expect(targets.map((t) => t.key), ['ms:11']);
+      // The album id and a representative song must both be present, since the
+      // native side needs the song handle for album-less and Android 10+ cases.
+      expect(targets.single.albumMediaStoreId, 11);
+      expect(targets.single.audioMediaStoreId, 1);
+      expect(targets.single.path, '/storage/emulated/0/Music/song_1.mp3');
 
       await repository.attachArtwork({
         'ms:11': const ResolvedArtwork(
@@ -295,19 +303,108 @@ void main() {
           largePath: '/a_l.webp',
         ),
       });
-      expect(await repository.albumsNeedingArt({'ms:11'}), isEmpty);
+      expect(await repository.artworkTargets(), isEmpty);
 
       final album = await db.select(db.albums).getSingle();
       expect(album.artSmallPath, '/a_s.webp');
     });
 
-    test('attachArtwork records missing artwork state', () async {
+    test('artworkTargets ignores the dirty hint and still retries', () async {
+      await repository.syncTracks([_msTrack(1)]);
+
+      // The old implementation returned nothing when no album had changed in
+      // the current batch, so artwork that failed once was never retried.
+      final targets = await repository.artworkTargets();
+      expect(targets.map((t) => t.key), ['ms:11']);
+    });
+
+    test('failed artwork writes NULL, not an empty string', () async {
       await repository.syncTracks([_msTrack(1)]);
       await repository.attachArtwork({'ms:11': null});
 
       final album = await db.select(db.albums).getSingle();
-      expect(album.artSmallPath, '');
-      expect(await repository.albumsNeedingArt({'ms:11'}), isEmpty);
+      // `''` is not NULL, so persisting it made the "needs artwork" predicate
+      // permanently false and the album could never be retried.
+      expect(album.artSmallPath, isNull);
+      expect(album.artLargePath, isNull);
+    });
+
+    test('a failed album is retried once, then left alone', () async {
+      await repository.syncTracks([_msTrack(1)]);
+
+      await repository.attachArtwork({'ms:11': null});
+      expect(
+        (await repository.artworkTargets()).map((t) => t.key),
+        ['ms:11'],
+        reason: 'one transient failure should not disqualify an album',
+      );
+
+      await repository.attachArtwork({'ms:11': null});
+      expect(
+        await repository.artworkTargets(),
+        isEmpty,
+        reason: 'a genuinely art-less album must stop costing a decode',
+      );
+
+      expect(
+        (await repository.artworkTargets(retryFailed: true)).map((t) => t.key),
+        ['ms:11'],
+        reason: 'an explicit rescan must still be able to force a retry',
+      );
+    });
+
+    test('artworkTargets covers songs with no album', () async {
+      // MediaStore reports album_id 0 for singles, downloads and voice memos.
+      // Those songs have no album row, so album-scoped artwork can never
+      // reach them.
+      await repository.syncTracks([_msTrack(7, album: null, albumId: 0)]);
+
+      final targets = await repository.artworkTargets();
+      expect(targets, hasLength(1));
+      expect(targets.single.key, 'song:ms:7');
+      expect(targets.single.audioMediaStoreId, 7);
+      expect(ArtworkTarget.isSongKey(targets.single.key), isTrue);
+
+      await repository.attachArtwork({
+        'song:ms:7': const ResolvedArtwork(
+          smallPath: '/s_s.webp',
+          largePath: '/s_l.webp',
+        ),
+      });
+
+      final extras = await db
+          .customSelect('SELECT art_small_path FROM song_extras')
+          .get();
+      expect(extras, hasLength(1));
+      expect(extras.single.data['art_small_path'], '/s_s.webp');
+      expect(await repository.artworkTargets(), isEmpty);
+    });
+
+    test('artworkTargets honours its limit', () async {
+      await repository.syncTracks([
+        for (var i = 1; i <= 5; i++) _msTrack(i, album: 'Album $i', albumId: i),
+      ]);
+
+      expect(await repository.artworkTargets(limit: 2), hasLength(2));
+      expect(await repository.artworkTargets(limit: 0), isEmpty);
+    });
+
+    test('removeAbsentMediaStore refuses to wipe on an empty scan', () async {
+      await repository.syncTracks([_msTrack(1), _msTrack(2)]);
+
+      // An empty seen-set means the scan enumerated nothing — a denied
+      // permission or an unmounted volume — not that the user deleted every
+      // song. Acting on it would destroy the library, playlists and stats.
+      expect(await repository.removeAbsentMediaStore({}), 0);
+      expect(await db.select(db.songs).get(), hasLength(2));
+    });
+
+    test('removeAbsentMediaStore removes only unseen songs', () async {
+      await repository.syncTracks([_msTrack(1), _msTrack(2)]);
+
+      expect(await repository.removeAbsentMediaStore({1}), 1);
+      final remaining = await db.select(db.songs).get();
+      expect(remaining.map((s) => s.mediaStoreId), [1]);
     });
 
     test('completeScan persists scan state', () async {

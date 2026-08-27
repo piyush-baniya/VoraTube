@@ -24,6 +24,94 @@ final class ResolvedArtwork {
   bool get hasArt => smallPath != null && largePath != null;
 }
 
+/// One artwork lookup, addressed by every handle the platform might need.
+///
+/// Album art used to be requested by album id alone. That fails for two large
+/// classes of track: anything whose MediaStore `album_id` is 0 (singles, voice
+/// memos, most downloaded files), and anything on Android 10+, where the
+/// `albumart` provider that album ids resolved through no longer exists.
+/// Carrying the song id and file path alongside the album id lets the native
+/// side fall back to per-song thumbnails and then to embedded cover art.
+final class ArtworkTarget {
+  const ArtworkTarget({
+    required this.key,
+    this.albumMediaStoreId,
+    this.audioMediaStoreId,
+    this.path,
+  });
+
+  /// Album-scoped lookup: one decode is cached under the album key and shared
+  /// by every track on the album. [audioMediaStoreId] and [path] point at a
+  /// representative member track, which is what the per-song fallbacks need.
+  factory ArtworkTarget.album({
+    required String albumKey,
+    int? albumMediaStoreId,
+    int? audioMediaStoreId,
+    String? path,
+  }) => ArtworkTarget(
+    key: albumKey,
+    albumMediaStoreId: albumMediaStoreId,
+    audioMediaStoreId: audioMediaStoreId,
+    path: path,
+  );
+
+  /// Song-scoped lookup for tracks that belong to no album at all.
+  ///
+  /// The prefix is what makes the result routable: album keys and song identity
+  /// keys are both shaped `ms:<int>`, so without it a returned key would be
+  /// ambiguous and artwork could be written to the wrong row.
+  factory ArtworkTarget.song({
+    required String identityKey,
+    int? audioMediaStoreId,
+    String? path,
+  }) => ArtworkTarget(
+    key: '$songKeyPrefix$identityKey',
+    audioMediaStoreId: audioMediaStoreId,
+    path: path,
+  );
+
+  static const String songKeyPrefix = 'song:';
+
+  /// Cache identity, and the key results are returned under.
+  final String key;
+
+  /// MediaStore album id, when the track belongs to a known album.
+  final int? albumMediaStoreId;
+
+  /// MediaStore song id — the only handle that works for album-less tracks.
+  final int? audioMediaStoreId;
+
+  /// Absolute file path, used for embedded-artwork extraction.
+  final String? path;
+
+  bool get isSongScoped => isSongKey(key);
+
+  static bool isSongKey(String key) => key.startsWith(songKeyPrefix);
+
+  /// Strips [songKeyPrefix], yielding the bare identity key.
+  static String identityKeyOf(String key) =>
+      isSongKey(key) ? key.substring(songKeyPrefix.length) : key;
+
+  Map<String, Object?> toChannelMap() => <String, Object?>{
+    'key': key,
+    'albumId': albumMediaStoreId,
+    'audioId': audioMediaStoreId,
+    'path': path,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is ArtworkTarget &&
+      other.key == key &&
+      other.albumMediaStoreId == albumMediaStoreId &&
+      other.audioMediaStoreId == audioMediaStoreId &&
+      other.path == path;
+
+  @override
+  int get hashCode =>
+      Object.hash(key, albumMediaStoreId, audioMediaStoreId, path);
+}
+
 /// ReplayGain information extracted from audio metadata.
 final class ReplayGainInfo {
   const ReplayGainInfo({
@@ -313,7 +401,16 @@ abstract interface class IngestService {
     required int limit,
   });
 
-  Future<Map<String, ResolvedArtwork?>> resolveArtwork(Set<String> albumKeys);
+  /// Resolves artwork for [targets], keyed by [ArtworkTarget.key].
+  ///
+  /// A key is absent from the result when the platform could not be reached at
+  /// all; it maps to `null` when every strategy was tried and none produced an
+  /// image. Callers must treat those two cases differently — the first is
+  /// retryable, the second should be recorded so the same failure is not
+  /// retried on every scan.
+  Future<Map<String, ResolvedArtwork?>> resolveArtwork(
+    List<ArtworkTarget> targets,
+  );
 
   Future<List<PickedImportFile>> pickImportFiles();
 

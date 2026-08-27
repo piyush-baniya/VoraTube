@@ -267,55 +267,304 @@ class LibraryRepository {
     return created.id;
   }
 
-  Future<List<String>> albumsNeedingArt(Set<String> dirtyAlbumKeys) async {
-    if (dirtyAlbumKeys.isEmpty) {
+  /// Artwork lookups that are still worth attempting, newest content first.
+  ///
+  /// Replaces the old `albumsNeedingArt(dirtyAlbumKeys)`, which had two defects
+  /// that together meant artwork could never recover:
+  ///
+  ///  * it returned early when no album changed in the current batch, so a
+  ///    re-scan never retried anything that had failed before, and
+  ///  * it only ever looked at `albums`, so a track whose MediaStore
+  ///    `album_id` is 0 — singles, downloads, voice memos — had nowhere for
+  ///    artwork to live and was skipped forever.
+  ///
+  /// [dirtyAlbumKeys] is now a *priority* hint rather than a filter: those
+  /// albums are returned first, then any other album still missing art that we
+  /// have not already tried, then album-less songs. [limit] bounds the result
+  /// so a 20,000-song library cannot turn one scan into 20,000 native decodes.
+  Future<List<ArtworkTarget>> artworkTargets({
+    Set<String> dirtyAlbumKeys = const {},
+    int limit = 240,
+    bool retryFailed = false,
+  }) async {
+    if (limit <= 0) {
       return const [];
     }
-    final query = _db.selectOnly(_db.albums)
-      ..addColumns([_db.albums.albumKey])
-      ..where(_db.albums.albumKey.isIn(dirtyAlbumKeys))
-      ..where(
-        _db.albums.artSmallPath.isNull() | _db.albums.artLargePath.isNull(),
+    final targets = <ArtworkTarget>[];
+    final seenKeys = <String>{};
+
+    void add(ArtworkTarget target) {
+      if (seenKeys.add(target.key)) {
+        targets.add(target);
+      }
+    }
+
+    // Albums missing art. One representative song per album carries the song id
+    // and path that the per-song fallbacks need.
+    //
+    // `art_small_path IS NULL OR art_small_path = ''` tolerates rows poisoned by
+    // the old empty-string writes even if a database somehow skipped the v6
+    // repair.
+    //
+    // Exactly one aggregate is used on purpose. SQLite guarantees that when a
+    // grouped query contains a single min()/max(), every bare column in the
+    // result comes from that same input row — so `song_ms_id` and `song_path`
+    // are certain to describe the one song `MIN(s.id)` picked. Adding a second
+    // aggregate (say `MAX(date_added_sec)` for ordering) would void that
+    // guarantee and could pair one song's id with another song's path, so the
+    // ordering uses `a.id` instead: album rows are created as albums are first
+    // encountered, which makes a higher id a good enough proxy for "newer".
+    final attemptFilter = retryFailed
+        ? ''
+        : 'AND (ax.art_resolved_at IS NULL OR ax.art_attempts < 2)';
+    final albumRows = await _db
+        .customSelect(
+          '''
+SELECT a.album_key AS album_key,
+       a.media_store_album_id AS album_ms_id,
+       MIN(s.id) AS song_row_id,
+       s.media_store_id AS song_ms_id,
+       s.path AS song_path
+FROM albums a
+JOIN songs s ON s.album_row_id = a.id
+LEFT JOIN album_extras ax ON ax.album_id = a.id
+WHERE a.album_key IS NOT NULL
+  AND (a.art_small_path IS NULL OR a.art_small_path = ''
+       OR a.art_large_path IS NULL OR a.art_large_path = '')
+  $attemptFilter
+GROUP BY a.id
+ORDER BY CASE WHEN a.album_key IN (${_placeholders(dirtyAlbumKeys.length)})
+              THEN 0 ELSE 1 END,
+         a.id DESC
+LIMIT ?
+''',
+          variables: [
+            for (final key in dirtyAlbumKeys) Variable<String>(key),
+            Variable<int>(limit),
+          ],
+        )
+        .get();
+
+    for (final row in albumRows) {
+      final albumKey = row.data['album_key'] as String?;
+      if (albumKey == null || albumKey.isEmpty) continue;
+      add(
+        ArtworkTarget.album(
+          albumKey: albumKey,
+          albumMediaStoreId: (row.data['album_ms_id'] as num?)?.toInt(),
+          audioMediaStoreId: (row.data['song_ms_id'] as num?)?.toInt(),
+          path: row.data['song_path'] as String?,
+        ),
       );
-    final rows = await query.get();
-    return rows
-        .map((row) => row.read(_db.albums.albumKey))
-        .whereType<String>()
-        .toList();
+    }
+
+    final remaining = limit - targets.length;
+    if (remaining <= 0) {
+      return targets;
+    }
+
+    // Album-less songs: the case the old query could not express at all.
+    final songRows = await _db
+        .customSelect(
+          '''
+SELECT s.media_store_id AS song_ms_id,
+       s.content_hash AS content_hash,
+       s.source AS source,
+       s.path AS path
+FROM songs s
+LEFT JOIN song_extras sx ON sx.song_id = s.id
+WHERE s.album_row_id IS NULL
+  AND (sx.art_small_path IS NULL OR sx.art_small_path = '')
+  ${retryFailed ? '' : 'AND sx.art_resolved_at IS NULL'}
+ORDER BY s.date_added_sec DESC
+LIMIT ?
+''',
+          variables: [Variable<int>(remaining)],
+        )
+        .get();
+
+    for (final row in songRows) {
+      final source = row.data['source'] as String?;
+      final msId = (row.data['song_ms_id'] as num?)?.toInt();
+      final hash = row.data['content_hash'] as String?;
+      final identityKey = source == IngestSource.mediastore.name
+          ? (msId == null ? null : 'ms:$msId')
+          : (hash == null ? null : 'h:$hash');
+      if (identityKey == null) continue;
+      add(
+        ArtworkTarget.song(
+          identityKey: identityKey,
+          audioMediaStoreId: msId,
+          path: row.data['path'] as String?,
+        ),
+      );
+    }
+
+    return targets;
   }
 
+  static String _placeholders(int count) =>
+      count == 0 ? 'NULL' : List<String>.filled(count, '?').join(', ');
+
+  /// Persists resolved artwork and, just as importantly, records the attempt.
+  ///
+  /// Two rules that the previous implementation broke:
+  ///
+  ///  * a failure writes NULL, never the empty string. `''` is not null, so it
+  ///    silently satisfied the `art_small_path IS NULL` predicate used to find
+  ///    albums needing art, permanently marking every failed album as done.
+  ///  * a failure never clears a path that is already set. Artwork resolution
+  ///    is best-effort and can fail transiently (revoked permission, ejected
+  ///    SD card); losing working artwork because of one bad call is worse than
+  ///    keeping a slightly stale file.
   Future<void> attachArtwork(Map<String, ResolvedArtwork?> resolved) async {
     if (resolved.isEmpty) {
       return;
     }
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
     await _db.transaction(() async {
       for (final entry in resolved.entries) {
         final artwork = entry.value;
-        await (_db.update(
-          _db.albums,
-        )..where((tbl) => tbl.albumKey.equals(entry.key))).write(
-          AlbumsCompanion(
-            artSmallPath: Value(artwork?.smallPath ?? ''),
-            artLargePath: Value(artwork?.largePath ?? ''),
-          ),
-        );
+        if (ArtworkTarget.isSongKey(entry.key)) {
+          await _attachSongArtwork(
+            ArtworkTarget.identityKeyOf(entry.key),
+            artwork,
+            nowMs,
+          );
+        } else {
+          await _attachAlbumArtwork(entry.key, artwork, nowMs);
+        }
       }
     });
   }
 
+  Future<void> _attachAlbumArtwork(
+    String albumKey,
+    ResolvedArtwork? artwork,
+    int nowMs,
+  ) async {
+    if (artwork != null && artwork.hasArt) {
+      await (_db.update(
+        _db.albums,
+      )..where((tbl) => tbl.albumKey.equals(albumKey))).write(
+        AlbumsCompanion(
+          artSmallPath: Value(artwork.smallPath),
+          artLargePath: Value(artwork.largePath),
+        ),
+      );
+    }
+    // Record the attempt either way, so a genuinely art-less album is not
+    // re-decoded on every scan.
+    await _db.customStatement(
+      '''
+INSERT INTO album_extras (album_id, art_resolved_at, art_attempts)
+SELECT id, ?, 1 FROM albums WHERE album_key = ?
+ON CONFLICT(album_id) DO UPDATE SET
+  art_resolved_at = excluded.art_resolved_at,
+  art_attempts = album_extras.art_attempts + 1
+''',
+      [nowMs, albumKey],
+    );
+  }
+
+  Future<void> _attachSongArtwork(
+    String identityKey,
+    ResolvedArtwork? artwork,
+    int nowMs,
+  ) async {
+    final rowId = await _songRowIdForIdentityKey(identityKey);
+    if (rowId == null) {
+      return;
+    }
+    if (artwork != null && artwork.hasArt) {
+      await _db.customStatement(
+        '''
+INSERT INTO song_extras (song_id, art_small_path, art_large_path,
+                         art_resolved_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(song_id) DO UPDATE SET
+  art_small_path = excluded.art_small_path,
+  art_large_path = excluded.art_large_path,
+  art_resolved_at = excluded.art_resolved_at
+''',
+        [rowId, artwork.smallPath, artwork.largePath, nowMs],
+      );
+      return;
+    }
+    await _db.customStatement(
+      '''
+INSERT INTO song_extras (song_id, art_resolved_at)
+VALUES (?, ?)
+ON CONFLICT(song_id) DO UPDATE SET art_resolved_at = excluded.art_resolved_at
+''',
+      [rowId, nowMs],
+    );
+  }
+
+  Future<int?> _songRowIdForIdentityKey(String identityKey) async {
+    if (identityKey.startsWith('ms:')) {
+      final msId = int.tryParse(identityKey.substring(3));
+      if (msId == null) return null;
+      final row =
+          await (_db.selectOnly(_db.songs)
+                ..addColumns([_db.songs.id])
+                ..where(
+                  _db.songs.source.equals(IngestSource.mediastore.name) &
+                      _db.songs.mediaStoreId.equals(msId),
+                ))
+              .getSingleOrNull();
+      return row?.read(_db.songs.id);
+    }
+    if (identityKey.startsWith('h:')) {
+      final hash = identityKey.substring(2);
+      final row =
+          await (_db.selectOnly(_db.songs)
+                ..addColumns([_db.songs.id])
+                ..where(_db.songs.contentHash.equals(hash)))
+              .getSingleOrNull();
+      return row?.read(_db.songs.id);
+    }
+    return null;
+  }
+
+  /// Removes MediaStore songs the device no longer reports.
+  ///
+  /// Refuses to act on an empty [seenMediaStoreIds]. An empty set does not mean
+  /// "the user deleted all their music" — it means the scan enumerated nothing,
+  /// which in practice is a denied permission, an unmounted volume, or an
+  /// aborted scan. Trusting it would delete the entire library, along with
+  /// every playlist entry and play count attached to it.
   Future<int> removeAbsentMediaStore(Set<int> seenMediaStoreIds) async {
-    final doomedRows = seenMediaStoreIds.isEmpty
-        ? await (_db.select(_db.songs)..where(
-                (tbl) => tbl.source.equals(IngestSource.mediastore.name),
-              ))
-              .get()
-        : await (_db.select(_db.songs)..where(
-                (tbl) =>
-                    tbl.source.equals(IngestSource.mediastore.name) &
-                    tbl.mediaStoreId.isNotIn(seenMediaStoreIds),
-              ))
-              .get();
-    final doomedIds = doomedRows.map((r) => r.id).toList();
+    if (seenMediaStoreIds.isEmpty) {
+      return 0;
+    }
+
+    // The difference is computed in Dart rather than as `mediaStoreId NOT IN
+    // (...)`. A 20,000-song library would bind 20,000 SQL variables, well past
+    // SQLITE_MAX_VARIABLE_NUMBER (999 on older builds), and the statement would
+    // fail outright — taking the whole scan with it.
+    final stored =
+        await (_db.selectOnly(_db.songs)
+              ..addColumns([_db.songs.id, _db.songs.mediaStoreId])
+              ..where(_db.songs.source.equals(IngestSource.mediastore.name)))
+            .get();
+
+    final doomedIds = <int>[];
+    for (final row in stored) {
+      final rowId = row.read(_db.songs.id);
+      if (rowId == null) continue;
+      final msId = row.read(_db.songs.mediaStoreId);
+      // A MediaStore row with no MediaStore id cannot be reconciled, but it is
+      // also not evidence of deletion, so leave it alone.
+      if (msId == null) continue;
+      if (!seenMediaStoreIds.contains(msId)) {
+        doomedIds.add(rowId);
+      }
+    }
+
+    if (doomedIds.isEmpty) {
+      return 0;
+    }
 
     await _deleteSongRows(doomedIds);
     await _cleanupOrphans();
@@ -554,14 +803,21 @@ extension LibraryQueries on LibraryRepository {
     query.limit(limit, offset: offset);
     final rows = await query.get();
 
+    final songRows = [for (final row in rows) row.readTable(_db.songs)];
+    final overrides = await songArtOverrides(songRows.map((s) => s.id));
     final songs = [
-      for (final row in rows)
+      for (var i = 0; i < rows.length; i++)
         SongTileData(
-          song: row.readTable(_db.songs),
-          artPath: _pickArt(
-            row.read(albums.artLargePath),
-            row.read(albums.artSmallPath),
-          ),
+          song: songRows[i],
+          artPath:
+              overrides[songRows[i].id] ??
+              _pickArt(
+                rows[i].read(albums.artLargePath),
+                rows[i].read(albums.artSmallPath),
+              ),
+          // The album and artist lists already did this via `_decorate`, so the
+          // same track normalised on one screen and not on another.
+          replayGain: _replayGainFromJson(songRows[i].replayGainJson),
         ),
     ];
     final next = songs.length < limit ? -1 : offset + limit;
@@ -784,6 +1040,62 @@ String? _pickArt(String? large, String? small) {
   return null;
 }
 
+/// How many song ids to bind per `IN (...)` lookup.
+///
+/// Kept well under SQLITE_MAX_VARIABLE_NUMBER, which is 999 on older SQLite
+/// builds — a single unbounded `IN` over a 20,000-song library would not just
+/// be slow, it would fail to prepare.
+const int _artChunkSize = 400;
+
+extension SongArtworkOverrides on LibraryRepository {
+  /// Per-song artwork that overrides, or substitutes for, the album's art.
+  ///
+  /// Two distinct jobs, one lookup:
+  ///
+  ///  * `custom_art_path` is a cover the user chose for this one track, and
+  ///    must win over whatever the album says.
+  ///  * `art_small_path`/`art_large_path` hold artwork resolved for a track
+  ///    with no album row at all — MediaStore reports `album_id == 0` for
+  ///    singles, downloads and voice memos, and those songs previously had
+  ///    nowhere for artwork to live, so they always fell back to a placeholder.
+  ///
+  /// `song_extras` is not a drift-declared table (see `songExtrasDdl`), so this
+  /// cannot be a typed join. Only songs that actually have a row come back, so
+  /// the map is normally far smaller than the page it decorates.
+  Future<Map<int, String>> songArtOverrides(Iterable<int> songRowIds) async {
+    final ids = songRowIds.toList(growable: false);
+    if (ids.isEmpty) {
+      return const {};
+    }
+    final out = <int, String>{};
+    for (var i = 0; i < ids.length; i += _artChunkSize) {
+      final chunk = ids.sublist(i, (i + _artChunkSize).clamp(0, ids.length));
+      final placeholders = List<String>.filled(chunk.length, '?').join(', ');
+      final rows = await _db
+          .customSelect(
+            'SELECT song_id, custom_art_path, art_large_path, art_small_path '
+            'FROM song_extras WHERE song_id IN ($placeholders)',
+            variables: [for (final id in chunk) Variable<int>(id)],
+          )
+          .get();
+      for (final row in rows) {
+        final id = (row.data['song_id'] as num?)?.toInt();
+        if (id == null) continue;
+        final art =
+            _pickArt(
+              row.data['custom_art_path'] as String?,
+              row.data['art_large_path'] as String?,
+            ) ??
+            _pickArt(null, row.data['art_small_path'] as String?);
+        if (art != null) {
+          out[id] = art;
+        }
+      }
+    }
+    return out;
+  }
+}
+
 extension FilteredSongQueries on LibraryRepository {
   Future<List<SongTileData>> songsForAlbum(
     int albumRowId, {
@@ -832,11 +1144,14 @@ extension FilteredSongQueries on LibraryRepository {
     final artById = {
       for (final a in albums) a.id: _pickArt(a.artLargePath, a.artSmallPath),
     };
+    final overrides = await songArtOverrides(rows.map((r) => r.id));
     return [
       for (final r in rows)
         SongTileData(
           song: r,
-          artPath: r.albumRowId == null ? null : artById[r.albumRowId!],
+          artPath:
+              overrides[r.id] ??
+              (r.albumRowId == null ? null : artById[r.albumRowId!]),
           replayGain: _replayGainFromJson(r.replayGainJson),
         ),
     ];

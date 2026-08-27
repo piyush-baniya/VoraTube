@@ -14,12 +14,22 @@ class LibraryScanner {
     required this.repository,
     this.batchSize = 500,
     this.artworkChunkSize = 40,
+    this.artworkBudget = 240,
   });
 
   final IngestService ingest;
   final LibraryRepository repository;
   final int batchSize;
   final int artworkChunkSize;
+
+  /// Ceiling on native artwork decodes per scan.
+  ///
+  /// Each decode reads a file, downsamples a bitmap and writes two WebP tiers.
+  /// A 20,000-song library has thousands of albums, and doing them all in one
+  /// pass would stall the scan for minutes. Whatever is left over is picked up
+  /// by the next scan, because [LibraryRepository.artworkTargets] no longer
+  /// depends on an album having changed in the current batch.
+  final int artworkBudget;
 
   Future<ScanSummary> scan({ScanProgressListener? onProgress}) async {
     await ingest.prepareScan();
@@ -92,16 +102,17 @@ class LibraryScanner {
       ),
     );
 
-    final artworkTargets = (await repository.albumsNeedingArt(dirtyAlbums))
-        .toSet();
+    final targetList = await repository.artworkTargets(
+      dirtyAlbumKeys: dirtyAlbums,
+      limit: artworkBudget,
+    );
     var artworksResolved = 0;
-    final targetList = artworkTargets.toList(growable: false);
     for (var i = 0; i < targetList.length; i += artworkChunkSize) {
       final chunk = targetList.sublist(
         i,
         (i + artworkChunkSize).clamp(0, targetList.length),
       );
-      final resolved = await ingest.resolveArtwork(chunk.toSet());
+      final resolved = await ingest.resolveArtwork(chunk);
       await repository.attachArtwork(resolved);
       artworksResolved += resolved.values
           .where((a) => a?.hasArt ?? false)
@@ -131,7 +142,7 @@ class LibraryScanner {
       addedSongs: addedTotal,
       updatedSongs: updatedTotal,
       removedSongs: removedCount,
-      artworkAttempts: artworkTargets.length,
+      artworkAttempts: targetList.length,
       artworksResolved: artworksResolved,
       completedAt: DateTime.now(),
     );

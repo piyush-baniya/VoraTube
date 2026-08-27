@@ -4,10 +4,13 @@ import android.content.Context
 import android.content.ContentUris
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Size
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
@@ -42,10 +45,9 @@ class VoraTubeIngestBridge(context: Context) {
                             succeed(result, getAudioBatch(afterId, limit))
                         }
                         "resolveArtwork" -> {
-                            @Suppress("UNCHECKED_CAST")
-                            val ids = call.argument<List<Number>>("albumIds")
+                            val targets = call.argument<List<Map<String, Any?>>>("targets")
                                 ?: emptyList()
-                            succeed(result, resolveArtwork(ids.map { it.toLong() }))
+                            succeed(result, resolveArtwork(targets))
                         }
                         else -> fail(result, "unsupported_method", call.method)
                     }
@@ -176,58 +178,187 @@ class VoraTubeIngestBridge(context: Context) {
         return out
     }
 
-    private fun resolveArtwork(albumIds: List<Long>): Map<Long, Map<String, String?>> {
+    /**
+     * One artwork request: a cache key plus every handle we might resolve it
+     * through. `audioId`/`path` let us fall back to per-song artwork, which is
+     * the only option for tracks whose MediaStore `album_id` is 0.
+     */
+    private data class ArtworkTarget(
+        val key: String,
+        val albumId: Long?,
+        val audioId: Long?,
+        val path: String?,
+    )
+
+    private fun resolveArtwork(
+        rawTargets: List<Map<String, Any?>>,
+    ): Map<String, Map<String, String?>> {
         val artDir = File(appContext.filesDir, ART_DIR).apply { mkdirs() }
-        val out = HashMap<Long, Map<String, String?>>(albumIds.size)
-        for (albumId in albumIds.take(MAX_ART_BATCH)) {
-            out[albumId] = resolveSingleArtwork(albumId, artDir)
+        val out = HashMap<String, Map<String, String?>>(rawTargets.size)
+        for (raw in rawTargets.take(MAX_ART_BATCH)) {
+            val key = raw["key"] as? String ?: continue
+            val target = ArtworkTarget(
+                key = key,
+                albumId = (raw["albumId"] as? Number)?.toLong()?.takeIf { it > 0 },
+                audioId = (raw["audioId"] as? Number)?.toLong()?.takeIf { it > 0 },
+                path = (raw["path"] as? String)?.takeIf { it.isNotBlank() },
+            )
+            out[key] = resolveSingleArtwork(target, artDir)
         }
         return out
     }
 
+    /**
+     * Resolves one artwork target, trying every strategy the running platform
+     * supports before giving up.
+     *
+     * The ordering matters. `content://media/external/audio/albumart/<id>` was
+     * removed in Android 10 (API 29) — on any newer device it throws, which is
+     * why artwork silently never appeared. [ContentResolver.loadThumbnail] is
+     * the supported replacement, and querying it against the *song* URI also
+     * covers tracks with no album (`album_id == 0`). Embedded artwork read via
+     * [MediaMetadataRetriever] is the final fallback and works on every API
+     * level, including for files MediaStore has no thumbnail for.
+     */
     private fun resolveSingleArtwork(
-        albumId: Long,
+        target: ArtworkTarget,
         artDir: File,
     ): Map<String, String?> {
-        val smallFile = File(artDir, "$albumId${SMALL_SUFFIX}.webp")
-        val largeFile = File(artDir, "$albumId${LARGE_SUFFIX}.webp")
-        if (smallFile.isFile && largeFile.isFile) {
+        val safeKey = sanitizeKey(target.key)
+        val smallFile = File(artDir, "$safeKey$SMALL_SUFFIX.webp")
+        val largeFile = File(artDir, "$safeKey$LARGE_SUFFIX.webp")
+        if (smallFile.isFile && smallFile.length() > 0 &&
+            largeFile.isFile && largeFile.length() > 0
+        ) {
             return mapOf(SMALL to smallFile.absolutePath, LARGE to largeFile.absolutePath)
         }
-        try {
-            val artUri = Uri.parse(ALBUM_ART_BASE).buildUpon()
+
+        val bitmap = loadArtworkBitmap(target) ?: return NO_ART
+        return try {
+            writeWebp(bitmap, largeFile, LARGE_PX)
+            writeWebp(bitmap, smallFile, SMALL_PX)
+            mapOf(SMALL to smallFile.absolutePath, LARGE to largeFile.absolutePath)
+        } catch (_: Exception) {
+            NO_ART
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun loadArtworkBitmap(target: ArtworkTarget): Bitmap? {
+        val thumbSize = Size(LARGE_PX, LARGE_PX)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Song thumbnail first: it exists for album-less tracks too.
+            target.audioId?.let { audioId ->
+                val uri = ContentUris.withAppendedId(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    audioId,
+                )
+                loadThumbnailOrNull(uri, thumbSize)?.let { return it }
+            }
+            target.albumId?.let { albumId ->
+                val uri = ContentUris.withAppendedId(
+                    MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI,
+                    albumId,
+                )
+                loadThumbnailOrNull(uri, thumbSize)?.let { return it }
+            }
+        } else {
+            target.albumId?.let { albumId ->
+                legacyAlbumArt(albumId)?.let { return it }
+            }
+        }
+
+        return embeddedArtwork(target)
+    }
+
+    private fun loadThumbnailOrNull(uri: Uri, size: Size): Bitmap? {
+        // The version check is repeated here rather than relied upon from the
+        // caller so that lint can see it: `loadThumbnail` is API 29+, and a
+        // guard in a different function does not satisfy the NewApi check.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return try {
+            resolver.loadThumbnail(uri, size, null)
+        } catch (_: Exception) {
+            // Missing thumbnail, revoked permission, or an unsupported
+            // provider: all mean "try the next strategy".
+            null
+        }
+    }
+
+    /** Pre-API-29 album art. Unavailable on Android 10 and newer. */
+    private fun legacyAlbumArt(albumId: Long): Bitmap? {
+        return try {
+            val artUri = Uri.parse(LEGACY_ALBUM_ART_BASE).buildUpon()
                 .appendPath(albumId.toString())
                 .build()
             resolver.openFileDescriptor(artUri, "r")?.use { pfd ->
-                val bounds = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
+                decodeSampled { opts ->
+                    BitmapFactory.decodeFileDescriptor(pfd.fileDescriptor, null, opts)
                 }
-                BitmapFactory.decodeFileDescriptor(pfd.fileDescriptor, null, bounds)
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                    return mapOf(SMALL to null, LARGE to null)
-                }
-                val sampleForLarge = sampleSize(bounds.outWidth, bounds.outHeight, LARGE_PX)
-                val opts = BitmapFactory.Options().apply {
-                    inSampleSize = sampleForLarge
-                }
-                val largeBitmap = BitmapFactory.decodeFileDescriptor(
-                    pfd.fileDescriptor,
-                    null,
-                    opts,
-                ) ?: return mapOf(SMALL to null, LARGE to null)
-
-                writeWebp(largeBitmap, largeFile, LARGE_PX)
-                writeWebp(largeBitmap, smallFile, SMALL_PX)
-                largeBitmap.recycle()
-                return mapOf(
-                    SMALL to smallFile.absolutePath,
-                    LARGE to largeFile.absolutePath,
-                )
-            } ?: return mapOf(SMALL to null, LARGE to null)
+            }
         } catch (_: Exception) {
-            return mapOf(SMALL to null, LARGE to null)
+            null
         }
     }
+
+    /** Artwork embedded in the media file itself. Works on every API level. */
+    private fun embeddedArtwork(target: ArtworkTarget): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            val attached = when {
+                target.audioId != null -> {
+                    val uri = ContentUris.withAppendedId(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        target.audioId,
+                    )
+                    retriever.setDataSource(appContext, uri)
+                    true
+                }
+                target.path != null && File(target.path).isFile -> {
+                    retriever.setDataSource(target.path)
+                    true
+                }
+                else -> false
+            }
+            if (!attached) return null
+            val picture = retriever.embeddedPicture ?: return null
+            decodeSampled { opts ->
+                BitmapFactory.decodeByteArray(picture, 0, picture.size, opts)
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+                // Releasing a retriever that never attached is not an error.
+            }
+        }
+    }
+
+    /**
+     * Decodes via [decode] twice: once for bounds, once downsampled to at most
+     * [LARGE_PX] on the long edge. Full-resolution album art is routinely
+     * 3000px square, which would allocate ~36 MB per image.
+     */
+    private inline fun decodeSampled(
+        decode: (BitmapFactory.Options) -> Bitmap?,
+    ): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        decode(bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, LARGE_PX)
+        }
+        return decode(opts)
+    }
+
+    /** Keeps cache filenames legal: album keys look like `ms:123`. */
+    private fun sanitizeKey(key: String): String =
+        key.map { if (it.isLetterOrDigit() || it == '-' || it == '_') it else '_' }
+            .joinToString("")
 
     private fun writeWebp(source: Bitmap, target: File, maxEdge: Int) {
         val w = source.width
@@ -243,8 +374,14 @@ class VoraTubeIngestBridge(context: Context) {
         } else {
             source
         }
+        val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Bitmap.CompressFormat.WEBP_LOSSY
+        } else {
+            @Suppress("DEPRECATION")
+            Bitmap.CompressFormat.WEBP
+        }
         FileOutputStream(target).use { out ->
-            scaled.compress(Bitmap.CompressFormat.WEBP, WEBP_QUALITY, out)
+            scaled.compress(format, WEBP_QUALITY, out)
         }
         if (scaled !== source) {
             scaled.recycle()
@@ -303,8 +440,17 @@ class VoraTubeIngestBridge(context: Context) {
         const val SMALL = "small"
         const val LARGE = "large"
         const val ART_DIR = "art"
-        const val ALBUM_ART_BASE = "content://media/external/audio/albumart"
+
+        /**
+         * Removed in Android 10 (API 29). Kept only for the pre-Q fallback —
+         * opening it on a newer device throws, which is exactly the bug that
+         * made artwork silently never appear.
+         */
+        const val LEGACY_ALBUM_ART_BASE = "content://media/external/audio/albumart"
         const val WEBP_QUALITY = 85
         const val TRACK_MODULUS = 10000
+
+        /** Sentinel for "no artwork could be resolved", sent back verbatim. */
+        val NO_ART: Map<String, String?> = mapOf(SMALL to null, LARGE to null)
     }
 }

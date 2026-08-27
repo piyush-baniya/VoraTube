@@ -40,31 +40,28 @@ class AndroidIngestService implements IngestService {
 
   @override
   Future<Map<String, ResolvedArtwork?>> resolveArtwork(
-    Set<String> albumKeys,
+    List<ArtworkTarget> targets,
   ) async {
-    if (albumKeys.isEmpty) {
-      return const {};
-    }
-    final ids = <int>[];
-    for (final key in albumKeys) {
-      final id = int.tryParse(key.startsWith('ms:') ? key.substring(3) : key);
-      if (id != null) {
-        ids.add(id);
-      }
-    }
-    if (ids.isEmpty) {
+    if (targets.isEmpty) {
       return const {};
     }
     final Object? raw = await _channel.invokeMethod<Object?>(
       'resolveArtwork',
-      <String, Object?>{'albumIds': ids},
+      <String, Object?>{
+        'targets': [
+          for (final target in targets) target.toChannelMap(),
+        ],
+      },
     );
     if (raw is! Map<Object?, Object?>) {
       return const {};
     }
-    return {
+    // Keys come back verbatim as the strings we sent, so no reconstruction is
+    // needed. The old code rebuilt `'ms:$id'` from an integer key, which quietly
+    // dropped every non-MediaStore target.
+    return <String, ResolvedArtwork?>{
       for (final entry in raw.entries)
-        'ms:${(entry.key as num).toInt()}': _parseArtwork(entry.value),
+        if (entry.key case final String key) key: _parseArtwork(entry.value),
     };
   }
 
@@ -115,10 +112,15 @@ class AndroidIngestService implements IngestService {
     if (value is! Map<Object?, Object?>) {
       return null;
     }
-    return ResolvedArtwork(
-      smallPath: _str(value, 'small'),
-      largePath: _str(value, 'large'),
-    );
+    final small = _str(value, 'small');
+    final large = _str(value, 'large');
+    // The native side answers with `{small: null, large: null}` when every
+    // strategy failed. Collapsing that to null keeps the interface contract
+    // honest: a present-but-empty ResolvedArtwork would read as success.
+    if (small == null && large == null) {
+      return null;
+    }
+    return ResolvedArtwork(smallPath: small, largePath: large);
   }
 
   String _reqStr(Map<Object?, Object?> row, String key) =>
