@@ -6,6 +6,7 @@ import '../../../../shared/widgets/empty_state.dart'
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../collections/presentation/widgets/collections_strip.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
@@ -92,9 +93,15 @@ class _LibraryHeader extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Greeting + now playing indicator
+          // Brand logo + greeting
           Row(
             children: [
+              Image.asset(
+                'assets/voratube_logo.png',
+                height: 32,
+                color: colorScheme.onSurface,
+              ),
+              const SizedBox(width: AppTokens.s3),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,6 +146,7 @@ class _NowPlayingBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
 
     return PressableScale(
       onTap: () =>
@@ -150,26 +158,22 @@ class _NowPlayingBadge extends StatelessWidget {
           vertical: AppTokens.s2,
         ),
         decoration: BoxDecoration(
-          color: colorScheme.primary.withValues(alpha: 0.12),
+          color: accent.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(AppTokens.rFull),
           border: Border.all(
-            color: colorScheme.primary.withValues(alpha: 0.2),
+            color: accent.withValues(alpha: 0.2),
             width: AppTokens.borderHairline,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.music_note_rounded,
-              size: 14,
-              color: colorScheme.primary,
-            ),
+            Icon(Icons.music_note_rounded, size: 14, color: accent),
             const SizedBox(width: AppTokens.s1),
             Text(
               'Now Playing',
               style: theme.textTheme.labelSmall?.copyWith(
-                color: colorScheme.primary,
+                color: accent,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -187,6 +191,7 @@ class _SongsToolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
     final favoritesOnly = ref.watch(favoritesOnlyProvider);
 
     return Padding(
@@ -208,23 +213,17 @@ class _SongsToolbar extends ConsumerWidget {
                   ? Icons.favorite_rounded
                   : Icons.favorite_border_rounded,
               size: 16,
-              color: favoritesOnly
-                  ? colorScheme.primary
-                  : colorScheme.onSurfaceVariant,
+              color: favoritesOnly ? accent : colorScheme.onSurfaceVariant,
             ),
-            selectedColor: colorScheme.primary.withValues(alpha: 0.12),
-            checkmarkColor: colorScheme.primary,
+            selectedColor: accent.withValues(alpha: 0.12),
+            checkmarkColor: accent,
             backgroundColor: colorScheme.surfaceContainerHigh,
             side: BorderSide(
-              color: favoritesOnly
-                  ? colorScheme.primary
-                  : colorScheme.outlineVariant,
+              color: favoritesOnly ? accent : colorScheme.outlineVariant,
               width: favoritesOnly ? 1.5 : AppTokens.borderHairline,
             ),
             labelStyle: theme.textTheme.labelMedium?.copyWith(
-              color: favoritesOnly
-                  ? colorScheme.primary
-                  : colorScheme.onSurfaceVariant,
+              color: favoritesOnly ? accent : colorScheme.onSurfaceVariant,
               fontWeight: favoritesOnly ? FontWeight.w600 : FontWeight.w500,
             ),
             onSelected: (v) =>

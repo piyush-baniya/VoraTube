@@ -2,17 +2,17 @@ import 'package:flutter/material.dart';
 
 /// VoraTube visual identity.
 ///
-/// Dark-first, near-black neutral surfaces with a single restrained rose
+/// Dark-first, near-black neutral surfaces with a single restrained purple
 /// accent used sparingly for interactive emphasis. Light theme is a warm
-/// paper-neutral foundation — never pale pink washes.
+/// paper-neutral foundation.
 abstract final class AppColors {
   AppColors._();
 
-  // Brand accent — deeper rose, not candy pink.
-  static const Color accent = Color(0xFFE85A83);
-  static const Color accentBright = Color(0xFFFF7DA1);
-  static const Color accentDeep = Color(0xFFB23B60);
-  static const Color accentMuted = Color(0xFFE85A83);
+  // Brand accent — deep violet, electric purple, muted lavender.
+  static const Color accent = Color(0xFF7C3AED);
+  static const Color accentBright = Color(0xFF8B5CF6);
+  static const Color accentDeep = Color(0xFF5B21B6);
+  static const Color accentMuted = Color(0xFF7C3AED);
 
   // Dark palette — near-black AMOLED-friendly.
   static const Color voidBlack = Color(0xFF09090B);
@@ -66,13 +66,13 @@ abstract final class AppColors {
 
   // ── Gradient stops ─────────────────────────────────────────────────
   static const List<Color> accentGradientDark = [
-    Color(0x1AE85A83),
-    Color(0x0AE85A83),
+    Color(0x1A7C3AED),
+    Color(0x0A7C3AED),
     Color(0x00000000),
   ];
   static const List<Color> accentGradientLight = [
-    Color(0x1AE85A83),
-    Color(0x0AE85A83),
+    Color(0x1A7C3AED),
+    Color(0x0A7C3AED),
     Color(0x00FFFFFF),
   ];
   static const List<Color> voidGradientDark = [

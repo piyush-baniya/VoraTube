@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
@@ -32,9 +33,9 @@ class MoodStrip extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SectionLabel(
-              title: 'Mood',
+              title: 'How are you feeling?',
               trailing: Text(
-                'Pick a vibe',
+                'Pick a mood and we\'ll build a mix',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -116,7 +117,7 @@ class _MoodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = _moodColor(mood, colorScheme);
+    final accent = AppColors.accent;
 
     final card = Container(
       width: 112,
@@ -167,24 +168,5 @@ class _MoodCard extends StatelessWidget {
     );
     if (!enabled || onTap == null) return Opacity(opacity: 0.7, child: card);
     return PressableScale(onTap: onTap!, child: card);
-  }
-
-  Color _moodColor(SongMood mood, ColorScheme scheme) {
-    switch (mood) {
-      case SongMood.chill:
-        return const Color(0xFF14B8A6);
-      case SongMood.energetic:
-        return const Color(0xFFF59E0B);
-      case SongMood.focus:
-        return const Color(0xFF3B82F6);
-      case SongMood.happy:
-        return const Color(0xFFEC4899);
-      case SongMood.sad:
-        return const Color(0xFF8B5CF6);
-      case SongMood.romantic:
-        return const Color(0xFFF43F5E);
-      case SongMood.unknown:
-        return scheme.onSurfaceVariant;
-    }
   }
 }

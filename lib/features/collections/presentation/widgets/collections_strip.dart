@@ -6,6 +6,7 @@ import '../../../library/data/library_repository.dart' show CollectionKind;
 import '../../../library/presentation/screens/filtered_songs_screen.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 
 /// Horizontal strip of collection summary cards (Favorites, Recently Added,
@@ -55,35 +56,24 @@ class _CollectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
 
     final (icon, gradientColors) = switch (summary.kind) {
       CollectionKind.favorites => (
         Icons.favorite_rounded,
-        [
-          colorScheme.primary.withValues(alpha: 0.25),
-          colorScheme.primary.withValues(alpha: 0.08),
-        ],
+        [accent.withValues(alpha: 0.25), accent.withValues(alpha: 0.08)],
       ),
       CollectionKind.recentlyAdded => (
         Icons.schedule_rounded,
-        [
-          colorScheme.secondary.withValues(alpha: 0.2),
-          colorScheme.secondary.withValues(alpha: 0.06),
-        ],
+        [accent.withValues(alpha: 0.2), accent.withValues(alpha: 0.06)],
       ),
       CollectionKind.mostPlayed => (
         Icons.trending_up_rounded,
-        [
-          colorScheme.tertiary.withValues(alpha: 0.2),
-          colorScheme.tertiary.withValues(alpha: 0.06),
-        ],
+        [accent.withValues(alpha: 0.2), accent.withValues(alpha: 0.06)],
       ),
       CollectionKind.recentlyPlayed => (
         Icons.history_rounded,
-        [
-          colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
-          colorScheme.onSurfaceVariant.withValues(alpha: 0.04),
-        ],
+        [accent.withValues(alpha: 0.12), accent.withValues(alpha: 0.04)],
       ),
     };
 

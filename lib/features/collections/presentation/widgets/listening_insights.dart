@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/library_repository.dart';
@@ -67,7 +68,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                     label: 'Songs',
                     value: '${stats.totalSongs}',
                     subtitle: 'in library',
-                    tint: Theme.of(context).colorScheme.primary,
+                    tint: AppColors.accent,
                   ),
                   const SizedBox(width: AppTokens.s2),
                   _InsightCard(
@@ -77,7 +78,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                         ? stats.formattedListeningTime
                         : '—',
                     subtitle: stats.hasActivity ? 'total time' : 'no plays yet',
-                    tint: Theme.of(context).colorScheme.secondary,
+                    tint: AppColors.accent,
                   ),
                   const SizedBox(width: AppTokens.s2),
                   _InsightCard(
@@ -85,7 +86,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                     label: 'Favorites',
                     value: '${stats.favoritesCount}',
                     subtitle: 'saved',
-                    tint: Theme.of(context).colorScheme.tertiary,
+                    tint: AppColors.accent,
                     onTap: stats.favoritesCount > 0
                         ? () => Navigator.of(context).push(
                             pushSharedAxis<void>(
@@ -104,7 +105,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                     label: 'Most played',
                     value: '${stats.mostPlayedCount}',
                     subtitle: 'tracks',
-                    tint: Theme.of(context).colorScheme.onSurfaceVariant,
+                    tint: AppColors.accent,
                     onTap: stats.mostPlayedCount > 0
                         ? () => Navigator.of(context).push(
                             pushSharedAxis<void>(
