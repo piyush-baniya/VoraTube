@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart'
     show EmptyState, ScreenHeader, SectionHeader;
+import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -14,8 +15,10 @@ import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
+import '../../../playlists/presentation/screens/playlists_screen.dart';
 import '../../../../../core/player/player_controller.dart';
 import '../../data/library_models.dart';
+import '../../data/library_repository.dart' show CollectionKind;
 import '../../data/song_ref_mapper.dart';
 import '../providers/library_view_providers.dart';
 import '../widgets/library_tiles.dart';
@@ -283,23 +286,58 @@ class _SongsViewState extends ConsumerState<_SongsView> {
   @override
   Widget build(BuildContext context) {
     final asyncValue = ref.watch(pagedSongsProvider);
+    final snapshot = ref.watch(playbackStateProvider);
 
-    return Column(
-      children: [
-        const ListeningInsightsStrip(),
-        const CollectionsStrip(),
-        const MoodStrip(),
-        const SmartMixStrip(),
-        Expanded(
-          child: AsyncValueSwitcher<List<SongTileData>>(
-            value: asyncValue,
-            loading: const SkeletonList(rows: 10, type: SkeletonType.song),
-            errorBuilder: (e, _) =>
-                _LibraryError(retry: () => ref.invalidate(pagedSongsProvider)),
-            data: (tiles) {
-              if (tiles.isEmpty) {
-                final favoritesOnly = ref.watch(favoritesOnlyProvider);
-                return EmptyState(
+    return CustomScrollView(
+      controller: _controller,
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        // Continue Listening Hero
+        if (snapshot != null && snapshot.hasTrack)
+          SliverToBoxAdapter(
+            child: _ContinueListeningHero(current: snapshot.current!),
+          )
+        else
+          SliverToBoxAdapter(child: _EmptyStateHero()),
+
+        // Quick Access
+        SliverToBoxAdapter(child: _QuickAccessStrip()),
+
+        // Listening Insights
+        SliverToBoxAdapter(child: ListeningInsightsStrip()),
+
+        // How Are You Feeling?
+        SliverToBoxAdapter(child: MoodStrip()),
+
+        // Made For Your Mood
+        SliverToBoxAdapter(child: SmartMixStrip()),
+
+        // Collections
+        SliverToBoxAdapter(child: CollectionsStrip()),
+
+        // All Songs
+        SliverToBoxAdapter(child: _SectionHeader(title: 'All Songs')),
+
+        // Song List
+        AsyncValueSwitcher<List<SongTileData>>(
+          value: asyncValue,
+          loading: SliverFixedExtentList(
+            itemExtent: 84,
+            delegate: SliverChildBuilderDelegate(
+              (_, index) => const _SkeletonSongTile(),
+              childCount: 10,
+            ),
+          ),
+          errorBuilder: (e, _) => SliverToBoxAdapter(
+            child: _LibraryError(
+              retry: () => ref.invalidate(pagedSongsProvider),
+            ),
+          ),
+          data: (tiles) {
+            if (tiles.isEmpty) {
+              final favoritesOnly = ref.watch(favoritesOnlyProvider);
+              return SliverToBoxAdapter(
+                child: EmptyState(
                   icon: favoritesOnly
                       ? Icons.favorite_border_rounded
                       : Icons.library_music_rounded,
@@ -315,18 +353,17 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                       : () => ref
                             .read(scanControllerProvider.notifier)
                             .startScan(),
-                );
-              }
-              return ListView.separated(
-                controller: _controller,
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: AppTokens.s8),
-                itemCount:
-                    tiles.length +
-                    (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
-                separatorBuilder: (_, i) => i == tiles.length - 1
-                    ? const SizedBox.shrink()
-                    : Divider(
+                ),
+              );
+            }
+            return SliverList.separated(
+              itemCount:
+                  tiles.length +
+                  (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
+              separatorBuilder: (_, i) => i == tiles.length - 1
+                  ? const SliverToBoxAdapter(child: SizedBox.shrink())
+                  : SliverToBoxAdapter(
+                      child: Divider(
                         height: AppTokens.borderHairline,
                         thickness: AppTokens.borderHairline,
                         indent:
@@ -334,10 +371,12 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                         endIndent: AppTokens.s4,
                         color: Theme.of(context).colorScheme.outlineVariant,
                       ),
-                itemBuilder: (context, index) {
-                  if (index >= tiles.length) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 18),
+                    ),
+              itemBuilder: (context, index) {
+                if (index >= tiles.length) {
+                  return SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 18),
                       child: Center(
                         child: SizedBox(
                           width: 22,
@@ -345,17 +384,19 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                           child: CircularProgressIndicator(strokeWidth: 2.2),
                         ),
                       ),
-                    );
-                  }
-                  return SongTile(
+                    ),
+                  );
+                }
+                return SliverToBoxAdapter(
+                  child: SongTile(
                     tile: tiles[index],
                     index: index,
                     onPlay: (_) => _playFrom(tiles, index),
-                  );
-                },
-              );
-            },
-          ),
+                  ),
+                );
+              },
+            );
+          },
         ),
       ],
     );
@@ -364,6 +405,519 @@ class _SongsViewState extends ConsumerState<_SongsView> {
   void _playFrom(List<SongTileData> tiles, int startIndex) {
     final ctx = playContextFromTiles(tiles, startIndex);
     ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
+  }
+}
+
+// Continue Listening Hero
+class _ContinueListeningHero extends ConsumerWidget {
+  const _ContinueListeningHero({required this.current});
+
+  final SongRef current;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s3,
+        AppTokens.s4,
+        AppTokens.s4,
+      ),
+      padding: const EdgeInsets.all(AppTokens.s4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTokens.rXl),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            accent.withValues(alpha: 0.18),
+            accent.withValues(alpha: 0.06),
+            colorScheme.surface,
+          ],
+          stops: const [0.0, 0.4, 1.0],
+        ),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.2),
+          width: AppTokens.borderHairline,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.1),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+            spreadRadius: -4,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Artwork with subtle glow
+          Container(
+            width: 112,
+            height: 112,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppTokens.rLg),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.15),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                  spreadRadius: -2,
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppTokens.rLg),
+              child: ArtworkView(
+                path: current.artPath,
+                size: 112,
+                radius: AppTokens.rLg,
+                showShadow: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s4),
+          // Metadata and controls
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Continue Listening',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: accent,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: AppTokens.s1),
+                Text(
+                  current.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    height: 1.2,
+                  ),
+                ),
+                if (current.artist != null) ...[
+                  const SizedBox(height: AppTokens.s1),
+                  Text(
+                    current.artist!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: AppTokens.s3),
+                // Play button
+                PressableScale(
+                  onTap: () => Navigator.of(context)
+                      .push(pushHero<void>(context, const FullPlayerScreen())),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.s5,
+                      vertical: AppTokens.s2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(AppTokens.rFull),
+                      boxShadow: [
+                        BoxShadow(
+                          color: accent.withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                          spreadRadius: -2,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.play_arrow_rounded,
+                          size: 18,
+                          color: colorScheme.onPrimary,
+                        ),
+                        const SizedBox(width: AppTokens.s2),
+                        Text(
+                          'Play',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: colorScheme.onPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Empty State Hero
+class _EmptyStateHero extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s3,
+        AppTokens.s4,
+        AppTokens.s4,
+      ),
+      padding: const EdgeInsets.all(AppTokens.s5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTokens.rXl),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          width: AppTokens.borderHairline,
+        ),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  accent.withValues(alpha: 0.12),
+                  accent.withValues(alpha: 0.04),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.6, 1.0],
+              ),
+            ),
+            child: Center(
+              child: Icon(
+                Icons.music_note_rounded,
+                size: 40,
+                color: accent.withValues(alpha: 0.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppTokens.s3),
+          Text(
+            'Start Listening',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: AppTokens.s1),
+          Text(
+            'Your music library is ready. Scan or import to begin.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: AppTokens.s4),
+          PressableScale(
+            onTap: () => ref.read(scanControllerProvider.notifier).startScan(),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppTokens.s5,
+                vertical: AppTokens.s2,
+              ),
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(AppTokens.rFull),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.3),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                    spreadRadius: -2,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.folder_open_rounded,
+                    size: 18,
+                    color: colorScheme.onPrimary,
+                  ),
+                  const SizedBox(width: AppTokens.s2),
+                  Text(
+                    'Scan Library',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: colorScheme.onPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Quick Access Strip
+class _QuickAccessStrip extends ConsumerWidget {
+  const _QuickAccessStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
+    final snapshot = ref.watch(playbackStateProvider);
+
+    final items = <_QuickAccessItem>[
+      _QuickAccessItem(
+        icon: Icons.history_rounded,
+        label: 'Recently Played',
+        onTap: () => Navigator.of(context).push(
+          pushSharedAxis<void>(
+            context,
+            FilteredSongsScreen.collection(
+              CollectionKind.recentlyPlayed,
+              'Recently Played',
+            ),
+          ),
+        ),
+      ),
+      _QuickAccessItem(
+        icon: Icons.favorite_rounded,
+        label: 'Favorites',
+        onTap: () => Navigator.of(context).push(
+          pushSharedAxis<void>(
+            context,
+            FilteredSongsScreen.collection(
+              CollectionKind.favorites,
+              'Favorites',
+            ),
+          ),
+        ),
+      ),
+      _QuickAccessItem(
+        icon: Icons.trending_up_rounded,
+        label: 'Most Played',
+        onTap: () => Navigator.of(context).push(
+          pushSharedAxis<void>(
+            context,
+            FilteredSongsScreen.collection(
+              CollectionKind.mostPlayed,
+              'Most Played',
+            ),
+          ),
+        ),
+      ),
+      _QuickAccessItem(
+        icon: Icons.schedule_rounded,
+        label: 'Recently Added',
+        onTap: () => Navigator.of(context).push(
+          pushSharedAxis<void>(
+            context,
+            FilteredSongsScreen.collection(
+              CollectionKind.recentlyAdded,
+              'Recently Added',
+            ),
+          ),
+        ),
+      ),
+      _QuickAccessItem(
+        icon: Icons.queue_music_rounded,
+        label: 'Playlists',
+        onTap: () =>
+            Navigator.of(context)
+                .push(pushSharedAxis<void>(context, PlaylistsScreen())),
+      ),
+      _QuickAccessItem(
+        icon: Icons.album_rounded,
+        label: 'Albums',
+        onTap: () =>
+            Navigator.of(context)
+                .push(pushSharedAxis<void>(context, const LibraryScreen())),
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s2,
+        AppTokens.s4,
+        AppTokens.s4,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Quick Access',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Shortcuts',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTokens.s2),
+          SizedBox(
+            height: 100,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(width: AppTokens.s2),
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return _QuickAccessCard(item: item);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickAccessItem {
+  const _QuickAccessItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+}
+
+class _QuickAccessCard extends StatelessWidget {
+  const _QuickAccessCard({required this.item});
+
+  final _QuickAccessItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
+
+    return PressableScale(
+      onTap: item.onTap,
+      child: Container(
+        width: 120,
+        padding: const EdgeInsets.all(AppTokens.s3),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTokens.rMd),
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTokens.rSm),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    accent.withValues(alpha: 0.16),
+                    accent.withValues(alpha: 0.04),
+                  ],
+                ),
+              ),
+              child: Center(child: Icon(item.icon, size: 22, color: accent)),
+            ),
+            const Spacer(),
+            Text(
+              item.label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Section Header
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s3,
+        AppTokens.s4,
+        AppTokens.s1,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 18,
+            decoration: BoxDecoration(
+              color: accent,
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s2),
+          Text(
+            title.toUpperCase(),
+            style: theme.textTheme.labelMedium?.copyWith(
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w700,
+              color: accent,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -511,6 +1065,82 @@ class _LibraryError extends StatelessWidget {
       message: 'Your music is safe. Try again in a moment.',
       actionLabel: 'Retry',
       onAction: retry,
+    );
+  }
+}
+
+// Skeleton song tile for loading state in CustomScrollView
+class _SkeletonSongTile extends StatelessWidget {
+  const _SkeletonSongTile();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s4,
+        vertical: AppTokens.s1,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: AppTokens.artworkLg,
+            height: AppTokens.artworkLg,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppTokens.rSm),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  accent.withValues(alpha: 0.12),
+                  accent.withValues(alpha: 0.04),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.6, 1.0],
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 120,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    gradient: LinearGradient(
+                      colors: [
+                        colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
+                        colorScheme.onSurfaceVariant.withValues(alpha: 0.06),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: 80,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    gradient: LinearGradient(
+                      colors: [
+                        colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
+                        colorScheme.onSurfaceVariant.withValues(alpha: 0.06),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

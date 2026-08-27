@@ -85,7 +85,13 @@ void main() {
 
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Search'), findsOneWidget);
-    expect(find.text('Playlists'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Playlists'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Settings'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.search_outlined));
