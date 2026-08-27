@@ -107,14 +107,41 @@ final genresOverviewProvider = FutureProvider.autoDispose<List<GenreSummary>>((
 
 /// Favorite ids kept in fine-grained state so a heart tap repaints exactly
 /// one tile, never the whole list.
+///
+/// Hydrated from the database on creation. Without that the set started empty
+/// and stayed empty until the user tapped something, so a song favourited in an
+/// earlier session rendered as un-favourited — the flag was stored correctly and
+/// simply never read back.
 class FavoriteIdsController extends StateNotifier<Set<int>> {
-  FavoriteIdsController(this._repository) : super(const <int>{});
+  FavoriteIdsController(this._repository) : super(const <int>{}) {
+    _hydrate();
+  }
 
   final LibraryRepository _repository;
 
+  /// Bumped by every user action, so a hydration read that is still in flight
+  /// cannot land on top of a tap the user made in the meantime.
+  int _revision = 0;
+
   bool isFavorite(int songRowId) => state.contains(songRowId);
 
+  Future<void> _hydrate() async {
+    final revision = _revision;
+    try {
+      final ids = await _repository.favoritesSongRowIds();
+      if (!mounted || revision != _revision) {
+        return;
+      }
+      state = ids;
+    } catch (_) {
+      // A failed read leaves the set empty, so hearts render as un-set rather
+      // than the whole list erroring over a decoration. The next library
+      // refresh recreates this controller and retries.
+    }
+  }
+
   Future<void> toggle(int songRowId) async {
+    _revision++;
     final currentlyFavorite = state.contains(songRowId);
     final rollback = state;
     state = currentlyFavorite
@@ -123,16 +150,26 @@ class FavoriteIdsController extends StateNotifier<Set<int>> {
     try {
       await _repository.toggleFavorite(songRowId);
     } catch (_) {
-      state = rollback;
+      if (mounted) {
+        state = rollback;
+      }
     }
   }
 }
 
 final favoriteIdsProvider =
-    StateNotifierProvider<FavoriteIdsController, Set<int>>(
-      (ref) => FavoriteIdsController(ref.watch(libraryRepositoryProvider)),
-    );
+    StateNotifierProvider<FavoriteIdsController, Set<int>>((ref) {
+      // Rebuilt on library change so the set drops ids for songs a scan, import
+      // or deletion removed, and picks up rows written outside this controller.
+      ref.watch(libraryRefreshTickProvider);
+      return FavoriteIdsController(ref.watch(libraryRepositoryProvider));
+    });
 
+/// Signals that committed library writes are ready to be read back.
+///
+/// Every paged and overview query in the library, collections and playlists
+/// features watches [libraryRefreshTickProvider]; this is the only thing that
+/// moves it.
 void notifyLibraryChanged(Ref ref) {
   ref.read(libraryRefreshTickProvider.notifier).state++;
 }

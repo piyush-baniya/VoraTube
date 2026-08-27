@@ -6,12 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/db/app_database.dart';
 import '../../../../core/ingest/android/android_ingest_service.dart';
+import '../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../core/ingest/artwork/local_artwork_store.dart';
 import '../../../../core/ingest/ingest_service.dart';
 import '../../../../core/ingest/ios/ios_ingest_service.dart';
 import '../../../../core/permissions/permission_service.dart';
 import '../../data/library_repository.dart';
 import '../../data/library_scanner.dart';
+import 'library_view_providers.dart';
 
 final appDatabaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase(driftDatabase(name: 'voratube'));
@@ -143,6 +145,17 @@ class ScanController extends Notifier<ScanUiState> {
           .read(libraryScannerProvider)
           .scan(
             onProgress: (progress) {
+              if (progress.phase == ScanPhase.artwork) {
+                // Artwork files are being written right now, and the render
+                // path remembers which paths did not exist. Clearing as we go
+                // means the refresh below sees the new files instead of the
+                // answers cached before they were written.
+                //
+                // Deliberately not bumping the refresh tick here: that rebuilds
+                // the paged song list from page zero, which would throw away
+                // accumulated pages under a user who is scrolling.
+                ArtworkFileCache.invalidate();
+              }
               if (state is ScanRunning) {
                 state = ScanRunning(
                   phase: progress.phase,
@@ -160,13 +173,28 @@ class ScanController extends Notifier<ScanUiState> {
         '${summary.artworkAttempts}',
       );
       state = ScanComplete(summary: summary);
+      // Without this the scan writes rows that nothing ever reads back. Every
+      // library, collection and playlist query watches the refresh tick, and
+      // until now no code path incremented it — so a completed scan left the
+      // UI showing whatever it had loaded first (usually the empty state) until
+      // the app was restarted.
+      _publishLibraryChange();
     } catch (error) {
       debugPrint('VoraTube scan failed: $error');
       state = const ScanFailure(
         message:
             'The scan could not be completed. Your existing library is safe.',
       );
+      // A scan that fails halfway has still committed the batches it finished,
+      // so surface that partial progress rather than hiding it.
+      _publishLibraryChange();
     }
+  }
+
+  /// Makes committed library writes visible to the read side.
+  void _publishLibraryChange() {
+    ArtworkFileCache.invalidate();
+    notifyLibraryChanged(ref);
   }
 }
 
@@ -308,7 +336,7 @@ class ImportController extends Notifier<ImportUiState> {
         if (root != null) {
           final store = LocalArtworkStore('${root.path}/art');
           final savedByKey = <String, SavedArtwork?>{};
-          final byAlbumKey = <String, ResolvedArtwork?>{};
+          final resolvedByKey = <String, ResolvedArtwork?>{};
           for (final job in artworkJobs) {
             final artKey = LocalArtworkStore.keyFor(job.bytes);
             SavedArtwork? saved;
@@ -320,10 +348,17 @@ class ImportController extends Notifier<ImportUiState> {
             }
             final albumKey = job.track.albumKey;
             if (albumKey != null && albumKey.isNotEmpty) {
-              byAlbumKey[albumKey] = saved?.asResolved;
+              resolvedByKey[albumKey] = saved?.asResolved;
+            } else {
+              // An import with no album still has cover art worth keeping.
+              // Routing it to the song row is the only place it can live, and
+              // was previously dropped on the floor.
+              final songKey =
+                  '${ArtworkTarget.songKeyPrefix}${job.track.identityKey}';
+              resolvedByKey[songKey] = saved?.asResolved;
             }
           }
-          await repository.attachArtwork(byAlbumKey);
+          await repository.attachArtwork(resolvedByKey);
         }
       }
 
@@ -338,6 +373,7 @@ class ImportController extends Notifier<ImportUiState> {
           completedAt: DateTime.now(),
         ),
       );
+      _publishLibraryChange();
     } catch (error) {
       debugPrint('VoraTube import failed: $error');
       state = const ImportFailure(
@@ -345,6 +381,9 @@ class ImportController extends Notifier<ImportUiState> {
             'The import could not be completed. Already-imported songs are '
             'safe.',
       );
+      // Imports commit in batches of twelve, so a failure part-way through has
+      // still added songs the user should be able to see.
+      _publishLibraryChange();
     }
   }
 
@@ -363,7 +402,17 @@ class ImportController extends Notifier<ImportUiState> {
       for (final row in rows)
         if (!File(row.path).existsSync()) row.rowId,
     };
-    return repository.deleteSongsByRowIds(missing);
+    final removed = await repository.deleteSongsByRowIds(missing);
+    if (removed > 0) {
+      _publishLibraryChange();
+    }
+    return removed;
+  }
+
+  /// Makes committed library writes visible to the read side.
+  void _publishLibraryChange() {
+    ArtworkFileCache.invalidate();
+    notifyLibraryChanged(ref);
   }
 }
 
