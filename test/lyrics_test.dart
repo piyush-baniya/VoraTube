@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vora_tube/core/models/lyrics.dart';
 import 'package:vora_tube/features/lyrics/data/lrclib_client.dart';
+import 'package:vora_tube/features/lyrics/presentation/providers/lyrics_providers.dart';
 
 void main() {
   group('parseLrc', () {
@@ -314,6 +315,24 @@ void main() {
     test('isTimestamped returns false when startTimeMs is null', () {
       const line = LyricsLine(text: 'Hello');
       expect(line.isTimestamped, false);
+    });
+  });
+
+  group('lyricLineIndexAt', () {
+    const lines = [
+      LyricsLine(text: 'First', startTimeMs: 1000),
+      LyricsLine(text: 'Second', startTimeMs: 5000),
+      LyricsLine(text: 'Third', startTimeMs: 10000),
+    ];
+
+    test('does not highlight a line before its first timestamp', () {
+      expect(lyricLineIndexAt(lines, const Duration(milliseconds: 999)), -1);
+    });
+
+    test('selects the most recent timestamped lyric line', () {
+      expect(lyricLineIndexAt(lines, const Duration(milliseconds: 5000)), 1);
+      expect(lyricLineIndexAt(lines, const Duration(milliseconds: 9000)), 1);
+      expect(lyricLineIndexAt(lines, const Duration(milliseconds: 15000)), 2);
     });
   });
 
