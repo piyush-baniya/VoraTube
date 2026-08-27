@@ -38,6 +38,7 @@ final currentLyricsProvider =
 class CurrentLyricsNotifier extends AsyncNotifier<LyricsResult> {
   StreamSubscription<Duration>? _positionSub;
   int _currentLineIndex = -1;
+  bool _disposed = false;
 
   /// Exposes the current line index as a [ValueNotifier] for efficient
   /// UI updates. Widgets watch this instead of rebuilding the entire
@@ -48,9 +49,14 @@ class CurrentLyricsNotifier extends AsyncNotifier<LyricsResult> {
 
   @override
   Future<LyricsResult> build() async {
+    _disposed = false;
     ref.onDispose(() {
+      _disposed = true;
       _positionSub?.cancel();
-      currentLineIndexNotifier.dispose();
+      _positionSub = null;
+      try {
+        currentLineIndexNotifier.dispose();
+      } catch (_) {}
     });
 
     final snapshot = ref.watch(playbackSnapshotProvider).value;
@@ -74,7 +80,11 @@ class CurrentLyricsNotifier extends AsyncNotifier<LyricsResult> {
 
   void _resetLineIndex() {
     _currentLineIndex = -1;
-    currentLineIndexNotifier.value = -1;
+    if (!_disposed) {
+      try {
+        currentLineIndexNotifier.value = -1;
+      } catch (_) {}
+    }
   }
 
   void _startPositionTracking() {
@@ -85,6 +95,7 @@ class CurrentLyricsNotifier extends AsyncNotifier<LyricsResult> {
   }
 
   void _updateCurrentLine(Duration position) {
+    if (_disposed) return;
     final lyrics = state.value?.data;
     if (lyrics == null || !lyrics.hasSyncedLines) return;
 
@@ -102,7 +113,11 @@ class CurrentLyricsNotifier extends AsyncNotifier<LyricsResult> {
 
     if (newIndex != _currentLineIndex) {
       _currentLineIndex = newIndex;
-      currentLineIndexNotifier.value = newIndex;
+      if (!_disposed) {
+        try {
+          currentLineIndexNotifier.value = newIndex;
+        } catch (_) {}
+      }
     }
   }
 

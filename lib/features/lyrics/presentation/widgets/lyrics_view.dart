@@ -71,12 +71,14 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
   bool get _isAutoScrolling => _isUserScrolling == false;
 
   void _scrollToLine(int index) {
+    if (!mounted) return;
     if (!_scrollController.hasClients) return;
     if (_isUserScrolling) return;
     if (index == _lastHighlightedIndex) return;
     _lastHighlightedIndex = index;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (!_scrollController.hasClients) return;
 
       // Estimate offset based on approximate item height
@@ -87,11 +89,13 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
         _scrollController.position.maxScrollExtent,
       );
 
-      _scrollController.animateTo(
-        clampedOffset,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      try {
+        _scrollController.animateTo(
+          clampedOffset,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      } catch (_) {}
     });
   }
 
