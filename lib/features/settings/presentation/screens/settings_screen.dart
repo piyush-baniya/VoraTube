@@ -6,6 +6,7 @@ import '../../../../features/library/presentation/providers/library_providers.da
 import '../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
+import 'privacy_screen.dart';
 import '../../data/settings_models.dart';
 import '../providers/settings_providers.dart';
 import '../widgets/settings_section.dart';
@@ -35,13 +36,13 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
           ),
+          SliverToBoxAdapter(child: _AppearanceSection()),
+          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _PlaybackSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _AudioSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _LibrarySection()),
-          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
-          SliverToBoxAdapter(child: _AppearanceSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _StorageSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
@@ -383,6 +384,9 @@ class _AboutSection extends ConsumerWidget {
             Icons.chevron_right_rounded,
             size: 18,
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PrivacyScreen()),
           ),
         ),
         SettingsTile(

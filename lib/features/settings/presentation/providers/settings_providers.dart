@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../data/settings_models.dart';
@@ -36,7 +37,13 @@ class StorageInfo {
   }
 }
 
-Future<String> _getDatabasePath() async => '';
+/// drift_flutter stores the named database in the app support directory using
+/// the `.sqlite` extension. Keeping this in one place prevents Settings from
+/// reporting an empty database simply because it previously checked `''`.
+Future<String> _getDatabasePath() async {
+  final directory = await getApplicationSupportDirectory();
+  return '${directory.path}${Platform.pathSeparator}voratube.sqlite';
+}
 
 Future<int> _getFileSize(String path) async {
   try {
@@ -189,12 +196,12 @@ final storageInfoProvider = FutureProvider.autoDispose<StorageInfo>((
   int artSize = 0;
   int impSize = 0;
   final root = await ingest.importedFilesRoot();
-  if (root != null && root.existsSync()) {
+  if (root != null && await root.exists()) {
     await for (final e in root.list(recursive: true, followLinks: false)) {
       if (e is File) {
         final s = await e.length();
-        final p = e.path;
-        if (p.contains('/art/') || p.contains('_s.png') || p.contains('_l')) {
+        final name = e.uri.pathSegments.last;
+        if (name.contains('_s.png') || name.contains('_l')) {
           artSize += s;
         } else {
           impSize += s;

@@ -7,6 +7,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
+import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../../../player/presentation/widgets/compact_lyrics_panel.dart';
 import '../../../player/presentation/widgets/rotating_artwork.dart';
 import '../providers/player_providers.dart';
@@ -75,6 +76,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
                   // Top bar
                   _TopBar(
                     onQueueTap: () => QueueSheet.show(context),
+                    onPlaylistTap: () => _openPlaylistPicker(current.identityKey),
                     onLyricsTap: () =>
                         setState(() => _showLyrics = !_showLyrics),
                     showLyricsActive: _showLyrics,
@@ -103,6 +105,19 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openPlaylistPicker(String identityKey) async {
+    final rowId = await ref.read(songRowIdProvider(identityKey).future);
+    if (!mounted || rowId == null) {
+      return;
+    }
+    final changed = await showAddToPlaylistSheet(context, rowId);
+    if (changed && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Playlist updated')),
+      );
+    }
   }
 
   Widget _buildPlayerMode(
@@ -330,12 +345,14 @@ class _BackgroundPulseState extends State<_BackgroundPulse>
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.onQueueTap,
+    required this.onPlaylistTap,
     required this.onLyricsTap,
     required this.showLyricsActive,
     required this.isDark,
   });
 
   final VoidCallback onQueueTap;
+  final VoidCallback onPlaylistTap;
   final VoidCallback onLyricsTap;
   final bool showLyricsActive;
   final bool isDark;
@@ -397,6 +414,28 @@ class _TopBar extends StatelessWidget {
                 color: showLyricsActive
                     ? colorScheme.primary
                     : colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s2),
+          // Playlist button
+          PressableScale(
+            onTap: onPlaylistTap,
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  width: AppTokens.borderHairline,
+                ),
+              ),
+              child: Icon(
+                Icons.playlist_add_rounded,
+                size: 22,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ),

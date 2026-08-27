@@ -196,7 +196,6 @@ class QueueSheet extends ConsumerWidget {
                       onRemove: () {
                         ref.read(playerProvider).removeAt(index);
                       },
-                      onReorder: () {}, // Handled by ReorderableListView
                     );
                   },
                 ),
@@ -246,7 +245,6 @@ class _QueueTile extends ConsumerWidget {
     required this.isCurrent,
     required this.onTap,
     required this.onRemove,
-    required this.onReorder,
   });
 
   final SongRef song;
@@ -254,7 +252,6 @@ class _QueueTile extends ConsumerWidget {
   final bool isCurrent;
   final VoidCallback onTap;
   final VoidCallback onRemove;
-  final VoidCallback onReorder;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -311,10 +308,16 @@ class _QueueTile extends ConsumerWidget {
           child: Row(
             children: [
               // Drag handle
-              Icon(
-                Icons.drag_indicator_rounded,
-                size: 20,
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+              ReorderableDragStartListener(
+                index: index,
+                child: Semantics(
+                  label: 'Reorder ${song.title}',
+                  child: Icon(
+                    Icons.drag_indicator_rounded,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                ),
               ),
               const SizedBox(width: AppTokens.s2),
               // Position / equalizer
