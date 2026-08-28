@@ -74,14 +74,25 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
               child: Column(
                 children: [
                   // Top bar
-                  _TopBar(
-                    onQueueTap: () => QueueSheet.show(context),
-                    onPlaylistTap: () =>
-                        _openPlaylistPicker(current.identityKey),
-                    onLyricsTap: () =>
-                        setState(() => _showLyrics = !_showLyrics),
-                    showLyricsActive: _showLyrics,
-                    isDark: isDark,
+                  GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onVerticalDragEnd: (details) {
+                      final velocity = details.primaryVelocity ?? 0;
+                      // A deliberate quick downward fling collapses the full
+                      // player back into the Mini Player.
+                      if (velocity > 1100) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    child: _TopBar(
+                      onQueueTap: () => QueueSheet.show(context),
+                      onPlaylistTap: () =>
+                          _openPlaylistPicker(current.identityKey),
+                      onLyricsTap: () =>
+                          setState(() => _showLyrics = !_showLyrics),
+                      showLyricsActive: _showLyrics,
+                      isDark: isDark,
+                    ),
                   ),
                   // Player content
                   Expanded(

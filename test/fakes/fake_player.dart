@@ -33,6 +33,11 @@ class FakePlayerController implements PlayerController {
   Future<void> pause() async {}
 
   @override
+  Future<void> stop() async {
+    current = PlayerSnapshot.initial;
+  }
+
+  @override
   Future<void> seek(Duration position) async {}
 
   @override

@@ -213,6 +213,10 @@ abstract class PlayerController {
 
   Future<void> pause();
 
+  /// Stops playback and clears the current track and queue, so the player
+  /// returns to a fully idle state (e.g. dismissing the Mini Player).
+  Future<void> stop();
+
   Future<void> seek(Duration position);
 
   /// Seeks relative to the current position by [offset], clamped to the

@@ -31,23 +31,25 @@ class MiniPlayer extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
+    final hasPrevious =
+        snapshot.currentIndex > 0 || snapshot.repeatMode == RepeatMode.all;
+    final hasNext =
+        snapshot.currentIndex < snapshot.queueLength - 1 ||
+        snapshot.repeatMode == RepeatMode.all;
+
     return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          PageRouteBuilder(
-            transitionDuration: AppTokens.slow,
-            reverseTransitionDuration: AppTokens.medium,
-            pageBuilder: (_, __, ___) => const FullPlayerScreen(),
-            transitionsBuilder: (_, animation, __, child) {
-              final curved = CurvedAnimation(
-                parent: animation,
-                curve: AppTokens.easeOutExpo,
-                reverseCurve: AppTokens.easeIn,
-              );
-              return FadeTransition(opacity: curved, child: child);
-            },
-          ),
-        );
+      behavior: HitTestBehavior.translucent,
+      onTap: () => _openFullPlayer(context),
+      // Swipe up expands into the full player; a deliberate quick swipe down
+      // stops playback and dismisses the bar. Speed thresholds are generous so
+      // a small accidental vertical wiggle never triggers a destructive stop.
+      onVerticalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity < -1200) {
+          _openFullPlayer(context);
+        } else if (velocity > 1500) {
+          ref.read(playerProvider).stop();
+        }
       },
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -144,28 +146,6 @@ class MiniPlayer extends ConsumerWidget {
                                 ],
                               ),
                             ),
-                            // Play/pause
-                            PressableScale(
-                              onTap: () =>
-                                  ref.read(playerProvider).togglePlay(),
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: colorScheme.primary.withValues(
-                                    alpha: 0.14,
-                                  ),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  snapshot.isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  size: 18,
-                                  color: colorScheme.primary,
-                                ),
-                              ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 2),
@@ -177,39 +157,127 @@ class MiniPlayer extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  // Next button
+                  // Transport cluster: previous | play/pause | next
+                  const SizedBox(width: AppTokens.s1),
+                  _TransportButton(
+                    icon: Icons.skip_previous_rounded,
+                    enabled: hasPrevious,
+                    onTap: () => ref.read(playerProvider).previous(),
+                    colorScheme: colorScheme,
+                  ),
+                  const SizedBox(width: AppTokens.s2),
                   PressableScale(
-                    onTap:
-                        snapshot.currentIndex < snapshot.queueLength - 1 ||
-                            snapshot.repeatMode == RepeatMode.all
-                        ? () => ref.read(playerProvider).next()
-                        : null,
+                    onTap: () => ref.read(playerProvider).togglePlay(),
                     child: Container(
-                      width: 36,
-                      height: 36,
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHighest,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: colorScheme.outlineVariant.withValues(
-                            alpha: 0.3,
-                          ),
-                          width: AppTokens.borderHairline,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [colorScheme.primary, AppColors.accent],
                         ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.35),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: Icon(
-                        Icons.skip_next_rounded,
-                        size: 20,
-                        color: colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.7,
-                        ),
+                        snapshot.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        size: 22,
+                        color: colorScheme.onPrimary,
                       ),
                     ),
+                  ),
+                  const SizedBox(width: AppTokens.s2),
+                  _TransportButton(
+                    icon: Icons.skip_next_rounded,
+                    enabled: hasNext,
+                    onTap: () => ref.read(playerProvider).next(),
+                    colorScheme: colorScheme,
                   ),
                   const SizedBox(width: AppTokens.s2),
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openFullPlayer(BuildContext context) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        transitionDuration: AppTokens.slow,
+        reverseTransitionDuration: AppTokens.medium,
+        pageBuilder: (_, __, ___) => const FullPlayerScreen(),
+        transitionsBuilder: (_, animation, __, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: AppTokens.easeOutExpo,
+            reverseCurve: AppTokens.easeIn,
+          );
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.06),
+                end: Offset.zero,
+              ).animate(curved),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// A compact circular transport button with a disabled state.
+class _TransportButton extends StatelessWidget {
+  const _TransportButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+    required this.colorScheme,
+  });
+
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableScale(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: enabled
+              ? colorScheme.surfaceContainerHighest
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(
+              alpha: enabled ? 0.3 : 0.15,
+            ),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: colorScheme.onSurfaceVariant.withValues(
+            alpha: enabled ? 0.9 : 0.35,
           ),
         ),
       ),
@@ -238,26 +306,58 @@ class _MiniProgress extends ConsumerWidget {
                 ? position.inMilliseconds / duration.inMilliseconds
                 : 0.0;
 
-            return Stack(
-              children: [
-                Container(
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(AppTokens.rFull),
+            // Tappable progress: a taller invisible hit area so the thin 3px
+            // bar is easy to seek without hurting the compact layout.
+            return GestureDetector(
+              key: const Key('mini_progress'),
+              behavior: HitTestBehavior.translucent,
+              onTapUp: duration.inMilliseconds <= 0
+                  ? null
+                  : (details) {
+                      final width = context.size?.width ?? 0;
+                      if (width <= 0) return;
+                      final fraction = (details.localPosition.dx / width).clamp(
+                        0.0,
+                        1.0,
+                      );
+                      onSeek(
+                        Duration(
+                          milliseconds: (duration.inMilliseconds * fraction)
+                              .round(),
+                        ),
+                      );
+                    },
+              child: SizedBox(
+                height: 16,
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Stack(
+                    children: [
+                      Container(
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.3,
+                          ),
+                          borderRadius: BorderRadius.circular(AppTokens.rFull),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: progress.clamp(0.0, 1.0),
+                        child: Container(
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary,
+                            borderRadius: BorderRadius.circular(
+                              AppTokens.rFull,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                FractionallySizedBox(
-                  widthFactor: progress.clamp(0.0, 1.0),
-                  child: Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary,
-                      borderRadius: BorderRadius.circular(AppTokens.rFull),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             );
           },
           loading: () => Container(
