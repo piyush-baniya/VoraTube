@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../features/library/presentation/screens/home_screen.dart';
 import '../features/library/presentation/screens/library_screen.dart';
 import '../features/playlists/presentation/screens/playlists_screen.dart';
 import '../features/player/presentation/widgets/mini_player.dart';
@@ -15,13 +16,14 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
+  static const int _libraryIndex = 1;
   int _currentIndex = 0;
 
   /// Tabs that have been opened at least once.
   ///
   /// [IndexedStack] builds every child eagerly, which runs each screen's
   /// `initState` at launch — that made Search grab focus and open the keyboard
-  /// over the Library, and paid the cost of four screens' providers before the
+  /// over the Library, and paid the cost of every screen's providers before the
   /// user had asked for any of them. Building a tab only once it is first
   /// selected avoids both, while [IndexedStack] still preserves its state for
   /// every subsequent visit.
@@ -39,8 +41,9 @@ class _HomeShellState extends State<HomeShell> {
   /// returns to the Library tab: Search lives as a tab (not a pushed route),
   /// so popping the navigator would blank the whole app.
   List<Widget> get _screens => [
+    HomeScreen(onSeeAllSongs: () => _onDestinationSelected(_libraryIndex)),
     const LibraryScreen(),
-    SearchScreen(onBack: () => _onDestinationSelected(0)),
+    SearchScreen(onBack: () => _onDestinationSelected(_libraryIndex)),
     const PlaylistsScreen(),
     const SettingsScreen(),
   ];
@@ -69,6 +72,11 @@ class _HomeShellState extends State<HomeShell> {
         currentIndex: _currentIndex,
         onDestinationSelected: _onDestinationSelected,
         destinations: const [
+          GlNavDestination(
+            icon: Icons.home_outlined,
+            selectedIcon: Icons.home,
+            label: 'Home',
+          ),
           GlNavDestination(
             icon: Icons.library_music_outlined,
             selectedIcon: Icons.library_music,
