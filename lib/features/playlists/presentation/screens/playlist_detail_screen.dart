@@ -10,6 +10,7 @@ import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/playlist_models.dart';
 import '../../data/playlist_repository.dart';
 import '../providers/playlist_providers.dart';
+import '../widgets/add_songs_sheet.dart';
 
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   const PlaylistDetailScreen({
@@ -27,24 +28,15 @@ class PlaylistDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
-  final ScrollController _controller = ScrollController();
-
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onScroll);
   }
 
-  void _onScroll() {
-    if (_controller.position.extentAfter < 600) {
+  void _onScroll(ScrollMetrics metrics) {
+    if (metrics.extentAfter < 600) {
       ref.read(playlistDetailProvider(widget.playlistId).notifier).loadMore();
     }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
   }
 
   @override
@@ -59,7 +51,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _DetailHeader(name: widget.name, playlistId: widget.playlistId),
+            _DetailHeader(
+              name: widget.name,
+              playlistId: widget.playlistId,
+              onAddSongs: _addSongs,
+            ),
             Expanded(
               child: asyncSongs.when(
                 skipLoadingOnRefresh: true,
@@ -76,45 +72,64 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                 ),
                 data: (tiles) {
                   if (tiles.isEmpty) {
-                    return const EmptyState(
+                    return EmptyState(
                       icon: Icons.music_note_rounded,
                       title: 'Empty playlist',
                       message: 'Add songs from your library.',
+                      actionLabel: 'Add songs',
+                      onAction: _addSongs,
                     );
                   }
-                  return ListView.separated(
-                    controller: _controller,
-                    padding: const EdgeInsets.only(bottom: 120),
-                    itemCount: tiles.length + (notifier.hasMore ? 1 : 0),
-                    separatorBuilder: (_, i) => i == tiles.length - 1
-                        ? const SizedBox.shrink()
-                        : const Divider(
-                            height: 0.5,
-                            indent: 80,
-                            endIndent: AppTokens.s4,
-                          ),
-                    itemBuilder: (context, index) {
-                      if (index >= tiles.length) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 18),
-                          child: Center(
-                            child: SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.2,
+                  return NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      _onScroll(notification.metrics);
+                      return false;
+                    },
+                    child: ReorderableListView.builder(
+                      padding: const EdgeInsets.only(bottom: 120),
+                      buildDefaultDragHandles: false,
+                      onReorder: (oldIndex, newIndex) {
+                        final notifier = ref.read(
+                          playlistDetailProvider(widget.playlistId).notifier,
+                        );
+                        if (newIndex > oldIndex) newIndex--;
+                        if (oldIndex >= tiles.length ||
+                            newIndex >= tiles.length ||
+                            oldIndex == newIndex) {
+                          return;
+                        }
+                        notifier.move(oldIndex, newIndex);
+                      },
+                      itemCount: tiles.length + (notifier.hasMore ? 1 : 0),
+                      proxyDecorator: (child, index, animation) =>
+                          Material(color: Colors.transparent, child: child),
+                      itemBuilder: (context, index) {
+                        if (index >= tiles.length) {
+                          return const Padding(
+                            key: ValueKey('footer'),
+                            padding: EdgeInsets.symmetric(vertical: 18),
+                            child: Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.2,
+                                ),
                               ),
                             ),
-                          ),
+                          );
+                        }
+                        final tile = tiles[index];
+                        return SongTile(
+                          key: ValueKey(tile.song.id),
+                          tile: tile,
+                          index: index,
+                          onPlay: (_) => _playFrom(tiles, index),
+                          removeFromPlaylistId: widget.playlistId,
+                          dragHandle: true,
                         );
-                      }
-                      return SongTile(
-                        tile: tiles[index],
-                        index: index,
-                        onPlay: (_) => _playFrom(tiles, index),
-                        removeFromPlaylistId: widget.playlistId,
-                      );
-                    },
+                      },
+                    ),
                   );
                 },
               ),
@@ -134,13 +149,33 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     final ctx = playContextFromTiles(tiles, startIndex);
     ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
   }
+
+  Future<void> _addSongs() async {
+    final picked = await showAddSongsSheet(
+      context,
+      playlistId: widget.playlistId,
+    );
+    if (picked == null || picked.isEmpty || !mounted) {
+      return;
+    }
+    final notifier = ref.read(
+      playlistDetailProvider(widget.playlistId).notifier,
+    );
+    await notifier.appendSongs(picked);
+    ref.read(playlistRefreshTickProvider.notifier).state++;
+  }
 }
 
 class _DetailHeader extends StatelessWidget {
-  const _DetailHeader({required this.name, required this.playlistId});
+  const _DetailHeader({
+    required this.name,
+    required this.playlistId,
+    required this.onAddSongs,
+  });
 
   final String name;
   final int playlistId;
+  final VoidCallback onAddSongs;
 
   @override
   Widget build(BuildContext context) {
@@ -168,6 +203,11 @@ class _DetailHeader extends StatelessWidget {
                 letterSpacing: -0.3,
               ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Add songs',
+            onPressed: onAddSongs,
+            icon: const Icon(Icons.add_rounded),
           ),
           _PlaylistMenuButton(playlistId: playlistId, name: name),
         ],

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -72,6 +73,12 @@ class LrclibClient {
       return null;
     } on RateLimitException {
       rethrow;
+    } on SocketException {
+      throw const LyricsNetworkException();
+    } on TimeoutException {
+      throw const LyricsNetworkException();
+    } on http.ClientException {
+      throw const LyricsNetworkException();
     } catch (_) {
       return null;
     }
@@ -115,6 +122,12 @@ class LrclibClient {
       return null;
     } on RateLimitException {
       rethrow;
+    } on SocketException {
+      throw const LyricsNetworkException();
+    } on TimeoutException {
+      throw const LyricsNetworkException();
+    } on http.ClientException {
+      throw const LyricsNetworkException();
     } catch (_) {
       return null;
     }
@@ -123,6 +136,13 @@ class LrclibClient {
   Future<void> dispose() async {
     _client.close();
   }
+}
+
+/// Thrown when the lyrics service cannot be reached (socket/timeout/HTTP
+/// client errors). Lets the caller distinguish "offline or unreachable"
+/// from "no lyrics found for this song".
+class LyricsNetworkException implements Exception {
+  const LyricsNetworkException();
 }
 
 class RateLimitException implements Exception {

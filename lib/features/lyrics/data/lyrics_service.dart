@@ -43,11 +43,15 @@ class LyricsService {
     }
 
     final online = await _tryOnline(song);
-    if (online != null) {
-      return LyricsResult.loaded(online, LyricsSource.lrclib);
-    }
-
-    return const LyricsResult.notFound();
+    return switch (online.kind) {
+      _OnlineKind.found => LyricsResult.loaded(
+        online.data!,
+        LyricsSource.lrclib,
+      ),
+      _OnlineKind.offline => const LyricsResult.offline(),
+      _OnlineKind.error => const LyricsResult.error(),
+      _OnlineKind.notFound => const LyricsResult.notFound(),
+    };
   }
 
   Future<LyricsData?> _tryEmbedded(SongRef song) async {
@@ -115,7 +119,7 @@ class LyricsService {
     }
   }
 
-  Future<LyricsData?> _tryOnline(SongRef song) async {
+  Future<_OnlineOutcome> _tryOnline(SongRef song) async {
     try {
       final durationSec = song.durationMs > 0
           ? (song.durationMs ~/ 1000)
@@ -138,7 +142,9 @@ class LyricsService {
         );
       }
 
-      if (result == null || !result.hasLyrics) return null;
+      if (result == null || !result.hasLyrics) {
+        return const _OnlineOutcome.notFound();
+      }
 
       // Verify the result plausibly matches the requested song
       if (song.artist != null &&
@@ -149,7 +155,7 @@ class LyricsService {
             requestedTrackName: song.title,
             requestedArtistName: song.artist!,
           )) {
-        return null;
+        return const _OnlineOutcome.notFound();
       }
 
       final data = _buildFromLrclib(result);
@@ -158,11 +164,14 @@ class LyricsService {
         await _cache(song, data);
       }
 
-      return data;
+      return _OnlineOutcome.found(data);
+    } on LyricsNetworkException {
+      // Could not reach the lyrics service — the user is likely offline.
+      return const _OnlineOutcome.offline();
     } on RateLimitException {
-      return null;
+      return const _OnlineOutcome.error();
     } catch (_) {
-      return null;
+      return const _OnlineOutcome.error();
     }
   }
 
@@ -241,4 +250,22 @@ class LyricsService {
       // Cache writes are best-effort
     }
   }
+}
+
+/// Distinguishes the possible outcomes of a remote lyrics lookup so the
+/// caller can surface the right message (offline vs error vs no lyrics).
+enum _OnlineKind { found, offline, error, notFound }
+
+class _OnlineOutcome {
+  const _OnlineOutcome._(this.data, this.kind);
+
+  const _OnlineOutcome.found(LyricsData data) : this._(data, _OnlineKind.found);
+  const _OnlineOutcome.offline() : this._(null, _OnlineKind.offline);
+  const _OnlineOutcome.error() : this._(null, _OnlineKind.error);
+  const _OnlineOutcome.notFound() : this._(null, _OnlineKind.notFound);
+
+  final LyricsData? data;
+  final _OnlineKind kind;
+
+  bool get isFound => kind == _OnlineKind.found && data != null;
 }

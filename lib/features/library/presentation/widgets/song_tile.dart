@@ -21,6 +21,7 @@ class SongTile extends ConsumerStatefulWidget {
     required this.index,
     required this.onPlay,
     this.removeFromPlaylistId,
+    this.dragHandle = false,
   });
 
   final SongTileData tile;
@@ -30,6 +31,9 @@ class SongTile extends ConsumerStatefulWidget {
   /// When non-null (playlist detail), the overflow menu additionally offers
   /// "Remove from playlist".
   final int? removeFromPlaylistId;
+
+  /// Renders a draggable reorder handle (for use inside a ReorderableListView).
+  final bool dragHandle;
 
   @override
   ConsumerState<SongTile> createState() => _SongTileState();
@@ -175,6 +179,23 @@ class _SongTileState extends ConsumerState<SongTile> {
                 onTap: () =>
                     ref.read(favoriteIdsProvider.notifier).toggle(song.id),
               ),
+              if (widget.dragHandle) ...[
+                const SizedBox(width: AppTokens.s1),
+                ReorderableDragStartListener(
+                  index: widget.index,
+                  child: SizedBox(
+                    width: AppTokens.touchTarget,
+                    height: AppTokens.touchTarget,
+                    child: Icon(
+                      Icons.drag_handle_rounded,
+                      size: 20,
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
