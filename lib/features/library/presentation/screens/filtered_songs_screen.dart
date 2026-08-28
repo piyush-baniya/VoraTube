@@ -19,6 +19,7 @@ class FilteredSongsScreen extends ConsumerStatefulWidget {
     super.key,
     this.album,
     this.artist,
+    this.genre,
     this.collectionKind,
     this.collectionLabel,
   });
@@ -27,11 +28,14 @@ class FilteredSongsScreen extends ConsumerStatefulWidget {
       FilteredSongsScreen(album: album);
   factory FilteredSongsScreen.artist(ArtistSummary artist) =>
       FilteredSongsScreen(artist: artist);
+  factory FilteredSongsScreen.genre(String genre) =>
+      FilteredSongsScreen(genre: genre);
   factory FilteredSongsScreen.collection(CollectionKind kind, String label) =>
       FilteredSongsScreen(collectionKind: kind, collectionLabel: label);
 
   final AlbumSummary? album;
   final ArtistSummary? artist;
+  final String? genre;
   final CollectionKind? collectionKind;
   final String? collectionLabel;
 
@@ -54,6 +58,10 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
     if (album != null) {
       return repository.songsForAlbum(album.albumRowId);
     }
+    final genre = widget.genre;
+    if (genre != null) {
+      return repository.songsForGenre(genre);
+    }
     return repository.songsForArtist(widget.artist!.artistRowId);
   }
 
@@ -65,6 +73,7 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
         widget.collectionLabel ??
         widget.album?.name ??
         widget.artist?.name ??
+        widget.genre ??
         'Songs';
     final subtitle =
         widget.album?.artistName ??

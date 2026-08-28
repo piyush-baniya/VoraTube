@@ -8,6 +8,7 @@ import '../../../../../shared/widgets/skeleton_list.dart';
 import '../../data/smart_mix_service.dart';
 import '../providers/smart_music_providers.dart';
 import '../widgets/mix_card.dart';
+import '../widgets/recommendation_disclaimer.dart';
 import 'smart_mix_detail_screen.dart';
 
 class SmartMixesScreen extends ConsumerWidget {
@@ -89,18 +90,22 @@ class SmartMixesScreen extends ConsumerWidget {
   Widget _buildMixesList(BuildContext context, List<SmartMix> mixes) {
     final nonEmptyMixes = mixes.where((m) => m.songs.isNotEmpty).toList();
 
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.all(AppTokens.s4),
-      itemCount: nonEmptyMixes.length,
-      separatorBuilder: (_, __) => const SizedBox(height: AppTokens.s3),
-      itemBuilder: (context, index) {
-        final mix = nonEmptyMixes[index];
-        return MixCard(
-          mix: mix,
-          onTap: () =>
-              Navigator.of(context).push(_SmartMixDetailRoute(mix: mix)),
-        );
-      },
+      children: [
+        const RecommendationDisclaimer(),
+        for (var i = 0; i < nonEmptyMixes.length; i++) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: AppTokens.s3),
+            child: MixCard(
+              mix: nonEmptyMixes[i],
+              onTap: () =>
+                  Navigator.of(context)
+                      .push(_SmartMixDetailRoute(mix: nonEmptyMixes[i])),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

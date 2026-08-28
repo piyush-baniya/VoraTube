@@ -9,6 +9,9 @@ import '../../../../../features/library/data/library_models.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
 import '../../../../../features/library/presentation/widgets/song_actions.dart';
 import '../../../../../features/player/presentation/providers/player_providers.dart';
+
+import 'package:vora_tube/features/smart_music/presentation/widgets/recommendation_disclaimer.dart';
+
 import '../../data/smart_mix_service.dart';
 
 class SmartMixDetailScreen extends ConsumerStatefulWidget {
@@ -178,6 +181,7 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
               ),
             ),
           ),
+          const SliverToBoxAdapter(child: RecommendationDisclaimer()),
           if (widget.mix.songs.isEmpty)
             const SliverFillRemaining(
               hasScrollBody: false,

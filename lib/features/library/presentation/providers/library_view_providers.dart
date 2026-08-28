@@ -140,6 +140,20 @@ final homeSongsProvider = FutureProvider.autoDispose<List<SongTileData>>((
   return page.songs;
 });
 
+/// Songs the user hid via the song overflow menu ("Hide song").
+///
+/// The Settings → "Show Hidden Songs" screen renders from this so users can
+/// surface and restore tracks that the normal browsing queries deliberately
+/// exclude. Watches [libraryRefreshTickProvider] so unhiding a song refreshes
+/// the list immediately without a manual reload.
+final hiddenSongsProvider = FutureProvider.autoDispose<List<SongTileData>>((
+  ref,
+) async {
+  ref.watch(libraryRefreshTickProvider);
+  final repository = ref.watch(libraryRepositoryProvider);
+  return repository.hiddenSongs();
+});
+
 /// Favorite ids kept in fine-grained state so a heart tap repaints exactly
 /// one tile, never the whole list.
 ///

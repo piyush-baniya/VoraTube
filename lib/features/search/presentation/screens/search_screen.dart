@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
 
 import '../../../../shared/widgets/artwork_view.dart';
-import '../../../../shared/widgets/empty_state.dart'
-    show EmptyState, ScreenHeader;
+import '../../../../shared/widgets/empty_state.dart' show EmptyState;
+import '../../../../shared/widgets/scroll_reveal.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_tokens.dart';
@@ -17,6 +17,7 @@ import 'package:vora_tube/features/library/presentation/widgets/song_tile.dart';
 import 'package:vora_tube/features/library/data/song_ref_mapper.dart'
     show playContextFromTiles;
 
+import '../../data/search_rank.dart' show highlightOccurrences;
 import '../providers/search_providers.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -301,7 +302,7 @@ class _NoResultsState extends StatelessWidget {
           ),
           const SizedBox(height: AppTokens.s3),
           Text(
-            'Check the spelling or try fewer words.',
+            'Try different or fewer words.',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -339,19 +340,22 @@ class _Results extends ConsumerWidget {
               indent: AppTokens.artworkMd + AppTokens.s3 + AppTokens.s5,
               endIndent: AppTokens.s5,
             ),
-            itemBuilder: (context, index) => SongTile(
-              key: ValueKey(results.songs[index].song.id),
-              tile: results.songs[index],
-              index: index,
-              onPlay: (ctx) {
-                // Play the whole result list from the tapped song, matching the
-                // behaviour of every other song list in the app.
-                final start = results.songs.indexOf(results.songs[index]);
-                final playCtx = playContextFromTiles(results.songs, start);
-                ref
-                    .read(playerProvider)
-                    .playQueue(playCtx.refs, startIndex: playCtx.startIndex);
-              },
+            itemBuilder: (context, index) => ScrollReveal(
+              child: SongTile(
+                key: ValueKey(results.songs[index].song.id),
+                tile: results.songs[index],
+                index: index,
+                highlightQuery: query,
+                onPlay: (ctx) {
+                  // Play the whole result list from the tapped song, matching the
+                  // behaviour of every other song list in the app.
+                  final start = results.songs.indexOf(results.songs[index]);
+                  final playCtx = playContextFromTiles(results.songs, start);
+                  ref
+                      .read(playerProvider)
+                      .playQueue(playCtx.refs, startIndex: playCtx.startIndex);
+                },
+              ),
             ),
           ),
         ],
@@ -373,7 +377,7 @@ class _Results extends ConsumerWidget {
             ),
             itemBuilder: (context, index) {
               final album = results.albums[index];
-              return _AlbumResultTile(album: album);
+              return _AlbumResultTile(album: album, query: query);
             },
           ),
         ],
@@ -395,7 +399,7 @@ class _Results extends ConsumerWidget {
             ),
             itemBuilder: (context, index) {
               final artist = results.artists[index];
-              return _ArtistResultTile(artist: artist);
+              return _ArtistResultTile(artist: artist, query: query);
             },
           ),
         ],
@@ -417,7 +421,12 @@ class _Results extends ConsumerWidget {
             ),
             itemBuilder: (context, index) {
               final playlist = results.playlists[index];
-              return _PlaylistResultTile(playlist: playlist);
+              final songCount = results.playlistCountsById[playlist.id] ?? 0;
+              return _PlaylistResultTile(
+                playlist: playlist,
+                songCount: songCount,
+                query: query,
+              );
             },
           ),
         ],
@@ -493,9 +502,10 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _AlbumResultTile extends ConsumerWidget {
-  const _AlbumResultTile({required this.album});
+  const _AlbumResultTile({required this.album, required this.query});
 
   final dynamic album;
+  final String query;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -526,13 +536,13 @@ class _AlbumResultTile extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      album.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    _HighlightedText(
+                      text: album.name,
+                      query: query,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w500,
                       ),
+                      maxLines: 1,
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -560,9 +570,10 @@ class _AlbumResultTile extends ConsumerWidget {
 }
 
 class _ArtistResultTile extends ConsumerWidget {
-  const _ArtistResultTile({required this.artist});
+  const _ArtistResultTile({required this.artist, required this.query});
 
   final dynamic artist;
+  final String query;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -601,13 +612,13 @@ class _ArtistResultTile extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      artist.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    _HighlightedText(
+                      text: artist.name,
+                      query: query,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w500,
                       ),
+                      maxLines: 1,
                     ),
                   ],
                 ),
@@ -626,9 +637,15 @@ class _ArtistResultTile extends ConsumerWidget {
 }
 
 class _PlaylistResultTile extends ConsumerWidget {
-  const _PlaylistResultTile({required this.playlist});
+  const _PlaylistResultTile({
+    required this.playlist,
+    required this.songCount,
+    required this.query,
+  });
 
   final dynamic playlist;
+  final int songCount;
+  final String query;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -670,17 +687,17 @@ class _PlaylistResultTile extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      playlist.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    _HighlightedText(
+                      text: playlist.name,
+                      query: query,
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w500,
                       ),
+                      maxLines: 1,
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Playlist · ${playlist.songCount} songs',
+                      'Playlist · $songCount ${songCount == 1 ? 'song' : 'songs'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -698,6 +715,59 @@ class _PlaylistResultTile extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Renders [text] with the substrings matching [query] emphasized using the
+/// theme's primary colour, so the user can immediately see why a result
+/// surfaced. Falls back to a plain [Text] when nothing matches.
+class _HighlightedText extends StatelessWidget {
+  const _HighlightedText({
+    required this.text,
+    required this.query,
+    this.style,
+    this.maxLines = 1,
+  });
+
+  final String text;
+  final String query;
+  final TextStyle? style;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final spans = highlightOccurrences(text, query);
+    final hasHighlight = spans.any((s) => s.highlight);
+
+    if (!hasHighlight) {
+      return Text(
+        text,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    return RichText(
+      maxLines: maxLines,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        style: style,
+        children: [
+          for (final span in spans)
+            TextSpan(
+              text: span.text,
+              style: span.highlight
+                  ? TextStyle(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    )
+                  : null,
+            ),
+        ],
       ),
     );
   }

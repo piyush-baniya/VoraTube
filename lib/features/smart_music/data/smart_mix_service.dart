@@ -347,6 +347,9 @@ class SmartMixService {
   /// Songs with at least a scrap of genuine positive evidence (score > 0) for
   /// [mood], used only as the carefully-ranked fallback when no direct match
   /// exists. Songs with zero evidence are never included.
+  ///
+  /// Keys off [MoodClassification.membershipScores], which excludes the weak year
+  /// proxy — so a song cannot qualify for a mood mix from its release year alone.
   List<SongTileData> _weakEvidenceMatches(
     List<SongTileData> allSongs,
     Map<int, MoodClassification> classifications,
@@ -354,7 +357,8 @@ class SmartMixService {
   ) {
     return [
       for (final song in allSongs)
-        if ((classifications[song.song.id]?.scores[mood] ?? 0.0) > 0) song,
+        if ((classifications[song.song.id]?.membershipScores[mood] ?? 0.0) > 0)
+          song,
     ];
   }
 

@@ -70,19 +70,6 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _onSaveClip() async {
-    if (_controller.isBusy || !_controller.selection.isUsable) return;
-    await _stopPreview();
-    try {
-      final clip = await _controller.export();
-      if (!mounted) return;
-      final name = _fileNameOf(clip.path);
-      await _showClipSavedDialog(name);
-    } on RingtoneOperationException catch (e) {
-      if (mounted) _snack(e.message);
-    }
-  }
-
   Future<void> _onSetAsRingtone() async {
     if (_controller.isBusy || !_controller.selection.isUsable) return;
     await _stopPreview();
@@ -96,36 +83,6 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
       case SetRingtoneOutcome.failed:
         _snack(_controller.lastError ?? 'Ringtone could not be set.');
     }
-  }
-
-  Future<void> _showClipSavedDialog(String fileName) async {
-    if (!mounted) return;
-    final theme = Theme.of(context);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Clip saved'),
-        content: Text(
-          'Your ringtone clip is ready.\n\n$fileName\n\n'
-          'Assign it from your device ringtone settings, or set it directly '
-          'now.',
-          style: theme.textTheme.bodyMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Done'),
-          ),
-          FilledButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _onSetAsRingtone();
-            },
-            child: const Text('Set as ringtone'),
-          ),
-        ],
-      ),
-    );
   }
 
   static String _fileNameOf(String path) {
@@ -402,9 +359,13 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
         padding: const EdgeInsets.all(AppTokens.s4),
         child: Column(
           children: [
-            Row(
+            Wrap(
+              spacing: AppTokens.s3,
+              runSpacing: AppTokens.s3,
+              alignment: WrapAlignment.spaceBetween,
               children: [
-                Expanded(
+                SizedBox(
+                  width: 168,
                   child: _precisionRow(
                     theme,
                     label: 'Start',
@@ -419,8 +380,8 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(width: AppTokens.s3),
-                Expanded(
+                SizedBox(
+                  width: 168,
                   child: _precisionRow(
                     theme,
                     label: 'End',
@@ -438,14 +399,16 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
               ],
             ),
             const SizedBox(height: AppTokens.s3),
-            Row(
+            Wrap(
+              spacing: AppTokens.s2,
+              runSpacing: AppTokens.s1,
+              alignment: WrapAlignment.end,
               children: [
                 TextButton.icon(
                   onPressed: () => _controller.selectAll(),
                   icon: const Icon(Icons.select_all_rounded, size: 18),
                   label: const Text('Use full track'),
                 ),
-                const Spacer(),
                 TextButton.icon(
                   onPressed: () => _controller.shiftBy(-1000),
                   icon: const Icon(Icons.fast_rewind_rounded, size: 18),
@@ -474,34 +437,36 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
     final canDecrement = onMinus != null;
     final canIncrement = onPlus != null;
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(
           tooltip: '$label −1s',
           onPressed: canDecrement ? onMinus : null,
           icon: const Icon(Icons.remove_circle_outline_rounded),
+          visualDensity: VisualDensity.compact,
         ),
-        Expanded(
-          child: Column(
-            children: [
-              Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
               ),
-              Text(
-                value,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+            ),
+            Text(
+              value,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         IconButton(
           tooltip: '$label +1s',
           onPressed: canIncrement ? onPlus : null,
           icon: const Icon(Icons.add_circle_outline_rounded),
+          visualDensity: VisualDensity.compact,
         ),
       ],
     );
@@ -547,14 +512,6 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
                       previewing
                           ? Icons.stop_rounded
                           : Icons.play_arrow_rounded,
-                    ),
-                  ),
-                  const SizedBox(width: AppTokens.s3),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: busy || !usable ? null : _onSaveClip,
-                      icon: const Icon(Icons.save_rounded),
-                      label: const Text('Save clip'),
                     ),
                   ),
                   const SizedBox(width: AppTokens.s3),

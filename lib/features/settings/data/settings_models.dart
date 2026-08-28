@@ -60,22 +60,18 @@ class AudioSettings {
 @immutable
 class LibrarySettings {
   const LibrarySettings({
-    this.autoRescanOnStart = false,
     this.cleanMissingFilesOnStart = true,
     this.scanOverWiFiOnly = false,
   });
 
-  final bool autoRescanOnStart;
   final bool cleanMissingFilesOnStart;
   final bool scanOverWiFiOnly;
 
   LibrarySettings copyWith({
-    bool? autoRescanOnStart,
     bool? cleanMissingFilesOnStart,
     bool? scanOverWiFiOnly,
   }) {
     return LibrarySettings(
-      autoRescanOnStart: autoRescanOnStart ?? this.autoRescanOnStart,
       cleanMissingFilesOnStart:
           cleanMissingFilesOnStart ?? this.cleanMissingFilesOnStart,
       scanOverWiFiOnly: scanOverWiFiOnly ?? this.scanOverWiFiOnly,
@@ -86,16 +82,11 @@ class LibrarySettings {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is LibrarySettings &&
-          other.autoRescanOnStart == autoRescanOnStart &&
           other.cleanMissingFilesOnStart == cleanMissingFilesOnStart &&
           other.scanOverWiFiOnly == scanOverWiFiOnly;
 
   @override
-  int get hashCode => Object.hash(
-    autoRescanOnStart,
-    cleanMissingFilesOnStart,
-    scanOverWiFiOnly,
-  );
+  int get hashCode => Object.hash(cleanMissingFilesOnStart, scanOverWiFiOnly);
 }
 
 /// Theme preference.
@@ -192,21 +183,19 @@ extension AudioSettingsJson on AudioSettings {
 extension LibrarySettingsJson on LibrarySettings {
   String toJson() =>
       '''
-{"autoRescanOnStart": $autoRescanOnStart,
- "cleanMissingFilesOnStart": $cleanMissingFilesOnStart,
+{"cleanMissingFilesOnStart": $cleanMissingFilesOnStart,
  "scanOverWiFiOnly": $scanOverWiFiOnly}''';
 
   static LibrarySettings fromJson(String json) {
     try {
-      final autoMatch = RegExp(r'"autoRescanOnStart"\s*:\s*(true|false)')
-          .firstMatch(json);
+      // Note: `autoRescanOnStart` was removed from settings; legacy JSON that
+      // still contains the key parses fine and the key is simply ignored.
       final cleanMatch = RegExp(
         r'"cleanMissingFilesOnStart"\s*:\s*(true|false)',
       ).firstMatch(json);
       final wifiMatch = RegExp(r'"scanOverWiFiOnly"\s*:\s*(true|false)')
           .firstMatch(json);
       return LibrarySettings(
-        autoRescanOnStart: autoMatch?.group(1) == 'true',
         cleanMissingFilesOnStart: cleanMatch?.group(1) == 'true',
         scanOverWiFiOnly: wifiMatch?.group(1) == 'true',
       );
@@ -259,8 +248,7 @@ extension AppSettingsJson on AppSettings {
 
   static String libraryToJson(LibrarySettings l) =>
       '''
-{"autoRescanOnStart": ${l.autoRescanOnStart},
- "cleanMissingFilesOnStart": ${l.cleanMissingFilesOnStart},
+{"cleanMissingFilesOnStart": ${l.cleanMissingFilesOnStart},
  "scanOverWiFiOnly": ${l.scanOverWiFiOnly}}''';
 
   static String appearanceToJson(AppearanceSettings a) =>
@@ -286,15 +274,12 @@ extension AppSettingsJson on AppSettings {
 
   static LibrarySettings _parseLibrary(String json) {
     try {
-      final autoMatch = RegExp(r'"autoRescanOnStart"\s*:\s*(true|false)')
-          .firstMatch(json);
       final cleanMatch = RegExp(
         r'"cleanMissingFilesOnStart"\s*:\s*(true|false)',
       ).firstMatch(json);
       final wifiMatch = RegExp(r'"scanOverWiFiOnly"\s*:\s*(true|false)')
           .firstMatch(json);
       return LibrarySettings(
-        autoRescanOnStart: autoMatch?.group(1) == 'true',
         cleanMissingFilesOnStart: cleanMatch?.group(1) == 'true',
         scanOverWiFiOnly: wifiMatch?.group(1) == 'true',
       );

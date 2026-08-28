@@ -1,37 +1,20 @@
-// Local, dependency-free search ranking and fuzzy matching.
+// Local, dependency-free search ranking and match highlighting.
 //
 // Kept deliberately SQL/`package`-free so it can run on the UI isolate without
-// FTS5 and stay testable. It ranks a bounded set of substring/prefix candidates
-// (selected by an indexed LIKE query) by how well they match the query, and
-// admits near-miss tokens via Levenshtein edit distance for light typo
-// tolerance. This is intentionally bounded — it never scans the whole library
-// on every keystroke.
+// FTS5 and stay testable. Search is intentionally simple: candidates are
+// selected by an indexed LIKE query and then filtered/ranked by plain,
+// case-insensitive substring matching. There is deliberately NO typo
+// correction, fuzzy ranking, spelling suggestions, or
+// exact -> prefix -> partial -> fuzzy pipeline — a query token must actually
+// appear in the text to match.
 
-/// Levenshtein edit distance between two strings.
-int levenshtein(String a, String b) {
-  if (a == b) return 0;
-  if (a.isEmpty) return b.length;
-  if (b.isEmpty) return a.length;
+/// Marks a run of characters within a search result as a match or not, so the
+/// UI can highlight the part of the title/metadata that matched the query.
+final class HighlightSpan {
+  const HighlightSpan({required this.text, required this.highlight});
 
-  var prev = List<int>.generate(b.length + 1, (i) => i);
-  var curr = List<int>.filled(b.length + 1, 0);
-
-  for (var i = 1; i <= a.length; i++) {
-    curr[0] = i;
-    for (var j = 1; j <= b.length; j++) {
-      final cost = a[i - 1] == b[j - 1] ? 0 : 1;
-      curr[j] = [
-        prev[j] + 1,
-        curr[j - 1] + 1,
-        prev[j - 1] + cost,
-      ].reduce((x, y) => x < y ? x : y);
-    }
-    final tmp = prev;
-    prev = curr;
-    curr = tmp;
-  }
-
-  return prev[b.length];
+  final String text;
+  final bool highlight;
 }
 
 /// Normalizes a piece of text for search comparison.
@@ -59,33 +42,74 @@ List<String> searchTokens(String text) {
       .toList();
 }
 
-/// Whether every significant query token matches some token in [fieldText],
-/// allowing up to [maxDistance] single-character edits per token.
+/// Case-insensitive partial (substring) match with no typo tolerance.
 ///
-/// Short tokens (< 4 chars) must match exactly to avoid noise. A query token
-/// matches a candidate token if they are equal or within the edit distance.
-/// Both sides are normalized (case/punctuation/apostrophes) before matching.
-bool tokenFuzzyMatch(String query, String fieldText, {int maxDistance = 1}) {
+/// Every normalized query token must appear as a substring somewhere in the
+/// normalized [text]. `Blind`, `Lights` and `blinding` all match
+/// "Blinding Lights", but a misspelt token such as `dragins` is not corrected
+/// against "Imagine Dragons".
+bool matchesPartial(String query, String text) {
   final qTokens = searchTokens(query);
   if (qTokens.isEmpty) return true;
 
-  final fieldTokens = searchTokens(fieldText);
-  if (fieldTokens.isEmpty) return false;
+  final normalized = normalizeSearchText(text);
+  if (normalized.isEmpty) return false;
 
   for (final qt in qTokens) {
-    var matched = false;
-    for (final ft in fieldTokens) {
-      if (ft == qt ||
-          (ft.length >= 4 &&
-              qt.length >= 4 &&
-              levenshtein(ft, qt) <= maxDistance)) {
-        matched = true;
-        break;
-      }
-    }
-    if (!matched) return false;
+    if (qt.isEmpty || !normalized.contains(qt)) return false;
   }
   return true;
+}
+
+/// Convenience alias kept so existing callers keep working. Now that fuzzy
+/// matching has been removed, this simply delegates to [matchesPartial].
+bool tokenFuzzyMatch(String query, String fieldText, {int maxDistance = 1}) {
+  return matchesPartial(query, fieldText);
+}
+
+/// Splits [text] into [HighlightSpan]s, flagging the substrings that match any
+/// normalized query token (case-insensitive). Matching text is highlighted so
+/// the UI can render the matched fragment distinctly.
+///
+/// This is cheap and allocation-bounded: it marks a per-character boolean mask
+/// and walks it once, producing at most a small number of spans. It never
+/// rebuilds the surrounding widget tree.
+List<HighlightSpan> highlightOccurrences(String text, String query) {
+  final tokens = searchTokens(query);
+  if (tokens.isEmpty || text.isEmpty) {
+    return [HighlightSpan(text: text, highlight: false)];
+  }
+
+  final n = text.length;
+  final mask = List<bool>.filled(n, false);
+  final lower = text.toLowerCase();
+
+  for (final token in tokens) {
+    if (token.isEmpty) continue;
+    var start = 0;
+    while (start <= lower.length - token.length) {
+      final idx = lower.indexOf(token, start);
+      if (idx < 0) break;
+      for (var i = idx; i < idx + token.length; i++) {
+        mask[i] = true;
+      }
+      start = idx + token.length;
+    }
+  }
+
+  final spans = <HighlightSpan>[];
+  var i = 0;
+  while (i < n) {
+    final isMatch = mask[i];
+    final runStart = i;
+    while (i < n && mask[i] == isMatch) {
+      i++;
+    }
+    spans.add(
+      HighlightSpan(text: text.substring(runStart, i), highlight: isMatch),
+    );
+  }
+  return spans;
 }
 
 /// Ranks one candidate given which fields matched. Higher is better.
@@ -100,6 +124,7 @@ int relevanceScore({
   required String album,
 }) {
   final q = normalizeSearchText(query);
+  if (q.isEmpty) return 0;
   final t = normalizeSearchText(title);
   final a = normalizeSearchText(artist);
   final al = normalizeSearchText(album);
@@ -108,25 +133,19 @@ int relevanceScore({
   if (a == q) return 900;
   if (al == q) return 800;
 
-  int fieldScore(String field, int base, String rawLabel) {
+  int fieldScore(String field, int base) {
     if (field == q) return base + 500;
-    if (field.startsWith(q)) return base + 300; // prefix
-    if (field.contains(' $q') || field.startsWith('$q ')) return base + 200;
-    if (field.contains(q)) return base + 100;
-    // No exact/prefix/word/substring hit, but the overall match admitted this
-    // field only through typo tolerance — keep it above a pure miss, yet below
-    // every clean partial match, preserving exact -> prefix -> partial -> fuzzy.
-    if (rawLabel.isNotEmpty && tokenFuzzyMatch(q, rawLabel)) return base + 40;
+    if (field.startsWith(q)) return base + 320; // prefix
+    if (field.contains(' $q') || field.startsWith('$q ')) return base + 220;
+    if (field.contains(q)) return base + 120; // bare substring
     return 0;
   }
 
   final score = [
-    fieldScore(t, 400, title),
-    fieldScore(a, 300, artist),
-    fieldScore(al, 200, album),
+    fieldScore(t, 400),
+    fieldScore(a, 300),
+    fieldScore(al, 200),
   ].reduce((x, y) => x > y ? x : y);
 
-  // Small bonus for matches across the earliest query token, so partial
-  // multi-word queries still surface the most relevant titles.
   return score;
 }

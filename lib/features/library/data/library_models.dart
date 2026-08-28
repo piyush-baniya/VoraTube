@@ -87,6 +87,7 @@ final class SearchResults {
     required this.albums,
     required this.artists,
     required this.playlists,
+    this.playlistCountsById = const {},
   });
 
   final String query;
@@ -94,6 +95,10 @@ final class SearchResults {
   final List<AlbumSummary> albums;
   final List<ArtistSummary> artists;
   final List<Playlist> playlists;
+
+  /// Playlist row id -> number of songs in that playlist, so search result
+  /// tiles show a real count without inventing a `songCount` on [Playlist].
+  final Map<int, int> playlistCountsById;
 
   bool get isEmpty =>
       songs.isEmpty && albums.isEmpty && artists.isEmpty && playlists.isEmpty;
@@ -110,6 +115,7 @@ final class ListeningStats {
     this.mostPlayedSongTitle,
     this.mostPlayedSongArtist,
     this.mostPlayedSongCount = 0,
+    this.mostPlayedSongArtPath,
   });
 
   final int totalSongs;
@@ -123,6 +129,11 @@ final class ListeningStats {
   final String? mostPlayedSongTitle;
   final String? mostPlayedSongArtist;
   final int mostPlayedSongCount;
+
+  /// Cached artwork path for [mostPlayedSongTitle], resolved the same way the
+  /// song lists do (song_extras override, then album art). Null when the song
+  /// has no resolved artwork yet.
+  final String? mostPlayedSongArtPath;
 
   bool get hasActivity => totalPlays > 0;
 

@@ -98,10 +98,16 @@ void main() {
 
       // Song results now reuse the shared SongTile (which carries the
       // three-dot song menu, favorite button and playing indicator) instead of
-      // a bespoke row with no menu.
-      expect(find.byType(SongTile), findsWidgets);
-      expect(find.byIcon(Icons.more_vert_rounded), findsWidgets);
-      expect(find.text('Song 1'), findsOneWidget);
+      // a bespoke row with no menu. The title is rendered as a highlight
+      // RichText, so match it by its concatenated span text.
+      expect(find.byType(SongTile), findsNWidgets(3));
+      expect(find.byIcon(Icons.more_vert_rounded), findsNWidgets(3));
+      final renderedTitles = tester
+          .widgetList<RichText>(find.byType(RichText))
+          .map((r) => (r.text as TextSpan).toPlainText())
+          .where((t) => t.contains('Song'))
+          .toList();
+      expect(renderedTitles, containsAll(['Song 1', 'Song 2', 'Song 3']));
     });
   });
 }

@@ -123,11 +123,6 @@ class LibrarySettingsController extends StateNotifier<LibrarySettings> {
     } catch (_) {}
   }
 
-  Future<void> setAutoRescanOnStart(bool v) async {
-    state = state.copyWith(autoRescanOnStart: v);
-    await _repository.kvSet(SettingsKeys.library, state.toJson());
-  }
-
   Future<void> setCleanMissingFilesOnStart(bool v) async {
     state = state.copyWith(cleanMissingFilesOnStart: v);
     await _repository.kvSet(SettingsKeys.library, state.toJson());
@@ -195,7 +190,15 @@ final storageInfoProvider = FutureProvider.autoDispose<StorageInfo>((
   final dbSize = await _getFileSize(await _getDatabasePath());
   int artSize = 0;
   int impSize = 0;
-  final root = await ingest.importedFilesRoot();
+  // On Android, imported music lives in MediaStore (not app-controlled files),
+  // so importedFilesRoot() is unsupported there. Guard it so storage info still
+  // reports the database + artwork cache sizes instead of erroring out.
+  Directory? root;
+  try {
+    root = await ingest.importedFilesRoot();
+  } catch (_) {
+    root = null;
+  }
   if (root != null && await root.exists()) {
     await for (final e in root.list(recursive: true, followLinks: false)) {
       if (e is File) {

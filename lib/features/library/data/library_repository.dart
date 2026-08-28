@@ -1138,6 +1138,27 @@ extension LibraryQueries on LibraryRepository {
     }
     playlistScored.sort((a, b) => b.$2.compareTo(a.$2));
 
+    // Real per-playlist song counts (the Playlist row itself has no count
+    // field). Used by the search UI to subtitle each playlist result.
+    final topPlaylists = playlistScored.take(perSectionLimit).toList();
+    final playlistCounts = <int, int>{};
+    if (topPlaylists.isNotEmpty) {
+      final idColumn = _db.playlistSongs.playlistId;
+      final countRows =
+          await (_db.selectOnly(_db.playlistSongs)
+                ..addColumns([idColumn, _db.playlistSongs.songRowId.count()])
+                ..where(idColumn.isIn([for (final e in topPlaylists) e.$1.id]))
+                ..groupBy([idColumn]))
+              .get();
+      for (final row in countRows) {
+        final id = row.read(idColumn);
+        if (id != null) {
+          playlistCounts[id] =
+              row.read(_db.playlistSongs.songRowId.count()) ?? 0;
+        }
+      }
+    }
+
     return SearchResults(
       query: q,
       songs: await _decorate(rankedSongs),
@@ -1161,7 +1182,8 @@ extension LibraryQueries on LibraryRepository {
             songCount: 0,
           ),
       ],
-      playlists: playlistScored.take(perSectionLimit).map((e) => e.$1).toList(),
+      playlists: [for (final e in topPlaylists) e.$1],
+      playlistCountsById: playlistCounts,
     );
   }
 }
@@ -1226,6 +1248,34 @@ extension SongArtworkOverrides on LibraryRepository {
     }
     return out;
   }
+
+  /// Resolves the best artwork path for a single song, mirroring [_decorate]:
+  /// a song_extras override (custom art, then per-song resolved art) wins,
+  /// otherwise the album's cached art is used. Null when neither is available.
+  Future<String?> _resolvedArtPath(int songId, int? albumRowId) async {
+    final extras = await _db
+        .customSelect(
+          'SELECT custom_art_path, art_large_path, art_small_path '
+          'FROM song_extras WHERE song_id = ?',
+          variables: [Variable<int>(songId)],
+        )
+        .getSingleOrNull();
+    if (extras != null) {
+      final override =
+          _pickArt(
+            extras.data['custom_art_path'] as String?,
+            extras.data['art_large_path'] as String?,
+          ) ??
+          _pickArt(null, extras.data['art_small_path'] as String?);
+      if (override != null) return override;
+    }
+    if (albumRowId == null) return null;
+    final album = await (_db.select(
+      _db.albums,
+    )..where((tbl) => tbl.id.equals(albumRowId))).getSingleOrNull();
+    if (album == null) return null;
+    return _pickArt(album.artLargePath, album.artSmallPath);
+  }
 }
 
 extension FilteredSongQueries on LibraryRepository {
@@ -1257,6 +1307,42 @@ extension FilteredSongQueries on LibraryRepository {
                 (t) => OrderingTerm.desc(t.dateAddedSec),
                 (t) => OrderingTerm.asc(t.titleSearch),
               ])
+              ..limit(limit))
+            .get();
+    return _decorate(rows);
+  }
+
+  Future<List<SongTileData>> songsForGenre(
+    String genre, {
+    int limit = 1000,
+  }) async {
+    final rows =
+        await (_db.select(_db.songs)
+              ..where((tbl) => tbl.genre.equals(genre))
+              ..orderBy([
+                (t) => OrderingTerm.desc(t.dateAddedSec),
+                (t) => OrderingTerm.asc(t.titleSearch),
+              ])
+              ..limit(limit))
+            .get();
+    return _decorate(rows);
+  }
+
+  /// Songs the user explicitly hid via the song overflow menu ("Hide song").
+  ///
+  /// The normal browsing queries exclude these rows, so the Settings →
+  /// "Show Hidden Songs" screen needs a dedicated read that surfaces them for
+  /// restoration. Reuses the shared [_decorate] so artwork and ReplayGain are
+  /// resolved exactly as they are everywhere else.
+  Future<List<SongTileData>> hiddenSongs({int limit = 1000}) async {
+    final hiddenIds = await hiddenSongIds();
+    if (hiddenIds.isEmpty) {
+      return const [];
+    }
+    final rows =
+        await (_db.select(_db.songs)
+              ..where((tbl) => tbl.id.isIn(hiddenIds))
+              ..orderBy([(t) => OrderingTerm.asc(t.titleSearch)])
               ..limit(limit))
             .get();
     return _decorate(rows);
@@ -1518,9 +1604,11 @@ extension CollectionQueries on LibraryRepository {
     String? topSongTitle;
     String? topSongArtist;
     var topSongCount = 0;
+    String? topSongArtPath;
     final topRow = await _db
         .customSelect(
-          'SELECT s.title AS title, s.artist AS artist, '
+          'SELECT s.id AS id, s.album_row_id AS album_row_id, '
+          's.title AS title, s.artist AS artist, '
           'st.play_count AS count '
           'FROM song_stats st JOIN songs s ON s.id = st.song_id '
           'ORDER BY st.play_count DESC, s.title ASC LIMIT 1',
@@ -1532,6 +1620,11 @@ extension CollectionQueries on LibraryRepository {
         topSongTitle = topRow.data['title'] as String?;
         topSongArtist = topRow.data['artist'] as String?;
         topSongCount = count;
+        final songId = (topRow.data['id'] as num?)?.toInt();
+        final albumRowId = (topRow.data['album_row_id'] as num?)?.toInt();
+        if (songId != null) {
+          topSongArtPath = await _resolvedArtPath(songId, albumRowId);
+        }
       }
     }
 
@@ -1549,6 +1642,7 @@ extension CollectionQueries on LibraryRepository {
       mostPlayedSongTitle: topSongTitle,
       mostPlayedSongArtist: topSongArtist,
       mostPlayedSongCount: topSongCount,
+      mostPlayedSongArtPath: topSongArtPath,
     );
   }
 

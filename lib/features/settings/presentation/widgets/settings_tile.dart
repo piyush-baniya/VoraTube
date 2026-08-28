@@ -16,6 +16,7 @@ class SettingsTile extends StatelessWidget {
     this.subtitleStyle,
     this.onLongPress,
     this.showDivider = true,
+    this.isLastInSection = false,
     this.contentPadding,
   });
 
@@ -27,6 +28,7 @@ class SettingsTile extends StatelessWidget {
   final TextStyle? subtitleStyle;
   final VoidCallback? onLongPress;
   final bool showDivider;
+  final bool isLastInSection;
   final EdgeInsetsGeometry? contentPadding;
 
   @override
@@ -34,7 +36,12 @@ class SettingsTile extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final isInteractive = onTap != null;
+    final effectivePadding =
+        contentPadding ??
+        const EdgeInsets.symmetric(
+          horizontal: AppTokens.s5,
+          vertical: AppTokens.s3,
+        );
 
     return Column(
       children: [
@@ -48,12 +55,7 @@ class SettingsTile extends StatelessWidget {
               onTap: onTap,
               onLongPress: onLongPress,
               child: Padding(
-                padding:
-                    contentPadding ??
-                    const EdgeInsets.symmetric(
-                      horizontal: AppTokens.s5,
-                      vertical: AppTokens.s3,
-                    ),
+                padding: effectivePadding,
                 child: Row(
                   children: [
                     if (leading != null) ...[
@@ -93,13 +95,12 @@ class SettingsTile extends StatelessWidget {
             ),
           ),
         ),
-        if (showDivider)
+        // Full-width divider that respects the content padding, no trailing
+        // divider when this is the last tile in its section.
+        if (showDivider && !isLastInSection)
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppTokens.s5 + 48 + AppTokens.s3,
-              0,
-              AppTokens.s5,
-              0,
+            padding: EdgeInsets.symmetric(
+              horizontal: effectivePadding.horizontal,
             ),
             child: Divider(
               height: AppTokens.borderHairline,
@@ -124,6 +125,7 @@ class SettingsSwitchTile extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.onTap,
+    this.isLastInSection = false,
   });
 
   final String title;
@@ -132,6 +134,7 @@ class SettingsSwitchTile extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
   final VoidCallback? onTap;
+  final bool isLastInSection;
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +143,7 @@ class SettingsSwitchTile extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
 
     return SettingsTile(
+      isLastInSection: isLastInSection,
       title: title,
       subtitle: subtitle,
       leading: leading,
@@ -174,6 +178,7 @@ class SettingsSliderTile extends StatelessWidget {
     required this.max,
     required this.divisions,
     this.label,
+    this.isLastInSection = false,
   });
 
   final String title;
@@ -185,6 +190,7 @@ class SettingsSliderTile extends StatelessWidget {
   final double max;
   final int divisions;
   final String? label;
+  final bool isLastInSection;
 
   @override
   Widget build(BuildContext context) {
@@ -192,6 +198,7 @@ class SettingsSliderTile extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return SettingsTile(
+      isLastInSection: isLastInSection,
       title: title,
       subtitle: subtitle,
       leading: leading,
@@ -231,6 +238,7 @@ class SettingsSelectTile<T> extends StatelessWidget {
     required this.onChanged,
     required this.items,
     this.itemBuilder,
+    this.isLastInSection = false,
   });
 
   final String title;
@@ -240,6 +248,7 @@ class SettingsSelectTile<T> extends StatelessWidget {
   final ValueChanged<T> onChanged;
   final List<T> items;
   final Widget Function(BuildContext, T)? itemBuilder;
+  final bool isLastInSection;
 
   @override
   Widget build(BuildContext context) {
@@ -247,6 +256,7 @@ class SettingsSelectTile<T> extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return SettingsTile(
+      isLastInSection: isLastInSection,
       title: title,
       subtitle: subtitle,
       leading: leading,
@@ -284,6 +294,7 @@ class SettingsActionTile extends StatelessWidget {
     required this.onPressed,
     this.buttonStyle = FilledButton.styleFrom,
     this.isDestructive = false,
+    this.isLastInSection = false,
   });
 
   final String title;
@@ -293,6 +304,7 @@ class SettingsActionTile extends StatelessWidget {
   final VoidCallback onPressed;
   final ButtonStyle Function() buttonStyle;
   final bool isDestructive;
+  final bool isLastInSection;
 
   @override
   Widget build(BuildContext context) {
@@ -300,6 +312,7 @@ class SettingsActionTile extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return SettingsTile(
+      isLastInSection: isLastInSection,
       title: title,
       subtitle: subtitle,
       leading: leading,

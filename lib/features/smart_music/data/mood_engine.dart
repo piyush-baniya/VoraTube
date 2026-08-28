@@ -9,6 +9,7 @@ class MoodClassification {
     required this.confidence,
     required this.secondaryMoods,
     this.scores = const {},
+    this.membershipScores = const {},
   });
 
   final SongMood primaryMood;
@@ -28,6 +29,18 @@ class MoodClassification {
   /// [MoodEngine.primaryEvidenceThreshold] and so do not create false secondary
   /// membership on their own.
   final Map<SongMood, double> scores;
+
+  /// Evidence eligible for weak-fallback mix membership: strong (keyword/genre)
+  /// evidence plus the duration nudge, but explicitly excluding the weak year
+  /// proxy.
+  ///
+  /// The year nudge is a coarse era heuristic (old releases get a small sad/chill
+  /// bump, recent ones a happy/energetic bump) that is useful for ranking but
+  /// must not, on its own, place a song into a mood mix — otherwise an old happy
+  /// song leaks into the Sad mix purely from its release year. Duration is kept
+  /// because track length is a genuine audio signal (long tracks really are more
+  /// often chill/focus).
+  final Map<SongMood, double> membershipScores;
 }
 
 class MoodEngine {
@@ -317,6 +330,7 @@ class MoodEngine {
           confidence: 1.0,
           secondaryMoods: const {},
           scores: const {},
+          membershipScores: const {},
         );
       }
     }
@@ -340,15 +354,24 @@ class MoodEngine {
         confidence: 0.0,
         secondaryMoods: {},
         scores: {},
+        membershipScores: {},
       );
     }
 
     final support = <SongMood, double>{};
+    final durationSupport = <SongMood, double>{};
     for (final mood in SongMood.values) {
       support[mood] = 0.0;
+      durationSupport[mood] = 0.0;
     }
-    _scoreByDuration(durationMs, support);
+    _scoreByDuration(durationMs, durationSupport);
     _scoreByYear(year, support);
+    // The combined support map keeps both nudges for ranking, but the year proxy
+    // is tracked separately from the duration nudge so the latter — a genuine
+    // audio signal — can still drive weak-fallback membership on its own.
+    for (final mood in SongMood.values) {
+      support[mood] = (support[mood] ?? 0.0) + (durationSupport[mood] ?? 0.0);
+    }
 
     // The primary mood comes from the strongest genuine (strong) evidence.
     final primaryMood = strong.entries
@@ -380,8 +403,14 @@ class MoodEngine {
     // far below [primaryEvidenceThreshold], so they do not create secondary
     // mix membership on their own.
     final scores = <SongMood, double>{};
+    // Membership-eligible evidence: strong + duration nudge, but NOT the weak
+    // year proxy. This is the map weak-fallback mix membership keys off of, so a
+    // song cannot leak into a mood mix from its release year alone.
+    final membershipScores = <SongMood, double>{};
     for (final mood in SongMood.values) {
       scores[mood] = (strong[mood] ?? 0.0) + (support[mood] ?? 0.0);
+      membershipScores[mood] =
+          (strong[mood] ?? 0.0) + (durationSupport[mood] ?? 0.0);
     }
 
     return MoodClassification(
@@ -389,6 +418,7 @@ class MoodEngine {
       confidence: confidence,
       secondaryMoods: secondaryMoods,
       scores: Map.unmodifiable(scores),
+      membershipScores: Map.unmodifiable(membershipScores),
     );
   }
 

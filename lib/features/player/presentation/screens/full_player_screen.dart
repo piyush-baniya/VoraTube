@@ -85,6 +85,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
                       }
                     },
                     child: _TopBar(
+                      identityKey: current.identityKey,
                       onQueueTap: () => QueueSheet.show(context),
                       onPlaylistTap: () =>
                           _openPlaylistPicker(current.identityKey),
@@ -165,8 +166,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
                 title: current.title,
                 artist: current.artist,
                 album: current.album,
-                identityKey: current.identityKey,
               ),
+              const SizedBox(height: AppTokens.s2),
+              // Volume booster
+              _BoostButton(),
               const SizedBox(height: AppTokens.s5),
               // Progress
               _PositionConsumer(),
@@ -197,7 +200,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
           title: current.title,
           artist: current.artist,
           album: current.album,
-          identityKey: current.identityKey,
         ),
         const SizedBox(height: AppTokens.s4),
         _PositionConsumer(),
@@ -355,6 +357,7 @@ class _BackgroundPulseState extends State<_BackgroundPulse>
 
 class _TopBar extends StatelessWidget {
   const _TopBar({
+    required this.identityKey,
     required this.onQueueTap,
     required this.onPlaylistTap,
     required this.onLyricsTap,
@@ -362,6 +365,7 @@ class _TopBar extends StatelessWidget {
     required this.isDark,
   });
 
+  final String identityKey;
   final VoidCallback onQueueTap;
   final VoidCallback onPlaylistTap;
   final VoidCallback onLyricsTap;
@@ -401,6 +405,9 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          // Favorite button (kept beside Lyrics per design)
+          _FavoriteButton(identityKey: identityKey),
+          const SizedBox(width: AppTokens.s2),
           // Lyrics button
           PressableScale(
             onTap: onLyricsTap,
@@ -479,17 +486,11 @@ class _TopBar extends StatelessWidget {
 }
 
 class _SongMetadata extends StatelessWidget {
-  const _SongMetadata({
-    required this.title,
-    required this.artist,
-    this.album,
-    required this.identityKey,
-  });
+  const _SongMetadata({required this.title, required this.artist, this.album});
 
   final String title;
   final String? artist;
   final String? album;
-  final String identityKey;
 
   @override
   Widget build(BuildContext context) {
@@ -538,8 +539,6 @@ class _SongMetadata extends StatelessWidget {
           ),
         ],
         const SizedBox(height: AppTokens.s4),
-        // Favorite button
-        _FavoriteButton(identityKey: identityKey),
       ],
     );
   }
@@ -627,6 +626,240 @@ class _PositionConsumer extends ConsumerWidget {
             onSeek: (pos) => ref.read(playerProvider).seek(pos),
           ),
         );
+  }
+}
+
+/// Compact booster button docked between the song metadata and the progress
+/// bar. Tapping opens the [VolumeBoostSheet]. Shows the live percentage so the
+/// user always sees the current boost without opening the sheet.
+class _BoostButton extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final boost = ref.watch(volumeBoostProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    final percent = ((boost - 1.0) * 100).round();
+    final boosted = percent > 0;
+
+    return Center(
+      child: PressableScale(
+        onTap: () => VolumeBoostSheet.show(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.s3,
+            vertical: AppTokens.s1,
+          ),
+          decoration: BoxDecoration(
+            color: boosted
+                ? colorScheme.primary.withValues(alpha: 0.10)
+                : colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(AppTokens.rFull),
+            border: Border.all(
+              color: boosted
+                  ? colorScheme.primary.withValues(alpha: 0.25)
+                  : colorScheme.outlineVariant.withValues(alpha: 0.3),
+              width: AppTokens.borderHairline,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.hearing_rounded,
+                size: 16,
+                color: boosted
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: AppTokens.s1),
+              Text(
+                'Volume boost: ${boost == 1.0 ? 'off' : '$percent%'}',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: boosted
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Clean modal sheet hosting the 100%–200% volume-boost slider.
+class VolumeBoostSheet extends ConsumerStatefulWidget {
+  const VolumeBoostSheet({super.key});
+
+  static void show(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const VolumeBoostSheet(),
+    );
+  }
+
+  @override
+  ConsumerState<VolumeBoostSheet> createState() => _VolumeBoostSheetState();
+}
+
+class _VolumeBoostSheetState extends ConsumerState<VolumeBoostSheet> {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final boost = ref.watch(volumeBoostProvider);
+    final percent = ((boost - 1.0) * 100).round();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(AppTokens.rXl),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppTokens.s6,
+            AppTokens.s4,
+            AppTokens.s6,
+            AppTokens.s6,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppTokens.s5),
+              Row(
+                children: [
+                  Icon(Icons.hearing_rounded, color: colorScheme.primary),
+                  const SizedBox(width: AppTokens.s3),
+                  Text(
+                    'Volume boost',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$percent%',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppTokens.s3),
+              Text(
+                'Boost playback volume up to 200%. Higher levels may clip or '
+                'distort on some tracks.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppTokens.s5),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: colorScheme.primary,
+                  inactiveTrackColor: colorScheme.primary.withValues(
+                    alpha: 0.15,
+                  ),
+                  thumbColor: colorScheme.primary,
+                  overlayColor: colorScheme.primary.withValues(alpha: 0.12),
+                  trackHeight: 4,
+                  valueIndicatorColor: colorScheme.primary,
+                  valueIndicatorTextStyle: theme.textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onPrimary,
+                  ),
+                ),
+                child: Slider(
+                  min: 100,
+                  max: 200,
+                  divisions: 20,
+                  value: boost * 100,
+                  label: '$percent%',
+                  onChanged: (value) => ref
+                      .read(volumeBoostProvider.notifier)
+                      .setBoost(value / 100),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _BoostPreset(
+                    label: '100%',
+                    onTap: () =>
+                        ref.read(volumeBoostProvider.notifier).setBoost(1.0),
+                  ),
+                  _BoostPreset(
+                    label: '150%',
+                    onTap: () =>
+                        ref.read(volumeBoostProvider.notifier).setBoost(1.5),
+                  ),
+                  _BoostPreset(
+                    label: '200%',
+                    onTap: () =>
+                        ref.read(volumeBoostProvider.notifier).setBoost(2.0),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BoostPreset extends StatelessWidget {
+  const _BoostPreset({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return PressableScale(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s4,
+          vertical: AppTokens.s2,
+        ),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.6),
+          borderRadius: BorderRadius.circular(AppTokens.rMd),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
   }
 }
 

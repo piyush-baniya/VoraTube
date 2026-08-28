@@ -6,6 +6,8 @@ import '../../../../core/player/player_controller.dart';
 import '../../../library/data/library_repository.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
+import '../../../settings/presentation/providers/settings_providers.dart';
+import '../../../settings/data/settings_models.dart';
 
 /// The app's single [PlayerController], created during bootstrap in
 /// `main()` and injected here via override.
@@ -72,6 +74,28 @@ final currentTrackIdentityProvider = Provider<String?>((ref) {
 final playbackIsPlayingProvider = Provider<bool>((ref) {
   return ref.watch(playbackStateProvider).isPlaying;
 });
+
+/// Output volume boost (1.0 = normal, up to 2.0 = maximum boost).
+///
+/// This is the user-facing source of truth for the booster; every change is
+/// pushed straight to the player's volume chain, so the slider and the audio
+/// output never diverge.
+class VolumeBoostController extends StateNotifier<double> {
+  VolumeBoostController(this._player) : super(1.0);
+
+  final PlayerController _player;
+
+  Future<void> setBoost(double multiplier) async {
+    final clamped = multiplier.clamp(1.0, 2.0);
+    state = clamped;
+    await _player.setVolumeBoost(clamped);
+  }
+}
+
+final volumeBoostProvider =
+    StateNotifierProvider<VolumeBoostController, double>((ref) {
+      return VolumeBoostController(ref.watch(playerProvider));
+    });
 
 /// The currently loaded track, or null when nothing is loaded.
 ///
@@ -218,3 +242,29 @@ Future<void> startPlaybackOfWholeLibrary(WidgetRef ref) async {
   }
   await ref.read(playerProvider).playQueue(songs);
 }
+
+/// Bridges persisted audio settings (ReplayGain mode + preamp) to the player.
+///
+/// The settings UI saves to [audioSettingsProvider], but nothing was forwarding
+/// those values to the player's volume chain — so Preamp appeared to do
+/// nothing. This provider watches the settings and pushes every change to the
+/// player. It also applies the stored values once at startup so the player and
+/// settings agree after a cold launch.
+final audioSettingsBridgeProvider = Provider((ref) {
+  final player = ref.watch(playerProvider);
+  void push(AudioSettings settings) {
+    final mode = switch (settings.replayGain) {
+      ReplayGainPreference.off => ReplayGainMode.off,
+      ReplayGainPreference.track => ReplayGainMode.track,
+      ReplayGainPreference.album => ReplayGainMode.album,
+    };
+    player.setReplayGainMode(mode, preampDb: settings.preampDb);
+  }
+
+  ref.listen<AudioSettings>(
+    audioSettingsProvider,
+    (_, settings) => push(settings),
+  );
+  // Apply current stored settings immediately so startup state is correct.
+  push(ref.read(audioSettingsProvider));
+});

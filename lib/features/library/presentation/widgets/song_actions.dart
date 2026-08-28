@@ -364,6 +364,15 @@ class SongActions {
       ),
     );
 
+    // Capture the field values BEFORE disposing the controllers — reading .text
+    // from a disposed TextEditingController throws a lifecycle assertion, which
+    // was the crash reported when saving from the Edit Tags dialog.
+    final newTitle = titleCtrl.text.trim();
+    final newArtist = artistCtrl.text.trim();
+    final newAlbum = albumCtrl.text.trim();
+    final newGenre = genreCtrl.text.trim();
+    final year = int.tryParse(yearCtrl.text.trim());
+
     titleCtrl.dispose();
     artistCtrl.dispose();
     albumCtrl.dispose();
@@ -371,19 +380,17 @@ class SongActions {
     yearCtrl.dispose();
 
     if (saved != true) return;
-    final newTitle = titleCtrl.text.trim();
     if (newTitle.isEmpty) {
       if (context.mounted) _snack(context, 'Title cannot be empty');
       return;
     }
-    final year = int.tryParse(yearCtrl.text.trim());
     try {
       await repo.updateSongTags(
         song.id,
         title: newTitle,
-        artist: artistCtrl.text.trim().isEmpty ? null : artistCtrl.text.trim(),
-        albumName: albumCtrl.text.trim().isEmpty ? null : albumCtrl.text.trim(),
-        genre: genreCtrl.text.trim().isEmpty ? null : genreCtrl.text.trim(),
+        artist: newArtist.isEmpty ? null : newArtist,
+        albumName: newAlbum.isEmpty ? null : newAlbum,
+        genre: newGenre.isEmpty ? null : newGenre,
         year: year,
       );
       ref.invalidate(pagedSongsProvider);

@@ -35,7 +35,6 @@ class GlassNavBar extends StatelessWidget {
 
   static const double _barHeight = 72;
   static const double _pillHeight = 56;
-  static const double _innerPadX = AppTokens.s2;
   static const double _barMarginH = AppTokens.s3;
 
   @override
@@ -77,9 +76,10 @@ class GlassNavBar extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth;
-            final available = width - (_innerPadX * 2);
-            final itemW = available / destinations.length;
-            final centerX = _innerPadX + itemW * (currentIndex + 0.5);
+            // Each Expanded destination divides the full width evenly, so the
+            // active pill must be sized and centred against the full width too.
+            final itemW = width / destinations.length;
+            final centerX = itemW * (currentIndex + 0.5);
             final alignX = -1 + (2 * centerX / width);
 
             return Stack(

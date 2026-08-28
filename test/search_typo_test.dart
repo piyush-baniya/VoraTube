@@ -71,21 +71,25 @@ void main() {
     await db.close();
   });
 
-  group('searchAll typo tolerance', () {
-    test('imagine dragins finds Imagine Dragons', () async {
+  group('searchAll simple matching (no typo tolerance)', () {
+    test('imagine dragins does NOT match (typos not corrected)', () async {
       final r = await repo.searchAll('imagine dragins');
+      expect(r.songs, isEmpty);
+    });
+
+    test('linkn park does NOT match (typos not corrected)', () async {
+      final r = await repo.searchAll('linkn park');
+      expect(r.songs, isEmpty);
+    });
+
+    test('partial queries match: imagine finds Imagine Dragons', () async {
+      final r = await repo.searchAll('imagine');
       expect(r.songs, isNotEmpty);
       expect(r.songs.first.song.title, 'Radioactive');
     });
 
-    test('linkn park finds Linkin Park', () async {
-      final r = await repo.searchAll('linkn park');
-      expect(r.songs, isNotEmpty);
-      expect(r.songs.first.song.title, 'In The End');
-    });
-
-    test('weeknd finds The Weeknd', () async {
-      final r = await repo.searchAll('weeknd');
+    test('mid-word substring: eeknd finds The Weeknd', () async {
+      final r = await repo.searchAll('eeknd');
       expect(r.songs, isNotEmpty);
       expect(r.songs.first.song.title, 'Blinding Lights');
     });

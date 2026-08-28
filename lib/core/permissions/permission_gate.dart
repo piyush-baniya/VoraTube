@@ -34,6 +34,11 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
     with WidgetsBindingObserver {
   _GateStatus _status = _GateStatus.checking;
 
+  /// Whether an initial scan has already been triggered on the current
+  /// permission-granted session, so we don't fire one every time the app
+  /// returns to the foreground with permission still granted.
+  bool _initialScanTriggered = false;
+
   @override
   void initState() {
     super.initState();
@@ -61,7 +66,10 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
   Future<void> _refresh() async {
     // iOS does not need an audio-library permission for V1 file import.
     if (defaultTargetPlatform != TargetPlatform.android) {
-      if (mounted) setState(() => _status = _GateStatus.granted);
+      if (mounted) {
+        setState(() => _status = _GateStatus.granted);
+        _triggerInitialScan();
+      }
       return;
     }
     final service = ref.read(permissionServiceProvider);
@@ -89,6 +97,7 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
   }
 
   void _apply(MediaPermissionStatus status) {
+    final wasGranted = _status == _GateStatus.granted;
     setState(() {
       _status = switch (status) {
         MediaPermissionStatus.granted => _GateStatus.granted,
@@ -96,6 +105,29 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
           _GateStatus.permanentlyDenied,
         MediaPermissionStatus.denied => _GateStatus.denied,
       };
+    });
+    // Trigger an initial scan the moment audio permission is granted. This
+    // fires both on the very first permission check (when the user already
+    // had the permission from a prior install) and after the user taps
+    // "Allow access to music" on the permission screen.
+    if (_status == _GateStatus.granted && !wasGranted) {
+      _triggerInitialScan();
+    }
+  }
+
+  /// Kicks off an initial library scan once permission is granted. The scan
+  /// controller itself is idempotent (it no-ops when a scan is already
+  /// running), so calling this multiple times is safe.
+  void _triggerInitialScan() {
+    if (_initialScanTriggered) return;
+    _initialScanTriggered = true;
+    // iOS uses user-initiated file import (no automatic scan via
+    // MediaStore), so only trigger an automatic scan on Android.
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    // Schedule after the first frame so the widget tree is ready and the
+    // scan doesn't race with provider initialization.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(scanControllerProvider.notifier).startScan();
     });
   }
 

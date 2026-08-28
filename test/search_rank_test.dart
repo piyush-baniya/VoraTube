@@ -2,52 +2,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vora_tube/features/search/data/search_rank.dart';
 
 void main() {
-  group('levenshtein', () {
-    test('distance is zero for identical strings', () {
-      expect(levenshtein('drake', 'drake'), 0);
-    });
-
-    test('distance counts single edit', () {
-      expect(levenshtein('kitten', 'sitten'), 1);
-      expect(levenshtein('apple', 'aple'), 1);
-    });
-
-    test('distance grows with unrelated words', () {
-      expect(levenshtein('drizzy', 'drake'), greaterThan(1));
-    });
-
-    test('distance for empty strings', () {
-      expect(levenshtein('', ''), 0);
-      expect(levenshtein('abc', ''), 3);
-    });
-  });
-
-  group('tokenFuzzyMatch', () {
-    test('matches exact tokens ignoring case', () {
+  group('tokenFuzzyMatch (now simple partial matching)', () {
+    test('matches tokens via substring, ignoring case', () {
       expect(tokenFuzzyMatch('drake', 'Drake'), true);
-    });
-
-    test('matches typos within edit distance', () {
-      expect(tokenFuzzyMatch('drizzy', 'drizzy'), true);
       expect(tokenFuzzyMatch('drizzy drake', 'drizzy drake'), true);
     });
+
+    test(
+      'partial tokens match as substrings',
+      () => expect(tokenFuzzyMatch('blind', 'Blinding Lights'), true),
+    );
 
     test('rejects clearly different tokens', () {
       expect(tokenFuzzyMatch('coldplay', 'drake'), false);
     });
 
-    test('short tokens must match exactly to avoid noise', () {
-      expect(tokenFuzzyMatch('drake', 'drake123'), false);
+    test('typos are NOT corrected (fuzzy search removed)', () {
+      expect(tokenFuzzyMatch('imagine dragins', 'Imagine Dragons'), false);
+      expect(tokenFuzzyMatch('linkn park', 'Linkin Park'), false);
     });
 
-    test('admitted the spec typo examples across tokens', () {
-      expect(tokenFuzzyMatch('imagine dragins', 'Imagine Dragons'), true);
-      expect(tokenFuzzyMatch('linkn park', 'Linkin Park'), true);
-      expect(tokenFuzzyMatch('weeknd', 'The Weeknd'), true);
-    });
-
-    test('normalizes case, spaces, punctuation and apostrophes', () {
-      expect(tokenFuzzyMatch("o'clock", 'o clock'), true);
+    test('normalizes case, spaces and punctuation', () {
       expect(tokenFuzzyMatch("o'clock", 'oclock'), true);
       expect(tokenFuzzyMatch('  hello   world ', 'hello world'), true);
       expect(tokenFuzzyMatch('hello-world', 'hello world'), true);
@@ -117,7 +92,7 @@ void main() {
       expect(titleExact, greaterThan(artistExact));
     });
 
-    test('preserves exact -> prefix -> partial -> fuzzy ranking', () {
+    test('exact -> prefix -> partial ranking, no fuzzy tier', () {
       final exact = relevanceScore(
         query: 'imagine dragons',
         title: 'Imagine Dragons',
@@ -136,7 +111,7 @@ void main() {
         artist: '',
         album: '',
       );
-      final fuzzy = relevanceScore(
+      final typo = relevanceScore(
         query: 'imagine dragins',
         title: 'Imagine Dragons',
         artist: '',
@@ -144,8 +119,7 @@ void main() {
       );
       expect(exact, greaterThan(prefix));
       expect(prefix, greaterThan(partial));
-      expect(partial, greaterThan(fuzzy));
-      expect(fuzzy, greaterThan(0));
+      expect(typo, 0); // misspelt queries no longer match at all
     });
   });
 }

@@ -319,5 +319,57 @@ void main() {
       expect(stats.totalPlays, 0);
       expect(stats.formattedListeningTime, '0m');
     });
+
+    test(
+      'resolves artwork path for the most played song from its album art',
+      () async {
+        await repo.recordPlayback([1], DateTime(2025, 1, 1));
+
+        // Song 1 belongs to the album with albumKey 'ms:101'. Give that album a
+        // resolved artwork path, exactly as the native artwork pipeline would.
+        final album = await (db.select(
+          db.albums,
+        )..where((tbl) => tbl.albumKey.equals('ms:101'))).getSingle();
+        await (db.update(
+          db.albums,
+        )..where((tbl) => tbl.id.equals(album.id))).write(
+          AlbumsCompanion(
+            artSmallPath: const Value('/art/album_101_small.jpg'),
+          ),
+        );
+
+        final stats = await repo.listeningStats();
+        expect(stats.hasMostPlayedSong, isTrue);
+        expect(stats.mostPlayedSongTitle, 'Song 1');
+        expect(stats.mostPlayedSongArtPath, '/art/album_101_small.jpg');
+      },
+    );
+
+    test(
+      'song_extras artwork overrides the album art for the most played song',
+      () async {
+        await repo.recordPlayback([1], DateTime(2025, 1, 1));
+
+        await db.customStatement(
+          'INSERT INTO song_extras (song_id, art_small_path) VALUES (?, ?)',
+          [1, '/art/song_1_custom.jpg'],
+        );
+
+        final stats = await repo.listeningStats();
+        expect(stats.hasMostPlayedSong, isTrue);
+        expect(stats.mostPlayedSongArtPath, '/art/song_1_custom.jpg');
+      },
+    );
+
+    test(
+      'most played song with no resolved artwork reports null art path',
+      () async {
+        await repo.recordPlayback([1], DateTime(2025, 1, 1));
+
+        final stats = await repo.listeningStats();
+        expect(stats.hasMostPlayedSong, isTrue);
+        expect(stats.mostPlayedSongArtPath, isNull);
+      },
+    );
   });
 }

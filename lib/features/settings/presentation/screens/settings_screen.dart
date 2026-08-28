@@ -6,6 +6,7 @@ import '../../../../features/library/presentation/providers/library_providers.da
 import '../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
+import 'hidden_songs_screen.dart';
 import 'privacy_screen.dart';
 import '../../data/settings_models.dart';
 import '../providers/settings_providers.dart';
@@ -93,6 +94,7 @@ class _PlaybackSection extends ConsumerWidget {
             color: Theme.of(context).colorScheme.tertiary,
             size: 18,
           ),
+          isLastInSection: true,
         ),
       ],
     );
@@ -150,6 +152,7 @@ class _AudioSection extends ConsumerWidget {
             color: Theme.of(context).colorScheme.onSurfaceVariant
                 .withValues(alpha: 0.4),
           ),
+          isLastInSection: true,
         ),
       ],
     );
@@ -172,14 +175,6 @@ class _LibrarySection extends ConsumerWidget {
           onPressed: () => _showRescanDialog(context, ref),
         ),
         SettingsSwitchTile(
-          title: 'Auto Rescan on Start',
-          subtitle: 'Automatically scan for changes on app launch',
-          value: librarySettings.autoRescanOnStart,
-          onChanged: (v) => ref
-              .read(librarySettingsProvider.notifier)
-              .setAutoRescanOnStart(v),
-        ),
-        SettingsSwitchTile(
           title: 'Clean Missing Files on Start',
           subtitle: 'Remove library entries for deleted files on startup',
           value: librarySettings.cleanMissingFilesOnStart,
@@ -192,6 +187,20 @@ class _LibrarySection extends ConsumerWidget {
           subtitle: 'Remove entries for files that no longer exist',
           buttonText: 'Cleanup Now',
           onPressed: () => _runMissingFileCleanup(context, ref),
+        ),
+        SettingsTile(
+          title: 'Show Hidden Songs',
+          subtitle: 'View and restore songs you hid',
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant
+                .withValues(alpha: 0.4),
+          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const HiddenSongsScreen())),
+          isLastInSection: true,
         ),
       ],
     );
@@ -278,6 +287,7 @@ class _AppearanceSection extends ConsumerWidget {
             AppThemeMode.light,
           ],
           itemBuilder: (context, mode) => Text(mode.name.capitalize()),
+          isLastInSection: true,
         ),
       ],
     );
@@ -439,6 +449,7 @@ class _AboutSection extends ConsumerWidget {
               context,
             ).push(MaterialPageRoute(builder: (_) => const DonationScreen()));
           },
+          isLastInSection: true,
         ),
       ],
     );

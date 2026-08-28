@@ -658,7 +658,20 @@ class _PlaylistCard extends ConsumerWidget {
           context.mounted) {
         ref
             .read(playlistRepositoryProvider)
-            .renamePlaylist(playlist.id, newName);
+            .renamePlaylist(playlist.id, newName)
+            .then((_) {
+              // Refresh on the next frame so the overview provider is already
+              // updated before the UI rebuilds.
+            })
+            .catchError((_) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('A playlist with that name already exists.'),
+                  ),
+                );
+              }
+            });
         ref.read(playlistRefreshTickProvider.notifier).state++;
       }
     });

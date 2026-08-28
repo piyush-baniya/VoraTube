@@ -365,6 +365,67 @@ void main() {
       expect(chill.songs.map((s) => s.song.title), contains('Sad Hearts'));
     });
 
+    test(
+      'a happy song does not leak into the Sad mix via its year nudge',
+      () async {
+        // "Sunshine Smile" is unambiguously happy; its old release year adds a
+        // small sad/chill bump to combined scores, but that year proxy must not, on
+        // its own, place the song into the Sad (or Chill) mix.
+        await libraryRepo.syncTracks([
+          _track(title: 'Sunshine Smile', year: 1990, id: 1),
+        ]);
+        final sad = await service.generateMix(SmartMixKind.sadMix, limit: 10);
+        final chill = await service.generateMix(
+          SmartMixKind.chillMix,
+          limit: 10,
+        );
+        final happy = await service.generateMix(
+          SmartMixKind.happyMix,
+          limit: 10,
+        );
+
+        expect(
+          sad.songs.map((s) => s.song.title),
+          isNot(contains('Sunshine Smile')),
+        );
+        expect(
+          chill.songs.map((s) => s.song.title),
+          isNot(contains('Sunshine Smile')),
+        );
+        expect(
+          happy.songs.map((s) => s.song.title),
+          contains('Sunshine Smile'),
+        );
+      },
+    );
+
+    test('a recent energetic song does not leak into the Happy mix via its year nudge', () async {
+      // Short, driving track classified energetic by keyword; a recent year adds a
+      // tiny happy bump that must not be enough to land it in the Happy mix.
+      await libraryRepo.syncTracks([
+        _track(
+          title: 'Power Run Sprint',
+          durationMs: 120000,
+          year: 2025,
+          id: 1,
+        ),
+      ]);
+      final happy = await service.generateMix(SmartMixKind.happyMix, limit: 10);
+      final energetic = await service.generateMix(
+        SmartMixKind.energyMix,
+        limit: 10,
+      );
+
+      expect(
+        happy.songs.map((s) => s.song.title),
+        isNot(contains('Power Run Sprint')),
+      );
+      expect(
+        energetic.songs.map((s) => s.song.title),
+        contains('Power Run Sprint'),
+      );
+    });
+
     test('does not manufacture songs for a mood with zero evidence', () async {
       await libraryRepo.syncTracks([
         _track(title: 'Sunshine Smile', id: 1),

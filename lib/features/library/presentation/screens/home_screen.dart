@@ -5,21 +5,19 @@ import '../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../../shared/widgets/scroll_reveal.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/player/player_controller.dart';
-import '../../../collections/presentation/providers/collections_providers.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
 import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
 import '../../../library/data/library_models.dart';
-import '../../../library/data/library_repository.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../library/presentation/widgets/song_tile.dart';
-import '../../../library/presentation/screens/filtered_songs_screen.dart';
 import '../../../library/presentation/screens/all_songs_screen.dart';
 
 /// The Home dashboard: a curated, glanceable view over the library —
@@ -82,10 +80,22 @@ class _HomeHeader extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Image.asset(
-            'assets/voratube_logo.png',
+          SizedBox(
+            width: 32,
             height: 32,
-            color: colorScheme.onSurface,
+            child: Image.asset(
+              'assets/voratube_logo.png',
+              fit: BoxFit.contain,
+              // The real logo is a full-colour asset; tinting it with the
+              // theme's onSurface would flatten it to a monochrome silhouette
+              // and lose the brand mark. `contain` keeps the original aspect
+              // ratio, so the mark never distorts on any screen width.
+              errorBuilder: (_, _, _) => Icon(
+                Icons.music_note_rounded,
+                size: 24,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
           const SizedBox(width: AppTokens.s3),
           Expanded(
@@ -179,18 +189,18 @@ class _DashboardBody extends ConsumerWidget {
     // playback emissions (play/pause, buffering, seeks). It only re-renders
     // when the loaded track identity changes.
     final current = ref.watch(currentTrackProvider);
+    final scanState = ref.watch(scanControllerProvider);
+    final isScanning = scanState is ScanRunning;
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverToBoxAdapter(child: const _FavoritesCard()),
-
-        SliverToBoxAdapter(child: ListeningInsightsStrip()),
-
         if (current != null)
           SliverToBoxAdapter(child: _ContinueListeningHero(current: current))
         else
           SliverToBoxAdapter(child: _EmptyStateHero()),
+
+        SliverToBoxAdapter(child: ListeningInsightsStrip()),
 
         SliverToBoxAdapter(child: MoodStrip()),
 
@@ -223,15 +233,19 @@ class _DashboardBody extends ConsumerWidget {
               return SliverToBoxAdapter(
                 // Home's All Songs preview is always the whole library (a
                 // bounded peek), so an empty preview genuinely means the
-                // device has no music yet.
-                child: EmptyState(
-                  icon: Icons.library_music_rounded,
-                  title: 'Nothing here yet',
-                  message: 'Scan or import music to fill your library.',
-                  actionLabel: 'Scan Library',
-                  onAction: () =>
-                      ref.read(scanControllerProvider.notifier).startScan(),
-                ),
+                // device has no music yet — unless a scan is still running, in
+                // which case we surface a progress state instead of a dead end.
+                child: isScanning
+                    ? const _ScanningState()
+                    : EmptyState(
+                        icon: Icons.library_music_rounded,
+                        title: 'Nothing here yet',
+                        message: 'Scan or import music to fill your library.',
+                        actionLabel: 'Scan Library',
+                        onAction: () => ref
+                            .read(scanControllerProvider.notifier)
+                            .startScan(),
+                      ),
               );
             }
             return SliverList.separated(
@@ -246,11 +260,13 @@ class _DashboardBody extends ConsumerWidget {
                       color: Theme.of(context).colorScheme.outlineVariant,
                     ),
               itemBuilder: (context, index) {
-                return SongTile(
-                  key: ValueKey(tiles[index].song.id),
-                  tile: tiles[index],
-                  index: index,
-                  onPlay: (_) => _playFrom(context, ref, tiles, index),
+                return ScrollReveal(
+                  child: SongTile(
+                    key: ValueKey(tiles[index].song.id),
+                    tile: tiles[index],
+                    index: index,
+                    onPlay: (_) => _playFrom(context, ref, tiles, index),
+                  ),
                 );
               },
             );
@@ -536,6 +552,56 @@ class _EmptyStateHero extends ConsumerWidget {
   }
 }
 
+/// Shown in the All Songs preview slot while a scan is running and the library
+/// is still empty. Surfaces the requested "Please wait, fetching songs..." copy
+/// with a live progress indicator that tracks the actual scan state.
+class _ScanningState extends ConsumerWidget {
+  const _ScanningState();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final accent = AppColors.accent;
+    final scanState = ref.watch(scanControllerProvider);
+    final running = scanState is ScanRunning;
+    final processed = running ? scanState.processedCount : 0;
+    final totalHint = running ? scanState.totalHint : null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s4,
+        vertical: AppTokens.s6,
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            width: 48,
+            height: 48,
+            child: CircularProgressIndicator(strokeWidth: 3, color: accent),
+          ),
+          const SizedBox(height: AppTokens.s4),
+          Text(
+            'Please wait, fetching songs...',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppTokens.s1),
+          Text(
+            totalHint != null
+                ? 'Scanned $processed of $totalHint'
+                : 'Scanned $processed songs so far',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({required this.title, this.actionLabel, this.onAction});
 
@@ -593,91 +659,6 @@ class _SectionHeader extends StatelessWidget {
             ),
         ],
       ),
-    );
-  }
-}
-
-class _FavoritesCard extends ConsumerWidget {
-  const _FavoritesCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
-    final summaries = ref.watch(collectionSummariesProvider);
-
-    return summaries.maybeWhen(
-      skipLoadingOnRefresh: true,
-      data: (list) {
-        // Guard against a summary entry being temporarily absent rather than
-        // letting an unhandled firstWhere crash the dashboard.
-        final favorites = list.where((s) => s.kind == CollectionKind.favorites);
-        if (favorites.isEmpty) {
-          return const SizedBox.shrink();
-        }
-        final favoritesSummary = favorites.first;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppTokens.s4,
-            AppTokens.s3,
-            AppTokens.s4,
-            AppTokens.s1,
-          ),
-          child: PressableScale(
-            onTap: () => Navigator.of(context).push(
-              pushSharedAxis<void>(
-                context,
-                FilteredSongsScreen.collection(
-                  CollectionKind.favorites,
-                  'Favorites',
-                ),
-              ),
-            ),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTokens.s4,
-                vertical: AppTokens.s3,
-              ),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppTokens.rLg),
-                color: accent.withValues(alpha: 0.10),
-                border: Border.all(
-                  color: accent.withValues(alpha: 0.22),
-                  width: AppTokens.borderHairline,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.favorite_rounded, size: 22, color: accent),
-                  const SizedBox(width: AppTokens.s3),
-                  Expanded(
-                    child: Text(
-                      'Favorites',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${favoritesSummary.count} songs',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(width: AppTokens.s1),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-      orElse: () => const SizedBox.shrink(),
     );
   }
 }

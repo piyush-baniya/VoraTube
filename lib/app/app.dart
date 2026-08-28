@@ -5,6 +5,7 @@ import 'home_shell.dart';
 import 'splash_screen.dart';
 import 'theme/app_theme.dart';
 import '../core/permissions/permission_gate.dart';
+import '../features/player/presentation/providers/player_providers.dart';
 import '../features/settings/presentation/providers/settings_providers.dart';
 
 class VoraTubeApp extends ConsumerWidget {
@@ -13,6 +14,8 @@ class VoraTubeApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
+    // Keep the player's ReplayGain/preamp in sync with persisted audio settings.
+    ref.watch(audioSettingsBridgeProvider);
 
     return MaterialApp(
       title: 'VoraTube',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart' show EmptyState;
+import '../../../../shared/widgets/scroll_reveal.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -297,11 +298,13 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                     ),
                   );
                 }
-                return SongTile(
-                  key: ValueKey(tiles[index].song.id),
-                  tile: tiles[index],
-                  index: index,
-                  onPlay: (_) => _playFrom(tiles, index),
+                return ScrollReveal(
+                  child: SongTile(
+                    key: ValueKey(tiles[index].song.id),
+                    tile: tiles[index],
+                    index: index,
+                    onPlay: (_) => _playFrom(tiles, index),
+                  ),
                 );
               },
             ),
@@ -438,8 +441,18 @@ class _GenresView extends ConsumerWidget {
             thickness: AppTokens.borderHairline,
             color: Theme.of(context).colorScheme.outlineVariant,
           ),
-          itemBuilder: (context, index) =>
-              GenreTile(genre: genres[index], onTap: () {}),
+          itemBuilder: (context, index) {
+            final genre = genres[index];
+            return GenreTile(
+              genre: genre,
+              onTap: () => Navigator.of(context).push(
+                pushSharedAxis<void>(
+                  context,
+                  FilteredSongsScreen.genre(genre.genre),
+                ),
+              ),
+            );
+          },
         );
       },
     );

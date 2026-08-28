@@ -10,6 +10,7 @@ import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../library/presentation/screens/filtered_songs_screen.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../../shared/widgets/artwork_view.dart';
 import '../providers/statistics_providers.dart';
 import '../screens/statistics_screen.dart';
 
@@ -62,7 +63,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                       Text(
                         stats.hasActivity
                             ? '${stats.totalPlays} plays'
-                            : 'Start listening',
+                            : 'View Stats',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
@@ -168,14 +169,18 @@ class _FeaturedCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
+            SizedBox(
               width: 46,
               height: 46,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.16),
+              child: ClipRRect(
                 borderRadius: BorderRadius.circular(AppTokens.rMd),
+                child: ArtworkView(
+                  path: stats.mostPlayedSongArtPath,
+                  size: 46,
+                  radius: AppTokens.rMd,
+                  square: true,
+                ),
               ),
-              child: Icon(Icons.military_tech_rounded, size: 22, color: accent),
             ),
             const SizedBox(width: AppTokens.s3),
             Expanded(

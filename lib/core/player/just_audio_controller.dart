@@ -68,6 +68,10 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   int _statAccumMs = 0;
   int _statLastPosMs = -1;
   bool _pausedByInterruption = false;
+  bool _ducked = false;
+  double _userVolume = 1.0;
+  double _boostMultiplier = 1.0;
+  double _preampDb = 0.0;
   ReplayGainMode _replayGainMode = ReplayGainMode.off;
   int _playGeneration = 0;
 
@@ -128,7 +132,8 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     }
     switch (event.type) {
       case AudioInterruptionType.duck:
-        _player.setVolume(event.begin ? 0.35 : 1.0);
+        _ducked = event.begin;
+        unawaited(_applyVolume());
       case AudioInterruptionType.pause:
       case AudioInterruptionType.unknown:
         if (event.begin) {
@@ -335,10 +340,26 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   ReplayGainMode get replayGainMode => _replayGainMode;
 
   @override
-  Future<void> setReplayGainMode(ReplayGainMode mode) async {
+  Future<void> setReplayGainMode(
+    ReplayGainMode mode, {
+    double preampDb = 0,
+  }) async {
     _replayGainMode = mode;
-    _applyReplayGainToCurrent();
+    _preampDb = preampDb.clamp(-12.0, 12.0);
+    unawaited(_applyVolume());
     _schedulePersist(immediate: true);
+  }
+
+  @override
+  Future<void> setVolume(double volume) async {
+    _userVolume = volume.clamp(0.0, 1.0);
+    await _applyVolume();
+  }
+
+  @override
+  Future<void> setVolumeBoost(double multiplier) async {
+    _boostMultiplier = multiplier.clamp(1.0, 2.0);
+    await _applyVolume();
   }
 
   @override
@@ -377,6 +398,13 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   void _onCurrentIndexChanged() {
     _syncCurrentMediaItem();
     _maybeRecordStat(_currentRef());
+    // Replay gain is per-track: reapply whenever the track changes.
+    unawaited(_applyVolume());
+    // Broadcast the new track so the MiniPlayer and full player refresh their
+    // metadata. Without this, _syncCurrentMediaItem only updates the media
+    // notification; the PlayerSnapshot stream that the UI watches is never
+    // updated on an engine-driven track change (next/previous/auto-advance).
+    _emit();
   }
 
   /// Records a play when a *distinct* track starts. Suppressed while the
@@ -441,14 +469,37 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     _statLastPosMs = -1;
   }
 
-  void _applyReplayGainToCurrent() {
+  /// Recomputes and applies the engine output volume.
+  ///
+  /// Effective volume = user multiplier × volume boost × ReplayGain multiplier
+  /// × duck factor. The ReplayGain multiplier comes from the current track's
+  /// stored gain info (peak-protected, so it rarely exceeds 1.0);
+  /// just_audio/ExoPlayer clamps engine volume to 0..1, so the result is
+  /// clamped defensively. The boost lets playback reach native maximum faster
+  /// but cannot exceed the engine ceiling, so it is distortion-safe.
+  Future<void> _applyVolume() async {
+    if (_disposed) {
+      return;
+    }
     final ref = _currentRef();
-    if (ref == null) return;
-
-    // We need to get the ReplayGain info from the database
-    // This is a simplified version - in practice you'd fetch from the repository
-    // For now, we'll use a placeholder since we can't easily access the repository here
-    // The gain would be applied via _player.setVolume()
+    final gainMultiplier = switch (_replayGainMode) {
+      ReplayGainMode.off => 1.0,
+      ReplayGainMode.track =>
+        ref?.replayGain?.trackGainMultiplier(preampDb: _preampDb) ?? 1.0,
+      ReplayGainMode.album =>
+        ref?.replayGain?.albumGainMultiplier(preampDb: _preampDb) ?? 1.0,
+    };
+    final duckFactor = _ducked ? 0.33 : 1.0;
+    final effective =
+        (_userVolume * _boostMultiplier * gainMultiplier * duckFactor).clamp(
+          0.0,
+          1.0,
+        );
+    try {
+      await _player.setVolume(effective);
+    } catch (e) {
+      debugPrint('VoraTube setVolume failed: $e');
+    }
   }
 
   Future<void> _syncCurrentMediaItem() async {

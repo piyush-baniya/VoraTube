@@ -253,10 +253,25 @@ abstract class PlayerController {
   /// - [ReplayGainMode.off]: No normalization (default)
   /// - [ReplayGainMode.track]: Normalize per track using track gain
   /// - [ReplayGainMode.album]: Normalize per album using album gain
-  Future<void> setReplayGainMode(ReplayGainMode mode);
+  ///
+  /// [preampDb] (typically -12..+12) offsets the applied gain in dB.
+  Future<void> setReplayGainMode(ReplayGainMode mode, {double preampDb = 0});
 
   /// Current ReplayGain normalization mode.
   ReplayGainMode get replayGainMode;
+
+  /// Sets the player's output multiplier (0.0..1.0 as the engine accepts;
+  /// larger values are clamped). Combined with ReplayGain and ducking, this is
+  /// the single, authoritative volume control on the engine.
+  Future<void> setVolume(double volume);
+
+  /// Sets the output boost multiplier (1.0 = normal, up to 2.0 = boosted).
+  ///
+  /// This is part of the same authoritative volume chain as [setVolume],
+  /// ReplayGain/preamp and ducking. Platform players clamp engine volume to
+  /// 0..1, so the boost raises playback toward native maximum faster but cannot
+  /// exceed the engine's physical ceiling — it is therefore distortion-safe.
+  Future<void> setVolumeBoost(double multiplier);
 
   /// A snapshot copy of the current queue. Safe to call from UI; returns
   /// a new list each time so callers never hold a mutable reference to

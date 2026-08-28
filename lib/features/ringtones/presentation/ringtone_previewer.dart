@@ -40,21 +40,22 @@ class RingtonePreviewer {
     _selection = selection;
     _previewing = true;
 
-    _posSub ??= _player.positions.listen((pos) => _onPosition(pos));
     await _player.playQueue([song]);
     await _player.seek(selection.start);
+    // Attach (or re-attach) the windowing listener AFTER seeking so the very
+    // first position emission is judged against the real selection window.
+    await _posSub?.cancel();
+    _posSub = _player.positions.listen((pos) => _onPosition(pos));
   }
 
   void _onPosition(Duration pos) {
     final sel = _selection;
     if (!_previewing || sel == null) return;
-    if (!sel.contains(pos)) {
-      // Re-entering the window: if we raced past the end, loop back to the
-      // start. Positions before the start are ignored.
-      if (pos >= sel.end) {
-        unawaited(_player.seek(sel.start));
-      }
-    }
+    if (sel.contains(pos)) return;
+    // Outside the window: loop back to the start of the selection. This keeps
+    // playback confined to the selected range instead of running on to the end
+    // of the track.
+    unawaited(_player.seek(sel.start));
   }
 
   /// Stops previewing and restores the queue and play state that existed

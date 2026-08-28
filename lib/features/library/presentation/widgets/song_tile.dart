@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/song_ref_mapper.dart'
     show OnPlaySong, PlayContext, songTileToRef;
+import '../../../search/data/search_rank.dart' show highlightOccurrences;
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -21,6 +22,7 @@ class SongTile extends ConsumerStatefulWidget {
     required this.onPlay,
     this.removeFromPlaylistId,
     this.dragHandle = false,
+    this.highlightQuery,
   });
 
   final SongTileData tile;
@@ -33,6 +35,10 @@ class SongTile extends ConsumerStatefulWidget {
 
   /// Renders a draggable reorder handle (for use inside a ReorderableListView).
   final bool dragHandle;
+
+  /// When non-null (search results), the title's matching substring is
+  /// highlighted to explain why the row surfaced.
+  final String? highlightQuery;
 
   @override
   ConsumerState<SongTile> createState() => _SongTileState();
@@ -106,19 +112,32 @@ class _SongTileState extends ConsumerState<SongTile> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: isCurrentSong
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: isCurrentSong
-                                  ? colorScheme.primary
-                                  : colorScheme.onSurface,
-                            ),
-                          ),
+                          child: widget.highlightQuery == null
+                              ? Text(
+                                  song.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: isCurrentSong
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: isCurrentSong
+                                        ? colorScheme.primary
+                                        : colorScheme.onSurface,
+                                  ),
+                                )
+                              : _HighlightedTitle(
+                                  title: song.title,
+                                  query: widget.highlightQuery!,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: isCurrentSong
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: isCurrentSong
+                                        ? colorScheme.primary
+                                        : colorScheme.onSurface,
+                                  ),
+                                ),
                         ),
                         if (isCurrentSong && isPlaying) ...[
                           const SizedBox(width: AppTokens.s2),
@@ -540,6 +559,58 @@ class _FavoriteButton extends StatelessWidget {
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
         ),
+      ),
+    );
+  }
+}
+
+/// Title row that highlights the substrings matching a search query.
+///
+/// Reuses the same cheap span computation as the search screen so SongTiles in
+/// search results stay visually consistent with the dedicated result tiles.
+class _HighlightedTitle extends StatelessWidget {
+  const _HighlightedTitle({
+    required this.title,
+    required this.query,
+    this.style,
+  });
+
+  final String title;
+  final String query;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final spans = highlightOccurrences(title, query);
+    final hasHighlight = spans.any((s) => s.highlight);
+
+    if (!hasHighlight) {
+      return Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+
+    return RichText(
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      text: TextSpan(
+        style: style,
+        children: [
+          for (final span in spans)
+            TextSpan(
+              text: span.text,
+              style: span.highlight
+                  ? TextStyle(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    )
+                  : null,
+            ),
+        ],
       ),
     );
   }
