@@ -10,6 +10,7 @@ import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../library/presentation/screens/filtered_songs_screen.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../screens/statistics_screen.dart';
 
 final listeningStatsProvider = FutureProvider.autoDispose<ListeningStats>((
   ref,
@@ -49,12 +50,29 @@ class ListeningInsightsStrip extends ConsumerWidget {
               ),
               child: SectionLabel(
                 title: 'Your Listening',
-                trailing: Text(
-                  stats.hasActivity
-                      ? '${stats.totalPlays} plays'
-                      : 'Start listening',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                trailing: PressableScale(
+                  onTap: () => Navigator.of(context).push(
+                    pushSharedAxis<void>(context, const StatisticsScreen()),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        stats.hasActivity
+                            ? '${stats.totalPlays} plays'
+                            : 'Start listening',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.6),
+                      ),
+                    ],
                   ),
                 ),
               ),
