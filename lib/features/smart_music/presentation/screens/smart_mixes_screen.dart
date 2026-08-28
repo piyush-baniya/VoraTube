@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../app/theme/app_tokens.dart';
+import '../../../../../features/library/presentation/providers/library_view_providers.dart';
 import '../../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../../../shared/widgets/skeleton_list.dart';
 import '../../data/smart_mix_service.dart';
@@ -31,7 +32,8 @@ class SmartMixesScreen extends ConsumerWidget {
         error: (error, stack) => _buildError(context, ref, error),
         data: (mixes) {
           if (mixes.isEmpty || mixes.every((m) => m.songs.isEmpty)) {
-            return _buildEmpty(context);
+            final hasSongs = ref.watch(libraryHasSongsProvider).value ?? true;
+            return _buildEmpty(context, hasSongs);
           }
           return _buildMixesList(context, mixes);
         },
@@ -66,11 +68,21 @@ class SmartMixesScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildEmpty(BuildContext context) {
+  Widget _buildEmpty(BuildContext context, bool hasSongs) {
+    if (!hasSongs) {
+      return EmptyState(
+        icon: Icons.auto_awesome_mosaic,
+        title: 'No mixes available',
+        message: 'Add songs to your library to build mood mixes.',
+      );
+    }
+    // The library has songs, but none matched a mix yet (e.g. classification
+    // produced no strong candidates). Never tell the user to add music when
+    // music already exists.
     return EmptyState(
       icon: Icons.auto_awesome_mosaic,
-      title: 'No mixes available',
-      message: 'Add some music to your library to generate personalized mixes.',
+      title: 'No recommendations yet',
+      message: 'We couldn\'t build mood mixes from your library yet. Try again later.',
     );
   }
 

@@ -8,11 +8,22 @@ class MoodClassification {
     required this.primaryMood,
     required this.confidence,
     required this.secondaryMoods,
+    this.scores = const {},
   });
 
   final SongMood primaryMood;
   final double confidence;
+
+  /// The same secondary evidence as [secondaryMoods], kept for convenience by
+  /// callers that already have the full map. Retained for source compatibility.
   final Map<SongMood, double> secondaryMoods;
+
+  /// Raw positive evidence score per mood (0 for moods with no evidence).
+  ///
+  /// This is the source of truth for multi-mood membership: a song may belong
+  /// to more than one mood mix when several moods carry genuine positive
+  /// evidence, without forcing it into every mood.
+  final Map<SongMood, double> scores;
 }
 
 class MoodEngine {
@@ -295,6 +306,7 @@ class MoodEngine {
           primaryMood: mood,
           confidence: 1.0,
           secondaryMoods: const {},
+          scores: const {},
         );
       }
     }
@@ -341,6 +353,7 @@ class MoodEngine {
       primaryMood: primaryMood,
       confidence: confidence,
       secondaryMoods: secondaryMoods,
+      scores: Map.unmodifiable(scores),
     );
   }
 

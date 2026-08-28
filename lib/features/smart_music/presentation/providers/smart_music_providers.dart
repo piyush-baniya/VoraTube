@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../features/library/data/library_models.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
+import '../../../../features/library/presentation/providers/library_view_providers.dart';
 import '../../data/mood_engine.dart';
 import '../../data/smart_mix_service.dart';
 import '../../data/smart_playlist_service.dart';
@@ -31,12 +32,18 @@ final smartQueueServiceProvider = Provider<SmartQueueService>((ref) {
 final smartMixesProvider = FutureProvider.autoDispose<List<SmartMix>>((
   ref,
 ) async {
+  // Rebuilds when a scan/import, metadata edit, genre enrichment or explicit
+  // mood assignment changes the library. Without this, Smart Mood kept showing
+  // the previous library state after the user made a change.
+  ref.watch(libraryRefreshTickProvider);
   final service = ref.watch(smartMixServiceProvider);
-  return service.generateAllMixes(limit: 30);
+  final mixes = await service.generateAllMixes(limit: 30);
+  return mixes;
 });
 
 final smartMixProvider = FutureProvider.autoDispose
     .family<SmartMix, SmartMixKind>((ref, kind) async {
+      ref.watch(libraryRefreshTickProvider);
       final service = ref.watch(smartMixServiceProvider);
       return service.generateMix(kind, limit: 30);
     });

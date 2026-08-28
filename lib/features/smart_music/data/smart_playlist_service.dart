@@ -298,13 +298,8 @@ class SmartPlaylistService {
     SongTileData song,
     SmartPlaylistRule rule,
   ) async {
-    final stats =
-        await (_repository as dynamic)._db.select(
-            (_repository as dynamic)._db.songStats,
-          )
-          ..where((tbl) => tbl.songId.equals(song.song.id));
-    final row = await stats.getSingleOrNull();
-    final playCount = row?.playCount ?? 0;
+    final stats = await _repository.getSongStatsForSongs({song.song.id});
+    final playCount = stats[song.song.id]?.playCount ?? 0;
 
     final value = int.tryParse(rule.value) ?? 0;
     switch (rule.operator) {
@@ -326,13 +321,8 @@ class SmartPlaylistService {
   }
 
   Future<bool> _matchFavorite(SongTileData song, SmartPlaylistRule rule) async {
-    final stats =
-        await (_repository as dynamic)._db.select(
-            (_repository as dynamic)._db.songStats,
-          )
-          ..where((tbl) => tbl.songId.equals(song.song.id));
-    final row = await stats.getSingleOrNull();
-    final isFav = row?.isFavorite ?? false;
+    final stats = await _repository.getSongStatsForSongs({song.song.id});
+    final isFav = stats[song.song.id]?.isFavorite ?? false;
 
     return rule.value.toLowerCase() == 'true' ? isFav : !isFav;
   }

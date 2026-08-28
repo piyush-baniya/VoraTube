@@ -48,6 +48,14 @@ enum SongAction {
 }
 
 class SongActions {
+  /// Bumps the library refresh tick so any [libraryRefreshTickProvider] watcher
+  /// (e.g. Smart Mood mixes) rebuilds after a library-write action. Unlike
+  /// `invalidate`, this always produces a state change (even from the initial
+  /// 0) so dependent providers reliably refresh.
+  static void _refreshLibrary(WidgetRef ref) {
+    ref.read(libraryRefreshTickProvider.notifier).state++;
+  }
+
   static Future<void> show(
     BuildContext context,
     WidgetRef ref, {
@@ -164,7 +172,7 @@ class SongActions {
         break;
       case SongAction.changeCover:
         await _changeCover(context, repo, tile);
-        ref.invalidate(libraryRefreshTickProvider);
+        _refreshLibrary(ref);
         break;
       case SongAction.editTags:
         await _editTags(context, ref, repo, tile);
@@ -379,7 +387,7 @@ class SongActions {
         year: year,
       );
       ref.invalidate(pagedSongsProvider);
-      ref.invalidate(libraryRefreshTickProvider);
+      _refreshLibrary(ref);
       if (context.mounted) _snack(context, 'Tags updated');
     } catch (_) {
       if (context.mounted) _snack(context, 'Failed to update tags');
@@ -415,7 +423,7 @@ class SongActions {
     try {
       await repo.setHidden(song.id, true);
       ref.invalidate(pagedSongsProvider);
-      ref.invalidate(libraryRefreshTickProvider);
+      _refreshLibrary(ref);
       if (context.mounted) _snack(context, 'Song hidden');
     } catch (_) {
       if (context.mounted) _snack(context, 'Failed to hide song');
@@ -463,7 +471,7 @@ class SongActions {
       }
       await repo.deleteSongsByRowIds({song.id});
       ref.invalidate(pagedSongsProvider);
-      ref.invalidate(libraryRefreshTickProvider);
+      _refreshLibrary(ref);
       ref.invalidate(albumsOverviewProvider);
       ref.invalidate(artistsOverviewProvider);
       if (context.mounted) _snack(context, 'Song deleted');
@@ -597,7 +605,7 @@ class SongActions {
       await repo.setSongMood(song.id, chosen.name);
       _snack(ctx, 'Mood set to ${chosen.label}');
     }
-    ref.invalidate(libraryRefreshTickProvider);
+    _refreshLibrary(ref);
   }
 
   /// Forces an online genre lookup and caches the result, then refreshes the
@@ -631,7 +639,7 @@ class SongActions {
     if (!context.mounted) return;
     if (genre != null && genre.isNotEmpty) {
       _snack(context, 'Genre updated: $genre');
-      ref.invalidate(libraryRefreshTickProvider);
+      _refreshLibrary(ref);
     } else {
       _snack(context, 'Genre unavailable right now');
     }

@@ -106,10 +106,65 @@ class SmartMixService {
   }
 
   Future<List<SmartMix>> generateAllMixes({int limit = 50}) async {
-    final futures = SmartMixKind.values.map(
-      (kind) => generateMix(kind, limit: limit),
-    );
-    return Future.wait(futures);
+    // Load the library and classify every song exactly once, then reuse that
+    // single pass to build all six mood mixes. This avoids the previous
+    // behaviour of re-fetching and re-classifying the whole library for each
+    // mood (which scaled as O(moods × songs)).
+    final moodCache = await _loadMoodClassificationCache();
+
+    final nonMoodMixes = await Future.wait([
+      _generateDailyMix(limit),
+      _generateFavoritesMix(limit),
+      _generateThrowbackMix(limit),
+      _generateDiscoverMix(limit),
+    ]);
+
+    final moodMixes = await Future.wait([
+      _generateMoodMix(
+        SongMood.happy,
+        'Happy Mix',
+        'Feel-good, upbeat tracks',
+        limit,
+        cache: moodCache,
+      ),
+      _generateMoodMix(
+        SongMood.chill,
+        'Chill Mix',
+        'Relax and unwind',
+        limit,
+        cache: moodCache,
+      ),
+      _generateMoodMix(
+        SongMood.energetic,
+        'Energy Mix',
+        'High energy tracks',
+        limit,
+        cache: moodCache,
+      ),
+      _generateMoodMix(
+        SongMood.sad,
+        'Sad Mix',
+        'Melancholic and reflective',
+        limit,
+        cache: moodCache,
+      ),
+      _generateMoodMix(
+        SongMood.romantic,
+        'Romantic Mix',
+        'Love songs to set the mood',
+        limit,
+        cache: moodCache,
+      ),
+      _generateMoodMix(
+        SongMood.focus,
+        'Focus Mix',
+        'Music for deep work',
+        limit,
+        cache: moodCache,
+      ),
+    ]);
+
+    return [...nonMoodMixes, ...moodMixes];
   }
 
   Future<SmartMix> _generateDailyMix(int limit) async {
@@ -192,15 +247,14 @@ class SmartMixService {
     SongMood mood,
     String title,
     String description,
-    int limit,
-  ) async {
+    int limit, {
+    _MoodClassificationCache? cache,
+  }) async {
     final kind = _moodMixKind(mood);
-    final allSongs = await _repository.songsPage(
-      limit: 2000,
-      favoritesOnly: false,
-    );
+    final classificationCache = cache ?? await _loadMoodClassificationCache();
+    final allSongs = classificationCache.songs;
 
-    if (allSongs.songs.isEmpty) {
+    if (allSongs.isEmpty) {
       return SmartMix(
         kind: kind,
         title: title,
@@ -210,23 +264,12 @@ class SmartMixService {
       );
     }
 
-    final stats = await _dbSongStatsForSongs(allSongs.songs);
-    final classified = <SongTileData>[];
-    for (final song in allSongs.songs) {
-      final classification = _moodEngine.classify(
-        title: song.song.title,
-        artist: song.song.artist,
-        album: song.song.albumName,
-        genre: song.song.genre,
-        year: song.song.year,
-        durationMs: song.song.durationMs,
-        userMood: stats[song.song.id]?.mood,
-      );
-      if (classification.primaryMood == mood &&
-          classification.confidence > 0.3) {
-        classified.add(song);
-      }
-    }
+    final classifications = classificationCache.classifications;
+
+    final classified = <SongTileData>[
+      for (final song in allSongs)
+        if (_matchesMood(classifications[song.song.id], mood)) song,
+    ];
 
     if (classified.isEmpty) {
       return SmartMix(
@@ -238,31 +281,26 @@ class SmartMixService {
       );
     }
 
-    classified.sort((a, b) {
-      final ca = _moodEngine.classify(
-        title: a.song.title,
-        artist: a.song.artist,
-        album: a.song.albumName,
-        genre: a.song.genre,
-        year: a.song.year,
-        durationMs: a.song.durationMs,
-        userMood: stats[a.song.id]?.mood,
-      );
-      final cb = _moodEngine.classify(
-        title: b.song.title,
-        artist: b.song.artist,
-        album: b.song.albumName,
-        genre: b.song.genre,
-        year: b.song.year,
-        durationMs: b.song.durationMs,
-        userMood: stats[b.song.id]?.mood,
-      );
-      return cb.confidence.compareTo(ca.confidence);
-    });
+    // Order by strength of evidence for this specific mood (stable, no
+    // re-classification needed because the score was cached once above).
+    final scored = [
+      for (final song in classified)
+        (
+          song: song,
+          score:
+              (classifications[song.song.id]?.scores[mood] ?? 0.0) +
+              ((classifications[song.song.id]?.primaryMood == mood)
+                  ? 3.0
+                  : 0.0),
+        ),
+    ]..sort((a, b) => b.score.compareTo(a.score));
 
-    _shuffleWithVariety(classified);
+    final selected = [for (final s in scored) s.song].take(limit).toList();
 
-    final selected = classified.take(limit).toList();
+    // Interleave the selection so the strongest evidence still shows variety
+    // and its own artist doesn't cluster consecutively.
+    _shuffleWithVariety(selected);
+
     final artwork = _extractArtworkPaths(selected);
 
     return SmartMix(
@@ -272,6 +310,40 @@ class SmartMixService {
       songs: selected,
       generatedAt: DateTime.now(),
       artworkPaths: artwork,
+    );
+  }
+
+  /// A song belongs to a mood's mix when that mood is its best fit, or when it
+  /// carries genuine, non-trivial evidence for that mood beyond a weak
+  /// duration/year nudge (>= 1.5 of keyword/genre evidence).
+  bool _matchesMood(MoodClassification? classification, SongMood mood) {
+    if (classification == null) return false;
+    if (mood == SongMood.unknown) return false;
+    if (classification.primaryMood == mood) return true;
+    return (classification.scores[mood] ?? 0.0) >= 1.5;
+  }
+
+  Future<_MoodClassificationCache> _loadMoodClassificationCache() async {
+    final allSongs = await _repository.songsPage(
+      limit: 2000,
+      favoritesOnly: false,
+    );
+    final stats = await _dbSongStatsForSongs(allSongs.songs);
+    final classifications = <int, MoodClassification>{};
+    for (final song in allSongs.songs) {
+      classifications[song.song.id] = _moodEngine.classify(
+        title: song.song.title,
+        artist: song.song.artist,
+        album: song.song.albumName,
+        genre: song.song.genre,
+        year: song.song.year,
+        durationMs: song.song.durationMs,
+        userMood: stats[song.song.id]?.mood,
+      );
+    }
+    return _MoodClassificationCache(
+      songs: allSongs.songs,
+      classifications: classifications,
     );
   }
 
@@ -372,13 +444,7 @@ class SmartMixService {
   ) async {
     if (songs.isEmpty) return {};
     final songIds = songs.map((s) => s.song.id).toSet();
-    final stats =
-        await (_repository as dynamic)._db.select(
-            (_repository as dynamic)._db.songStats,
-          )
-          ..where((tbl) => tbl.songId.isIn(songIds));
-    final rows = await stats.get();
-    return {for (final r in rows) r.songId: r};
+    return _repository.getSongStatsForSongs(songIds);
   }
 
   List<SongTileData> _deduplicateByIdentityKey(List<SongTileData> songs) {
@@ -480,4 +546,17 @@ class SmartMixService {
         return SmartMixKind.chillMix;
     }
   }
+}
+
+/// Immutable cache of the song library plus its per-song mood classification,
+/// shared across all mood-mix generations so a song is classified exactly once.
+@immutable
+class _MoodClassificationCache {
+  const _MoodClassificationCache({
+    required this.songs,
+    required this.classifications,
+  });
+
+  final List<SongTileData> songs;
+  final Map<int, MoodClassification> classifications;
 }
