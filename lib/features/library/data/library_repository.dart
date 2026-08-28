@@ -10,6 +10,7 @@ import '../../../core/ingest/artwork/local_artwork_store.dart';
 import '../../../core/ingest/ingest_service.dart';
 import '../../../core/player/player_controller.dart';
 import '../../../core/utils/string_utils.dart';
+import '../../search/data/search_rank.dart';
 import 'library_models.dart';
 
 class SyncBatchResult {
@@ -992,6 +993,10 @@ extension LibraryQueries on LibraryRepository {
     }
     final needle = '%${q.toLowerCase()}%';
 
+    // A broader candidate pool than the final per-section limit so that
+    // relevance ranking (prefix/token/typo) has material to choose from.
+    const candidateLimit = 300;
+
     final songRows =
         await (_db.select(_db.songs)
               ..where(
@@ -1000,13 +1005,28 @@ extension LibraryQueries on LibraryRepository {
                     tbl.artistSearch.like(needle) |
                     tbl.albumName.lower().like(needle),
               )
-              ..orderBy([(tbl) => OrderingTerm.asc(tbl.titleSearch)])
-              ..limit(perSectionLimit))
+              ..limit(candidateLimit))
             .get();
+
+    // Rank songs by relevance, admitting typo-tolerant token matches.
+    final rankedSongs = <Song>[];
+    final scored = <(Song, int)>[];
+    for (final row in songRows) {
+      final title = row.title;
+      final artist = row.artist ?? '';
+      final album = row.albumName ?? '';
+      if (!tokenFuzzyMatch(q, '$title $artist $album')) continue;
+      scored.add((
+        row,
+        relevanceScore(query: q, title: title, artist: artist, album: album),
+      ));
+    }
+    scored.sort((a, b) => b.$2.compareTo(a.$2));
+    rankedSongs.addAll(scored.take(perSectionLimit).map((e) => e.$1));
 
     final albums = _db.albums;
     final albumNameLower = albums.name.lower();
-    final albumRows =
+    final albumCandidates =
         await (_db.selectOnly(albums)
               ..addColumns([
                 albums.id,
@@ -1017,50 +1037,98 @@ extension LibraryQueries on LibraryRepository {
                 albums.artLargePath,
               ])
               ..where(albumNameLower.like(needle))
-              ..limit(perSectionLimit))
+              ..limit(candidateLimit))
             .get();
 
+    final albumScored =
+        <
+          ({
+            int id,
+            String key,
+            String name,
+            String artist,
+            String? small,
+            String? large,
+            int score,
+          })
+        >[];
+    for (final row in albumCandidates) {
+      final name = row.read(albums.name)!;
+      final artist = row.read(albums.artistName) ?? '';
+      if (!tokenFuzzyMatch(q, '$name $artist')) continue;
+      albumScored.add((
+        id: row.read(albums.id)!,
+        key: row.read(albums.albumKey) ?? '',
+        name: name,
+        artist: artist,
+        small: row.read(albums.artSmallPath),
+        large: row.read(albums.artLargePath),
+        score: relevanceScore(query: q, title: name, artist: artist, album: ''),
+      ));
+    }
+    albumScored.sort((a, b) => b.score.compareTo(a.score));
+
     final artists = _db.artists;
-    final artistRows =
+    final artistCandidates =
         await (_db.selectOnly(artists)
               ..addColumns([artists.id, artists.artistKey, artists.name])
               ..where(artists.name.lower().like(needle))
-              ..limit(perSectionLimit))
+              ..limit(candidateLimit))
             .get();
 
-    final playlistRows =
+    final artistScored = <({int id, String key, String name, int score})>[];
+    for (final row in artistCandidates) {
+      final name = row.read(artists.name)!;
+      if (!tokenFuzzyMatch(q, name)) continue;
+      artistScored.add((
+        id: row.read(artists.id)!,
+        key: row.read(artists.artistKey) ?? '',
+        name: name,
+        score: relevanceScore(query: q, title: name, artist: '', album: ''),
+      ));
+    }
+    artistScored.sort((a, b) => b.score.compareTo(a.score));
+
+    final playlistCandidates =
         await (_db.select(_db.playlists)
               ..where((tbl) => tbl.name.lower().like(needle))
-              ..limit(perSectionLimit))
+              ..limit(candidateLimit))
             .get();
+
+    final playlistScored = <(Playlist, int)>[];
+    for (final p in playlistCandidates) {
+      if (!tokenFuzzyMatch(q, p.name)) continue;
+      playlistScored.add((
+        p,
+        relevanceScore(query: q, title: p.name, artist: '', album: ''),
+      ));
+    }
+    playlistScored.sort((a, b) => b.$2.compareTo(a.$2));
 
     return SearchResults(
       query: q,
-      songs: await _decorate(songRows),
+      songs: await _decorate(rankedSongs),
       albums: [
-        for (final row in albumRows)
+        for (final r in albumScored.take(perSectionLimit))
           AlbumSummary(
-            albumRowId: row.read(albums.id)!,
-            key: row.read(albums.albumKey) ?? '',
-            name: row.read(albums.name)!,
-            artistName: row.read(albums.artistName),
-            artPath: _pickArt(
-              row.read(albums.artLargePath),
-              row.read(albums.artSmallPath),
-            ),
+            albumRowId: r.id,
+            key: r.key,
+            name: r.name,
+            artistName: r.artist,
+            artPath: _pickArt(r.large, r.small),
             songCount: 0,
           ),
       ],
       artists: [
-        for (final row in artistRows)
+        for (final r in artistScored.take(perSectionLimit))
           ArtistSummary(
-            artistRowId: row.read(artists.id)!,
-            key: row.read(artists.artistKey) ?? '',
-            name: row.read(artists.name)!,
+            artistRowId: r.id,
+            key: r.key,
+            name: r.name,
             songCount: 0,
           ),
       ],
-      playlists: playlistRows,
+      playlists: playlistScored.take(perSectionLimit).map((e) => e.$1).toList(),
     );
   }
 }
