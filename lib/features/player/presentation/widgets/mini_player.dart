@@ -168,30 +168,38 @@ class MiniPlayer extends ConsumerWidget {
                   const SizedBox(width: AppTokens.s2),
                   PressableScale(
                     onTap: () => ref.read(playerProvider).togglePlay(),
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [colorScheme.primary, AppColors.accent],
-                        ),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.35),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
+                    child: SizedBox(
+                      width: AppTokens.touchTarget,
+                      height: AppTokens.touchTarget,
+                      child: Center(
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [colorScheme.primary, AppColors.accent],
+                            ),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: colorScheme.primary.withValues(
+                                  alpha: 0.35,
+                                ),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: Icon(
-                        snapshot.isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        size: 22,
-                        color: colorScheme.onPrimary,
+                          child: Icon(
+                            snapshot.isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            size: 22,
+                            color: colorScheme.onPrimary,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -258,26 +266,34 @@ class _TransportButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return PressableScale(
       onTap: enabled ? onTap : null,
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: enabled
-              ? colorScheme.surfaceContainerHighest
-              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(
-              alpha: enabled ? 0.3 : 0.15,
+      child: SizedBox(
+        // A 48dp hit area for accessibility, with the smaller visual circle
+        // centered inside so the compact bar keeps its visual proportions.
+        width: AppTokens.touchTarget,
+        height: AppTokens.touchTarget,
+        child: Center(
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: enabled
+                  ? colorScheme.surfaceContainerHighest
+                  : colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(
+                  alpha: enabled ? 0.3 : 0.15,
+                ),
+                width: AppTokens.borderHairline,
+              ),
             ),
-            width: AppTokens.borderHairline,
-          ),
-        ),
-        child: Icon(
-          icon,
-          size: 20,
-          color: colorScheme.onSurfaceVariant.withValues(
-            alpha: enabled ? 0.9 : 0.35,
+            child: Icon(
+              icon,
+              size: 20,
+              color: colorScheme.onSurfaceVariant.withValues(
+                alpha: enabled ? 0.9 : 0.35,
+              ),
+            ),
           ),
         ),
       ),

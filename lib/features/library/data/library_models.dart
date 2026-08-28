@@ -203,6 +203,7 @@ final class ListeningBreakdown {
     required this.totalPlays,
     required this.totalUniqueSongs,
     this.peakDay,
+    this.topArtist,
     required this.week,
     required this.year,
     required this.weekDaily,
@@ -213,6 +214,7 @@ final class ListeningBreakdown {
   final int totalPlays;
   final int totalUniqueSongs;
   final PeakDayStats? peakDay;
+  final HistoryTopEntry? topArtist;
   final PeriodStats week;
   final PeriodStats year;
   final List<DayListen> weekDaily;

@@ -54,7 +54,10 @@ class _HomeHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final snapshot = ref.watch(playbackStateProvider);
+    // Narrow watch: only rebuilds when the loaded track identity changes, so
+    // play/pause, buffering, seek and duration-discovery emissions do not
+    // repaint the dashboard header.
+    final current = ref.watch(currentTrackProvider);
 
     final hour = DateTime.now().hour;
     String greeting;
@@ -108,9 +111,9 @@ class _HomeHeader extends ConsumerWidget {
               ],
             ),
           ),
-          if (snapshot.hasTrack) ...[
+          if (current != null) ...[
             const SizedBox(width: AppTokens.s3),
-            _NowPlayingBadge(current: snapshot.current!),
+            _NowPlayingBadge(current: current),
           ],
         ],
       ),
@@ -172,7 +175,10 @@ class _DashboardBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final homeSongs = ref.watch(homeSongsProvider);
-    final snapshot = ref.watch(playbackStateProvider);
+    // Narrow watch so the whole dashboard body does not rebuild on coarse
+    // playback emissions (play/pause, buffering, seeks). It only re-renders
+    // when the loaded track identity changes.
+    final current = ref.watch(currentTrackProvider);
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -181,10 +187,8 @@ class _DashboardBody extends ConsumerWidget {
 
         SliverToBoxAdapter(child: ListeningInsightsStrip()),
 
-        if (snapshot.hasTrack)
-          SliverToBoxAdapter(
-            child: _ContinueListeningHero(current: snapshot.current!),
-          )
+        if (current != null)
+          SliverToBoxAdapter(child: _ContinueListeningHero(current: current))
         else
           SliverToBoxAdapter(child: _EmptyStateHero()),
 
@@ -243,6 +247,7 @@ class _DashboardBody extends ConsumerWidget {
                     ),
               itemBuilder: (context, index) {
                 return SongTile(
+                  key: ValueKey(tiles[index].song.id),
                   tile: tiles[index],
                   index: index,
                   onPlay: (_) => _playFrom(context, ref, tiles, index),
@@ -605,9 +610,13 @@ class _FavoritesCard extends ConsumerWidget {
     return summaries.maybeWhen(
       skipLoadingOnRefresh: true,
       data: (list) {
-        final favorites = list.firstWhere(
-          (s) => s.kind == CollectionKind.favorites,
-        );
+        // Guard against a summary entry being temporarily absent rather than
+        // letting an unhandled firstWhere crash the dashboard.
+        final favorites = list.where((s) => s.kind == CollectionKind.favorites);
+        if (favorites.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final favoritesSummary = favorites.first;
         return Padding(
           padding: const EdgeInsets.fromLTRB(
             AppTokens.s4,
@@ -651,7 +660,7 @@ class _FavoritesCard extends ConsumerWidget {
                     ),
                   ),
                   Text(
-                    '${favorites.count} songs',
+                    '${favoritesSummary.count} songs',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),

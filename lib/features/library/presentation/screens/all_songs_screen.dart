@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../../shared/widgets/skeleton_list.dart';
+import '../../../../shared/utils/scroll_pagination.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
@@ -27,13 +28,9 @@ class _AllSongsScreenState extends ConsumerState<AllSongsScreen> {
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (_controller.position.extentAfter < 600) {
-      ref.read(pagedSongsProvider.notifier).loadMore();
-    }
+    _controller.attachLoadMoreListener(
+      () => ref.read(pagedSongsProvider.notifier).loadMore(),
+    );
   }
 
   @override
@@ -110,6 +107,7 @@ class _AllSongsScreenState extends ConsumerState<AllSongsScreen> {
                     );
                   }
                   return SongTile(
+                    key: ValueKey(tiles[index].song.id),
                     tile: tiles[index],
                     index: index,
                     onPlay: (_) => _playFrom(tiles, index),

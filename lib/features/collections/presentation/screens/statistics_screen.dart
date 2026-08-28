@@ -64,6 +64,7 @@ class StatisticsScreen extends ConsumerWidget {
                   const SliverToBoxAdapter(
                     child: SizedBox(height: AppTokens.s2),
                   ),
+                  const _TopArtistOverview(),
                   const _TopPlayedSection(),
                   const _RecentlyPlayedSection(),
                   const _PeakDaySection(),
@@ -212,6 +213,32 @@ class _StatChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TopArtistOverview extends ConsumerWidget {
+  const _TopArtistOverview();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final topArtist = ref
+        .watch(listeningBreakdownProvider)
+        .valueOrNull
+        ?.topArtist;
+    if (topArtist == null) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+    return SliverToBoxAdapter(
+      child: _SectionCard(
+        title: 'Top Artist',
+        icon: Icons.mic_rounded,
+        child: _HistoryRow(
+          title: topArtist.label,
+          subtitle: 'all time',
+          trailing: '${topArtist.count} plays',
+        ),
       ),
     );
   }
@@ -366,6 +393,7 @@ class _SongListSection extends ConsumerWidget {
               children: [
                 for (var i = 0; i < tiles.length; i++)
                   SongTile(
+                    key: ValueKey(tiles[i].song.id),
                     tile: tiles[i],
                     index: i,
                     onPlay: (_) => _playFrom(context, ref, tiles, i),

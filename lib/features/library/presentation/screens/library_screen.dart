@@ -5,6 +5,7 @@ import '../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../../shared/utils/scroll_pagination.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../player/presentation/providers/player_providers.dart';
@@ -64,7 +65,9 @@ class _LibraryHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final snapshot = ref.watch(playbackStateProvider);
+    // Narrow watch so a play/pause or buffering emission does not repaint the
+    // whole Library header; only a track identity change re-renders it.
+    final current = ref.watch(currentTrackProvider);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -90,9 +93,9 @@ class _LibraryHeader extends ConsumerWidget {
               ),
             ),
           ),
-          if (snapshot.hasTrack) ...[
+          if (current != null) ...[
             const SizedBox(width: AppTokens.s3),
-            _NowPlayingBadge(current: snapshot.current!),
+            _NowPlayingBadge(current: current),
           ],
         ],
       ),
@@ -228,13 +231,9 @@ class _SongsViewState extends ConsumerState<_SongsView> {
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onScroll);
-  }
-
-  void _onScroll() {
-    if (_controller.position.extentAfter < 600) {
-      ref.read(pagedSongsProvider.notifier).loadMore();
-    }
+    _controller.attachLoadMoreListener(
+      () => ref.read(pagedSongsProvider.notifier).loadMore(),
+    );
   }
 
   @override
@@ -299,6 +298,7 @@ class _SongsViewState extends ConsumerState<_SongsView> {
                   );
                 }
                 return SongTile(
+                  key: ValueKey(tiles[index].song.id),
                   tile: tiles[index],
                   index: index,
                   onPlay: (_) => _playFrom(tiles, index),

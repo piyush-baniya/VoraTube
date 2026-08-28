@@ -140,6 +140,7 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                   endIndent: AppTokens.s4,
                 ),
                 itemBuilder: (context, index) => SongTile(
+                  key: ValueKey(tiles[index].song.id),
                   tile: tiles[index],
                   index: index,
                   onPlay: (_) => ref.read(playerProvider).playQueue([

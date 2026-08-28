@@ -71,6 +71,16 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   ReplayGainMode _replayGainMode = ReplayGainMode.off;
   int _playGeneration = 0;
 
+  /// True between the start and end of a [playQueue] transition.
+  ///
+  /// The stop→setAudioSources→play sequence is multi-await, and just_audio
+  /// flushes intermediate engine events (idle, cleared index, loading) along
+  /// the way. Those transient snapshots would otherwise be broadcast to the UI
+  /// as a flash of "no track" (stale or null current) while rapidly switching
+  /// songs A→B→C. Gating [emit] here collapses the whole transition into one
+  /// coherent snapshot emitted by the winning generation after it finishes.
+  bool _queueTransition = false;
+
   // -------------------------------------------------------------------------
   // Lifecycle
   // -------------------------------------------------------------------------
@@ -154,24 +164,38 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     }
     final gen = ++_playGeneration;
     final safeIndex = startIndex.clamp(0, songs.length - 1);
-    await _player.stop();
-    if (gen != _playGeneration) {
-      return;
-    }
-    await _player.setAudioSources([
-      for (final s in songs) _sourceFor(s),
-    ], initialIndex: safeIndex);
-    if (gen != _playGeneration) {
-      return;
-    }
+    _queueTransition = true;
+    // Bind the refs before touching the engine so the index reported by any
+    // engine event after setAudioSources always resolves against the queue it
+    // belongs to, never the previous one.
     _queueRefs = List.unmodifiable(songs);
-    await _syncQueueMetadata();
-    if (gen != _playGeneration) {
-      return;
+    try {
+      await _player.stop();
+      if (gen != _playGeneration) {
+        return;
+      }
+      await _player.setAudioSources([
+        for (final s in songs) _sourceFor(s),
+      ], initialIndex: safeIndex);
+      if (gen != _playGeneration) {
+        return;
+      }
+      await _syncQueueMetadata();
+      if (gen != _playGeneration) {
+        return;
+      }
+      await _player.play();
+      _maybeRecordStat(_currentRef());
+      _schedulePersist(immediate: true);
+    } finally {
+      // Only the winning generation clears the transition flag and emits the
+      // final coherent snapshot; a superseded call (gen) leaves the flag set so
+      // the newer transition keeps suppressing transient emissions.
+      if (gen == _playGeneration) {
+        _queueTransition = false;
+        _emit();
+      }
     }
-    await _player.play();
-    _maybeRecordStat(_currentRef());
-    _schedulePersist(immediate: true);
   }
 
   @override
@@ -364,6 +388,9 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     if (ref == null || _suppressStats) {
       return;
     }
+    if (_queueTransition) {
+      return;
+    }
     if (_statLastKey == ref.identityKey) {
       return;
     }
@@ -457,6 +484,12 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
 
   void _emit() {
     if (_disposed || _snapshotController.isClosed) {
+      return;
+    }
+    // Collapse queue-transition engine events into the single snapshot the
+    // winning playQueue emits at the end, so a rapid A→B→C switch never
+    // broadcasts a stale or "no current track" state in between.
+    if (_queueTransition) {
       return;
     }
     final state = _player.processingState;

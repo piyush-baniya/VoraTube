@@ -1596,6 +1596,7 @@ extension CollectionQueries on LibraryRepository {
     // period key -> artistKey normalized -> plays
     final weekArtistPlays = <String, int>{};
     final yearArtistPlays = <String, int>{};
+    final allTimeArtistPlays = <String, int>{};
     // period key -> song play counts (keyed by normalized title+artist)
     final weekSongPlays = <String, int>{};
     final yearSongPlays = <String, int>{};
@@ -1639,6 +1640,7 @@ extension CollectionQueries on LibraryRepository {
         yearSongPlays.update(songKey, (v) => v + 1, ifAbsent: () => 1);
         yearSongMeta[songKey] = (title: title, artist: artist);
       }
+      allTimeArtistPlays.update(artistKey, (v) => v + 1, ifAbsent: () => 1);
     }
 
     // --- Week report ---
@@ -1741,6 +1743,7 @@ extension CollectionQueries on LibraryRepository {
       totalPlays: totalPlays,
       totalUniqueSongs: uniqueSongs.length,
       peakDay: peakDay,
+      topArtist: topArtist(allTimeArtistPlays),
       week: PeriodStats(
         listenedMs: weekMs,
         plays: weekPlays,

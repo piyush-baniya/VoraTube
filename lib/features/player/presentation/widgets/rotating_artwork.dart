@@ -55,9 +55,9 @@ class _RotatingArtworkState extends ConsumerState<RotatingArtwork>
       duration: const Duration(seconds: 3),
       vsync: this,
     );
-    if (rotatingArtworkEnabled) {
-      _glowController.repeat(reverse: true);
-    }
+    // Both animations start/stop via _syncRotationState, keyed off play state,
+    // so neither ticks while the track is paused (sparing CPU/battery during
+    // background playback).
     _syncRotationState();
   }
 
@@ -74,12 +74,12 @@ class _RotatingArtworkState extends ConsumerState<RotatingArtwork>
     final isPlaying = ref.read(playbackStateProvider).isPlaying;
     if (isPlaying != _wasPlaying) {
       _wasPlaying = isPlaying;
-      if (isPlaying) {
-        if (rotatingArtworkEnabled) {
-          _rotationController.repeat();
-        }
+      if (isPlaying && rotatingArtworkEnabled) {
+        _rotationController.repeat();
+        _glowController.repeat(reverse: true);
       } else {
         _rotationController.stop();
+        _glowController.stop();
       }
     }
   }
@@ -93,6 +93,12 @@ class _RotatingArtworkState extends ConsumerState<RotatingArtwork>
 
   @override
   Widget build(BuildContext context) {
+    // Watching isPlaying here also lets _syncRotationState react to
+    // play/pause transitions (initState/didUpdateWidget do not fire on a
+    // provider change, so without this the artwork would keep rotating and
+    // glowing while paused).
+    ref.watch(playbackStateProvider.select((s) => s.isPlaying));
+    _syncRotationState();
     final file = ArtworkFileCache.resolve(widget.path);
     final isPlaying = ref.watch(playbackStateProvider).isPlaying;
 

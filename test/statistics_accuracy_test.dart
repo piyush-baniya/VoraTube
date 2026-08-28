@@ -183,6 +183,20 @@ void main() {
       expect(b.week.topSongs.first.count, 2);
       expect(b.week.topArtist!.count, 2);
     });
+
+    test('all-time top artist insight across periods', () async {
+      // Song 1 -> 'Artist 1', Song 2 -> 'Artist 2'.
+      await repo.recordPlayback([1], DateTime(2025, 6, 16, 10, 0));
+      await repo.recordPlayback([1], DateTime(2025, 6, 17, 10, 0));
+      await repo.recordPlayback([2], DateTime(2024, 12, 20, 10, 0));
+
+      final b = await repo.listeningBreakdown(now: DateTime(2025, 6, 18, 12));
+
+      expect(b.topArtist, isNotNull);
+      // Artist 1 was played twice all-time (across both years), Artist 2 once.
+      expect(b.topArtist!.label, 'artist 1');
+      expect(b.topArtist!.count, 2);
+    });
   });
 
   group('play counting', () {

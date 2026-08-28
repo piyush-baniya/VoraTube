@@ -339,6 +339,7 @@ class _Results extends ConsumerWidget {
               endIndent: AppTokens.s5,
             ),
             itemBuilder: (context, index) => SongTile(
+              key: ValueKey(results.songs[index].song.id),
               tile: results.songs[index],
               index: index,
               onPlay: (ctx) {
