@@ -78,8 +78,8 @@ class _SongTileState extends ConsumerState<SongTile> {
                 ),
               )
             : null,
-        child: SizedBox(
-          height: 64,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 64),
           child: Row(
             children: [
               // Artwork with playing animation overlay

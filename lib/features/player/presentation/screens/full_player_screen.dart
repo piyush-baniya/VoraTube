@@ -383,8 +383,8 @@ class _TopBar extends StatelessWidget {
           PressableScale(
             onTap: () => Navigator.of(context).maybePop(),
             child: Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
                 shape: BoxShape.circle,
@@ -405,8 +405,8 @@ class _TopBar extends StatelessWidget {
           PressableScale(
             onTap: onLyricsTap,
             child: Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: showLyricsActive
                     ? colorScheme.primary.withValues(alpha: 0.16)
@@ -433,8 +433,8 @@ class _TopBar extends StatelessWidget {
           PressableScale(
             onTap: onPlaylistTap,
             child: Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
                 shape: BoxShape.circle,
@@ -455,8 +455,8 @@ class _TopBar extends StatelessWidget {
           PressableScale(
             onTap: onQueueTap,
             child: Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
                 shape: BoxShape.circle,

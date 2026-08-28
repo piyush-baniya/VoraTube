@@ -83,8 +83,8 @@ class ArtistTile extends StatelessWidget {
           horizontal: AppTokens.s4,
           vertical: AppTokens.s2,
         ),
-        child: SizedBox(
-          height: 56,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
           child: Row(
             children: [
               ArtworkView(

@@ -249,19 +249,17 @@ class _TopPlayedSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return SliverToBoxAdapter(
-      child: _SongListSection(
-        title: 'Top played',
-        subtitle: ref
-            .watch(listeningStatsProvider)
-            .maybeWhen(
-              data: (s) => s.hasActivity ? null : 'No plays yet',
-              orElse: () => null,
-            ),
-        provider: topPlayedSongsProvider,
-        emptyIcon: Icons.military_tech_rounded,
-        emptyMessage: 'Your most played songs will appear here.',
-      ),
+    return _SongListSection(
+      title: 'Top played',
+      subtitle: ref
+          .watch(listeningStatsProvider)
+          .maybeWhen(
+            data: (s) => s.hasActivity ? null : 'No plays yet',
+            orElse: () => null,
+          ),
+      provider: topPlayedSongsProvider,
+      emptyIcon: Icons.military_tech_rounded,
+      emptyMessage: 'Your most played songs will appear here.',
     );
   }
 }
@@ -271,14 +269,12 @@ class _RecentlyPlayedSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return SliverToBoxAdapter(
-      child: _SongListSection(
-        title: 'Recently played',
-        subtitle: null,
-        provider: recentlyPlayedSongsProvider,
-        emptyIcon: Icons.history_rounded,
-        emptyMessage: 'Songs you play will show up here.',
-      ),
+    return _SongListSection(
+      title: 'Recently played',
+      subtitle: null,
+      provider: recentlyPlayedSongsProvider,
+      emptyIcon: Icons.history_rounded,
+      emptyMessage: 'Songs you play will show up here.',
     );
   }
 }
@@ -337,71 +333,76 @@ class _SongListSection extends ConsumerWidget {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        header(),
-        async.when(
-          skipLoadingOnRefresh: true,
-          loading: () => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.2),
-              ),
+    // Loading / error / empty states collapse into a single boxed sliver; the
+    // song rows themselves are emitted lazily below so the up-to-20 rows under
+    // each heading are only built and artwork-decoded for the rows actually in
+    // / near the viewport.
+    final tiles = async.valueOrNull;
+    Widget stateSliver() {
+      if (async.hasError && (tiles == null || tiles.isEmpty)) {
+        return Padding(
+          padding: const EdgeInsets.all(AppTokens.s4),
+          child: Text(
+            subtitle ?? 'Could not load.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          error: (_, _) => Padding(
-            padding: const EdgeInsets.all(AppTokens.s4),
-            child: Text(
-              subtitle ?? 'Could not load.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+        );
+      }
+      if (tiles == null) {
+        return const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
             ),
           ),
-          data: (tiles) {
-            if (tiles.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTokens.s4,
-                  vertical: AppTokens.s2,
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      emptyIcon,
-                      size: 18,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: AppTokens.s2),
-                    Expanded(
-                      child: Text(
-                        emptyMessage,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-            return Column(
-              children: [
-                for (var i = 0; i < tiles.length; i++)
-                  SongTile(
-                    key: ValueKey(tiles[i].song.id),
-                    tile: tiles[i],
-                    index: i,
-                    onPlay: (_) => _playFrom(context, ref, tiles, i),
-                  ),
-              ],
-            );
-          },
+        );
+      }
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppTokens.s4,
+          vertical: AppTokens.s2,
         ),
+        child: Row(
+          children: [
+            Icon(
+              emptyIcon,
+              size: 18,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: AppTokens.s2),
+            Expanded(
+              child: Text(
+                emptyMessage,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SliverMainAxisGroup(
+      slivers: [
+        SliverToBoxAdapter(child: header()),
+        if (tiles != null && tiles.isNotEmpty)
+          SliverList.builder(
+            itemCount: tiles.length,
+            itemBuilder: (context, i) => SongTile(
+              key: ValueKey(tiles[i].song.id),
+              tile: tiles[i],
+              index: i,
+              onPlay: (_) => _playFrom(context, ref, tiles, i),
+            ),
+          )
+        else
+          SliverToBoxAdapter(child: stateSliver()),
       ],
     );
   }

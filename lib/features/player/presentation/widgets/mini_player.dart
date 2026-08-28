@@ -97,8 +97,8 @@ class MiniPlayer extends ConsumerWidget {
           ),
           child: SafeArea(
             top: false,
-            child: SizedBox(
-              height: 68,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 68),
               child: Row(
                 children: [
                   const SizedBox(width: AppTokens.s3),

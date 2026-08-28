@@ -123,6 +123,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               controller: _fieldController,
               focusNode: _focusNode,
               onChanged: (text) => submitSearchText(ref, text),
+              onSubmitted: (_) => _focusNode.unfocus(),
               textInputAction: TextInputAction.search,
               style: theme.textTheme.bodyLarge,
               decoration: InputDecoration(
@@ -455,12 +456,16 @@ class _SectionHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppTokens.s3),
-          Text(
-            title.toUpperCase(),
-            style: theme.textTheme.labelLarge?.copyWith(
-              letterSpacing: 1.0,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurfaceVariant,
+          Expanded(
+            child: Text(
+              title.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelLarge?.copyWith(
+                letterSpacing: 1.0,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           const SizedBox(width: AppTokens.s3),
@@ -506,8 +511,8 @@ class _AlbumResultTile extends ConsumerWidget {
           horizontal: AppTokens.s5,
           vertical: AppTokens.s1,
         ),
-        child: SizedBox(
-          height: 56,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
           child: Row(
             children: [
               ArtworkView(
@@ -573,8 +578,8 @@ class _ArtistResultTile extends ConsumerWidget {
           horizontal: AppTokens.s5,
           vertical: AppTokens.s1,
         ),
-        child: SizedBox(
-          height: 56,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
           child: Row(
             children: [
               Container(
@@ -642,8 +647,8 @@ class _PlaylistResultTile extends ConsumerWidget {
           horizontal: AppTokens.s5,
           vertical: AppTokens.s1,
         ),
-        child: SizedBox(
-          height: 56,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
           child: Row(
             children: [
               Container(

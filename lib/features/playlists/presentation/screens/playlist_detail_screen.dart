@@ -166,20 +166,35 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   }
 }
 
-class _DetailHeader extends StatelessWidget {
+class _DetailHeader extends ConsumerWidget {
   const _DetailHeader({
     required this.name,
     required this.playlistId,
     required this.onAddSongs,
   });
 
+  /// Initial name supplied by the caller. The live title is resolved from the
+  /// playlists overview so a rename reflects immediately (no stale header).
   final String name;
   final int playlistId;
   final VoidCallback onAddSongs;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+
+    // Drive the shown title from the authoritative overview so renames update
+    // in place. Falls back to [name] while the overview is still loading.
+    final overview = ref.watch(playlistsOverviewProvider).valueOrNull;
+    var displayName = name;
+    if (overview != null) {
+      for (final p in overview) {
+        if (p.id == playlistId) {
+          displayName = p.name;
+          break;
+        }
+      }
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -195,7 +210,7 @@ class _DetailHeader extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              name,
+              displayName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.headlineSmall?.copyWith(
@@ -209,7 +224,7 @@ class _DetailHeader extends StatelessWidget {
             onPressed: onAddSongs,
             icon: const Icon(Icons.add_rounded),
           ),
-          _PlaylistMenuButton(playlistId: playlistId, name: name),
+          _PlaylistMenuButton(playlistId: playlistId, name: displayName),
         ],
       ),
     );
