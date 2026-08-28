@@ -365,8 +365,8 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
       case LyricsStatus.offline:
         return _buildMessageState(
           icon: Icons.wifi_off_rounded,
-          message: 'You\'re offline',
-          subtitle: 'Connect to the internet to fetch lyrics.',
+          message: 'No internet connection available.',
+          subtitle: 'You\'re offline. Connect to the internet to fetch lyrics.',
           onRetry: _retry,
         );
       case LyricsStatus.loaded:

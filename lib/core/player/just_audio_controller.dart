@@ -66,6 +66,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   String? _statLastKey;
   bool _pausedByInterruption = false;
   ReplayGainMode _replayGainMode = ReplayGainMode.off;
+  int _playGeneration = 0;
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -147,13 +148,23 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     if (songs.isEmpty) {
       return;
     }
+    final gen = ++_playGeneration;
     final safeIndex = startIndex.clamp(0, songs.length - 1);
     await _player.stop();
+    if (gen != _playGeneration) {
+      return;
+    }
     await _player.setAudioSources([
       for (final s in songs) _sourceFor(s),
     ], initialIndex: safeIndex);
+    if (gen != _playGeneration) {
+      return;
+    }
     _queueRefs = List.unmodifiable(songs);
     await _syncQueueMetadata();
+    if (gen != _playGeneration) {
+      return;
+    }
     await _player.play();
     _maybeRecordStat(_currentRef());
     _schedulePersist(immediate: true);

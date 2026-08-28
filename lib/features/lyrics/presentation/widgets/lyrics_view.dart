@@ -324,8 +324,8 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
       case LyricsStatus.offline:
         return _buildMessageState(
           icon: Icons.wifi_off_rounded,
-          message: 'You are offline',
-          subtitle: 'Connect to the internet to fetch lyrics.',
+          message: 'No internet connection available.',
+          subtitle: 'You are offline. Connect to the internet to fetch lyrics.',
           onRetry: _retry,
         );
       case LyricsStatus.loaded:

@@ -20,10 +20,10 @@ void main() {
     LyricsSource.lrclib,
   );
 
-  Widget buildPanel() {
+  Widget buildPanel({LyricsResult? result}) {
     return ProviderScope(
       overrides: [
-        currentLyricsProvider.overrideWith((ref) async => synced),
+        currentLyricsProvider.overrideWith((ref) async => result ?? synced),
         currentLyricLineIndexProvider.overrideWith((ref) => Stream.value(0)),
       ],
       child: const MaterialApp(
@@ -49,6 +49,24 @@ void main() {
     expect(find.text('Line two'), findsOneWidget);
     expect(find.text('Line three'), findsOneWidget);
     expect(find.text('Lyrics'), findsNothing);
+  });
+
+  testWidgets('offline shows an explicit no-internet message', (tester) async {
+    await tester.pumpWidget(buildPanel(result: const LyricsResult.offline()));
+    await tester.pump();
+
+    expect(find.text('No internet connection available.'), findsOneWidget);
+    expect(find.byIcon(Icons.wifi_off_rounded), findsOneWidget);
+  });
+
+  testWidgets('not found shows a distinct empty state, not the offline message', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildPanel(result: const LyricsResult.notFound()));
+    await tester.pump();
+
+    expect(find.text('No internet connection available.'), findsNothing);
+    expect(find.text('No lyrics found'), findsOneWidget);
   });
 
   testWidgets('collapses to a preview of the current line', (tester) async {
