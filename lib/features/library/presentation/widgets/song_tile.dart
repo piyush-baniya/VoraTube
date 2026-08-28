@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/song_ref_mapper.dart'
     show OnPlaySong, PlayContext, songTileToRef;
 import '../../../player/presentation/providers/player_providers.dart';
-import '../../../../../core/player/player_controller.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_tokens.dart';
@@ -46,10 +45,15 @@ class _SongTileState extends ConsumerState<SongTile> {
     final colorScheme = theme.colorScheme;
     final song = widget.tile.song;
 
-    // Watch playback state for playing indicator
-    final snapshot = ref.watch(playbackStateProvider);
-    final isPlaying = snapshot.isPlaying;
-    final isCurrentSong = _isCurrentSong(snapshot);
+    // Watch playback state for the playing indicator. Two narrow providers
+    // (current track identity + a play/pause boolean) are watched instead of
+    // the whole snapshot, so buffering/duration/seek/queue emissions do not
+    // rebuild every visible song row. The playing state is only read when this
+    // tile is the current song.
+    final currentTrackKey = ref.watch(currentTrackIdentityProvider);
+    final isPlaying = ref.watch(playbackIsPlayingProvider);
+    final isCurrentSong =
+        currentTrackKey != null && currentTrackKey == _tileKey;
     final isFavorite = ref.watch(
       favoriteIdsProvider.select((ids) => ids.contains(song.id)),
     );
@@ -203,14 +207,9 @@ class _SongTileState extends ConsumerState<SongTile> {
     );
   }
 
-  bool _isCurrentSong(PlayerSnapshot? snapshot) {
-    if (snapshot == null || !snapshot.hasTrack) return false;
-    final currentKey = snapshot.current!.identityKey;
-    final tileKey = widget.tile.song.source == 'mediastore'
-        ? 'ms:${widget.tile.song.mediaStoreId}'
-        : 'h:${widget.tile.song.contentHash}';
-    return currentKey == tileKey;
-  }
+  String get _tileKey => widget.tile.song.source == 'mediastore'
+      ? 'ms:${widget.tile.song.mediaStoreId}'
+      : 'h:${widget.tile.song.contentHash}';
 
   void _showMenu(BuildContext context) {
     SongActions.show(

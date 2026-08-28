@@ -125,15 +125,17 @@ const int homeSongsLimit = 10;
 final homeSongsProvider = FutureProvider.autoDispose<List<SongTileData>>((
   ref,
 ) async {
+  // The Home preview deliberately ignores the Library toolbar's sort and
+  // Favorites filter: it is a stable, curated "recently added" peek so the
+  // dashboard never silently becomes a filtered copy of the Library browser.
+  // Bounded to [homeSongsLimit] so this never queries the whole collection.
   ref.watch(libraryRefreshTickProvider);
-  final sort = ref.watch(songSortProvider);
-  final favoritesOnly = ref.watch(favoritesOnlyProvider);
   final repository = ref.watch(libraryRepositoryProvider);
   final page = await repository.songsPage(
     limit: homeSongsLimit,
     offset: 0,
-    sort: sort,
-    favoritesOnly: favoritesOnly,
+    sort: SongSort.recentlyAdded,
+    favoritesOnly: false,
   );
   return page.songs;
 });

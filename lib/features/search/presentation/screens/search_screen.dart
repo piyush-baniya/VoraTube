@@ -13,6 +13,7 @@ import '../../../playlists/presentation/screens/playlist_detail_screen.dart';
 
 import 'package:vora_tube/features/library/data/library_models.dart';
 import 'package:vora_tube/features/library/presentation/screens/filtered_songs_screen.dart';
+import 'package:vora_tube/features/library/presentation/widgets/song_tile.dart';
 import 'package:vora_tube/features/library/data/song_ref_mapper.dart'
     show playContextFromTiles;
 
@@ -337,9 +338,18 @@ class _Results extends ConsumerWidget {
               indent: AppTokens.artworkMd + AppTokens.s3 + AppTokens.s5,
               endIndent: AppTokens.s5,
             ),
-            itemBuilder: (context, index) => _SongResultTile(
+            itemBuilder: (context, index) => SongTile(
               tile: results.songs[index],
-              allTiles: results.songs,
+              index: index,
+              onPlay: (ctx) {
+                // Play the whole result list from the tapped song, matching the
+                // behaviour of every other song list in the app.
+                final start = results.songs.indexOf(results.songs[index]);
+                final playCtx = playContextFromTiles(results.songs, start);
+                ref
+                    .read(playerProvider)
+                    .playQueue(playCtx.refs, startIndex: playCtx.startIndex);
+              },
             ),
           ),
         ],
@@ -471,87 +481,6 @@ class _SectionHeader extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SongResultTile extends ConsumerWidget {
-  const _SongResultTile({required this.tile, required this.allTiles});
-
-  final SongTileData tile;
-  final List<SongTileData> allTiles;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final song = tile.song;
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return PressableScale(
-      onTap: () {
-        final ctx = playContextFromTiles(allTiles, allTiles.indexOf(tile));
-        ref
-            .read(playerProvider)
-            .playQueue(ctx.refs, startIndex: ctx.startIndex);
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.s5,
-          vertical: AppTokens.s1,
-        ),
-        child: SizedBox(
-          height: 60,
-          child: Row(
-            children: [
-              ArtworkView(
-                path: tile.artPath,
-                size: AppTokens.artworkMd,
-                radius: AppTokens.rSm,
-              ),
-              const SizedBox(width: AppTokens.s3),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      song.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      song.artist ?? '\u2014',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppTokens.s2),
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: colorScheme.primary.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.play_arrow_rounded,
-                  size: 18,
-                  color: colorScheme.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

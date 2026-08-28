@@ -216,24 +216,17 @@ class _DashboardBody extends ConsumerWidget {
           ),
           data: (tiles) {
             if (tiles.isEmpty) {
-              final favoritesOnly = ref.watch(favoritesOnlyProvider);
               return SliverToBoxAdapter(
+                // Home's All Songs preview is always the whole library (a
+                // bounded peek), so an empty preview genuinely means the
+                // device has no music yet.
                 child: EmptyState(
-                  icon: favoritesOnly
-                      ? Icons.favorite_border_rounded
-                      : Icons.library_music_rounded,
-                  title: favoritesOnly
-                      ? 'No favorites yet'
-                      : 'Nothing here yet',
-                  message: favoritesOnly
-                      ? 'Tap the heart on any song to keep it close.'
-                      : 'Scan or import music to fill your library.',
-                  actionLabel: favoritesOnly ? null : 'Scan Library',
-                  onAction: favoritesOnly
-                      ? null
-                      : () => ref
-                            .read(scanControllerProvider.notifier)
-                            .startScan(),
+                  icon: Icons.library_music_rounded,
+                  title: 'Nothing here yet',
+                  message: 'Scan or import music to fill your library.',
+                  actionLabel: 'Scan Library',
+                  onAction: () =>
+                      ref.read(scanControllerProvider.notifier).startScan(),
                 ),
               );
             }

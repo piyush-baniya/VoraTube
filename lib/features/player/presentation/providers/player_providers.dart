@@ -61,6 +61,18 @@ final currentTrackIdentityProvider = Provider<String?>((ref) {
   return snapshot.current!.identityKey;
 });
 
+/// Whether the engine is currently playing, as a plain narrowing of
+/// [playbackStateProvider].
+///
+/// List tiles that only render a playing indicator should watch this (plus
+/// [currentTrackIdentityProvider]) instead of the whole snapshot. The snapshot
+/// re-emits on buffering, duration discovery, seeks and queue changes — none of
+/// which should rebuild every visible song row. Gate on this boolean only, so
+/// a play/pause flip is the sole reason those rows rebuild.
+final playbackIsPlayingProvider = Provider<bool>((ref) {
+  return ref.watch(playbackStateProvider).isPlaying;
+});
+
 /// The currently loaded track, or null when nothing is loaded.
 ///
 /// Rebuilds only when the track identity changes, so widgets that render song

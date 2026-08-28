@@ -6,6 +6,7 @@ import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../../core/player/player_controller.dart';
 import '../../../../../features/library/data/library_models.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
+import '../../../../../features/library/presentation/widgets/song_actions.dart';
 import '../../../../../features/player/presentation/providers/player_providers.dart';
 import '../../data/smart_mix_service.dart';
 
@@ -289,7 +290,7 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
   }
 }
 
-class _MixSongTile extends StatelessWidget {
+class _MixSongTile extends ConsumerWidget {
   const _MixSongTile({
     required this.tile,
     required this.index,
@@ -301,7 +302,7 @@ class _MixSongTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -388,6 +389,19 @@ class _MixSongTile extends StatelessWidget {
                 ],
               ),
             ),
+            // Consistent three-dot song menu with the rest of the app.
+            IconButton(
+              tooltip: 'More options',
+              onPressed: () => SongActions.show(context, ref, tile: tile),
+              icon: Icon(
+                Icons.more_vert_rounded,
+                size: 20,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            const SizedBox(width: AppTokens.s1),
             Icon(
               Icons.play_circle_outline_rounded,
               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
