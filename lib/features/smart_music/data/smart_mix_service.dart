@@ -50,6 +50,21 @@ class SmartMixService {
   final MoodEngine _moodEngine;
   final Random _random = Random();
 
+  /// In-memory cache of per-song classifications keyed by the inputs that
+  /// produce them, so repeated generations (e.g. after a single mood override
+  /// changes) recompute only the songs whose inputs actually changed instead of
+  /// re-deriving every mood for the whole library on each call.
+  ///
+  /// The key includes every classification input, so when a song's metadata,
+  /// genre or user mood override changes the key no longer matches and the
+  /// song is classified afresh — no separate invalidation signal is needed.
+  final Map<String, MoodClassification> _classificationCache = {};
+
+  /// Page size used when loading the library for classification. Large enough
+  /// to keep DB round-trips low while never materialising the whole library in
+  /// a single response.
+  static const int _classifyPageSize = 1000;
+
   Future<SmartMix> generateMix(SmartMixKind kind, {int limit = 50}) async {
     switch (kind) {
       case SmartMixKind.dailyMix:
@@ -266,12 +281,22 @@ class SmartMixService {
 
     final classifications = classificationCache.classifications;
 
-    final classified = <SongTileData>[
+    // Primary candidates: songs that genuinely match this mood (primary mood,
+    // or genuine secondary evidence at or above the membership threshold).
+    final matched = <SongTileData>[
       for (final song in allSongs)
         if (_matchesMood(classifications[song.song.id], mood)) song,
     ];
 
-    if (classified.isEmpty) {
+    // Careful fallback: when no song has a direct match, use the strongest
+    // *genuine* evidence for this mood (score > 0) rather than returning an
+    // empty mix immediately — but never fall back to arbitrary tracks. If not
+    // even a scrap of genuine evidence exists, the mix stays empty.
+    final candidates = matched.isNotEmpty
+        ? matched
+        : _weakEvidenceMatches(allSongs, classifications, mood);
+
+    if (candidates.isEmpty) {
       return SmartMix(
         kind: kind,
         title: title,
@@ -281,33 +306,27 @@ class SmartMixService {
       );
     }
 
-    // Order by strength of evidence for this specific mood (stable, no
-    // re-classification needed because the score was cached once above).
-    final scored = [
-      for (final song in classified)
-        (
-          song: song,
-          score:
-              (classifications[song.song.id]?.scores[mood] ?? 0.0) +
-              ((classifications[song.song.id]?.primaryMood == mood)
-                  ? 3.0
-                  : 0.0),
-        ),
-    ]..sort((a, b) => b.score.compareTo(a.score));
-
-    final selected = [for (final s in scored) s.song].take(limit).toList();
+    // Rank by mood relevance first, personalization second. The mood-evidence
+    // term is weighted heavily so a strong mood match always outranks a
+    // weaker one regardless of how often a song was played or favourited.
+    final ranked = _rankForMood(
+      candidates,
+      mood,
+      classifications,
+      classificationCache.stats,
+    ).take(limit).toList();
 
     // Interleave the selection so the strongest evidence still shows variety
     // and its own artist doesn't cluster consecutively.
-    _shuffleWithVariety(selected);
+    _shuffleWithVariety(ranked);
 
-    final artwork = _extractArtworkPaths(selected);
+    final artwork = _extractArtworkPaths(ranked);
 
     return SmartMix(
       kind: kind,
       title: title,
       description: description,
-      songs: selected,
+      songs: ranked,
       generatedAt: DateTime.now(),
       artworkPaths: artwork,
     );
@@ -315,36 +334,145 @@ class SmartMixService {
 
   /// A song belongs to a mood's mix when that mood is its best fit, or when it
   /// carries genuine, non-trivial evidence for that mood beyond a weak
-  /// duration/year nudge (>= 1.5 of keyword/genre evidence).
+  /// duration/year nudge (>= [MoodEngine.primaryEvidenceThreshold] of
+  /// keyword/genre evidence).
   bool _matchesMood(MoodClassification? classification, SongMood mood) {
     if (classification == null) return false;
     if (mood == SongMood.unknown) return false;
     if (classification.primaryMood == mood) return true;
-    return (classification.scores[mood] ?? 0.0) >= 1.5;
+    return (classification.scores[mood] ?? 0.0) >=
+        MoodEngine.primaryEvidenceThreshold;
+  }
+
+  /// Songs with at least a scrap of genuine positive evidence (score > 0) for
+  /// [mood], used only as the carefully-ranked fallback when no direct match
+  /// exists. Songs with zero evidence are never included.
+  List<SongTileData> _weakEvidenceMatches(
+    List<SongTileData> allSongs,
+    Map<int, MoodClassification> classifications,
+    SongMood mood,
+  ) {
+    return [
+      for (final song in allSongs)
+        if ((classifications[song.song.id]?.scores[mood] ?? 0.0) > 0) song,
+    ];
+  }
+
+  /// Ranks [songs] for [mood]: mood-evidence score dominates, then favorites,
+  /// play history and recency break ties without overwhelming mood relevance.
+  List<SongTileData> _rankForMood(
+    List<SongTileData> songs,
+    SongMood mood,
+    Map<int, MoodClassification> classifications,
+    Map<int, SongStat> stats,
+  ) {
+    // Weight chosen so a difference of one evidence point (a single keyword)
+    // outweighs the maximum personalization bonus, keeping relevance first.
+    const moodWeight = 10.0;
+
+    final scored = [
+      for (final song in songs)
+        (
+          song: song,
+          rank:
+              (_moodScore(classifications[song.song.id], mood) * moodWeight) +
+              _personalization(stats[song.song.id]),
+        ),
+    ]..sort((a, b) => b.rank.compareTo(a.rank));
+
+    return [for (final s in scored) s.song];
+  }
+
+  double _moodScore(MoodClassification? classification, SongMood mood) {
+    if (classification == null) return 0.0;
+    final evidence = classification.scores[mood] ?? 0.0;
+    final isPrimary = classification.primaryMood == mood;
+    return evidence + (isPrimary ? 3.0 : 0.0);
+  }
+
+  /// Light personalization bonus (favorites, play history, recency) used only
+  /// as a secondary key so mood relevance stays dominant.
+  double _personalization(SongStat? stat) {
+    if (stat == null) return 0.0;
+    var score = 0.0;
+    if (stat.isFavorite) score += 2.0;
+    if (stat.playCount > 0) {
+      score += (log(stat.playCount + 1) * 0.8).clamp(0.0, 1.6);
+    }
+    if (stat.lastPlayedAt != null) score += 0.4;
+    return score;
   }
 
   Future<_MoodClassificationCache> _loadMoodClassificationCache() async {
-    final allSongs = await _repository.songsPage(
-      limit: 2000,
-      favoritesOnly: false,
-    );
-    final stats = await _dbSongStatsForSongs(allSongs.songs);
-    final classifications = <int, MoodClassification>{};
-    for (final song in allSongs.songs) {
-      classifications[song.song.id] = _moodEngine.classify(
-        title: song.song.title,
-        artist: song.song.artist,
-        album: song.song.albumName,
-        genre: song.song.genre,
-        year: song.song.year,
-        durationMs: song.song.durationMs,
-        userMood: stats[song.song.id]?.mood,
+    // Load the whole library in bounded pages (no hard cap) and classify each
+    // song exactly once, reusing any cached classification whose inputs are
+    // unchanged. Pagination keeps a large library from being truncated after a
+    // fixed 2000 songs, so mood mixes can draw from the full collection.
+    final allSongs = <SongTileData>[];
+    var offset = 0;
+    while (true) {
+      final page = await _repository.songsPage(
+        limit: _classifyPageSize,
+        offset: offset,
+        favoritesOnly: false,
       );
+      if (page.songs.isEmpty) break;
+      allSongs.addAll(page.songs);
+      if (page.songs.length < _classifyPageSize || page.nextOffset < 0) break;
+      offset = page.nextOffset;
+    }
+
+    final stats = await _dbSongStatsForSongs(allSongs);
+    final classifications = <int, MoodClassification>{};
+    for (final song in allSongs) {
+      final c = song.song;
+      final key = _classificationKey(
+        id: c.id,
+        title: c.title,
+        artist: c.artist,
+        album: c.albumName,
+        genre: c.genre,
+        year: c.year,
+        durationMs: c.durationMs,
+        userMood: stats[c.id]?.mood,
+      );
+      final cached = _classificationCache[key];
+      if (cached != null) {
+        classifications[c.id] = cached;
+        continue;
+      }
+      final computed = _moodEngine.classify(
+        title: c.title,
+        artist: c.artist,
+        album: c.albumName,
+        genre: c.genre,
+        year: c.year,
+        durationMs: c.durationMs,
+        userMood: stats[c.id]?.mood,
+      );
+      _classificationCache[key] = computed;
+      classifications[c.id] = computed;
     }
     return _MoodClassificationCache(
-      songs: allSongs.songs,
+      songs: allSongs,
       classifications: classifications,
+      stats: stats,
     );
+  }
+
+  /// Deterministic key describing every input that influences a song's mood, so
+  /// a cached classification is reused only while nothing relevant changed.
+  static String _classificationKey({
+    required int id,
+    required String title,
+    required String? artist,
+    required String? album,
+    required String? genre,
+    required int? year,
+    required int durationMs,
+    required String? userMood,
+  }) {
+    return '$id|$title|$artist|$album|$genre|$year|$durationMs|$userMood';
   }
 
   Future<SmartMix> _generateThrowbackMix(int limit) async {
@@ -555,8 +683,13 @@ class _MoodClassificationCache {
   const _MoodClassificationCache({
     required this.songs,
     required this.classifications,
+    required this.stats,
   });
 
   final List<SongTileData> songs;
   final Map<int, MoodClassification> classifications;
+
+  /// Song statistics (favorites, play counts, recency) used for ranking and to
+  /// read a user-assigned mood. Loaded once per generation pass.
+  final Map<int, SongStat> stats;
 }

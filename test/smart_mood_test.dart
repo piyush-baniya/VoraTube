@@ -129,6 +129,80 @@ void main() {
       );
       expect(c.scores[SongMood.energetic], greaterThan(0.0));
     });
+
+    test('duration alone never produces a mood (no false certainty)', () {
+      final short = _classify(title: 'a b c', durationMs: 120000);
+      expect(short.primaryMood, SongMood.unknown);
+      expect(short.confidence, 0.0);
+      expect(short.scores, isEmpty);
+
+      final long = _classify(title: 'a b c', durationMs: 480000);
+      expect(long.primaryMood, SongMood.unknown);
+      expect(long.confidence, 0.0);
+    });
+
+    test('year alone never produces a mood (no false certainty)', () {
+      final old = _classify(title: 'a b c', year: 1990, durationMs: 240000);
+      expect(old.primaryMood, SongMood.unknown);
+      expect(old.confidence, 0.0);
+
+      final recent = _classify(title: 'a b c', year: 2026, durationMs: 240000);
+      expect(recent.primaryMood, SongMood.unknown);
+    });
+
+    test('supporting nudges cannot outrank clear strong evidence', () {
+      // One clear happy signal plus a long-duration chill nudge.
+      final c = _classify(title: 'Happy Sunrise', durationMs: 480000);
+      expect(c.primaryMood, SongMood.happy);
+      expect(c.confidence, inInclusiveRange(0.0, 1.0));
+      // The chill nudge stays strictly below the confident happy evidence.
+      expect(
+        (c.scores[SongMood.chill] ?? 0.0),
+        lessThan(c.scores[SongMood.happy] ?? 0.0),
+      );
+    });
+
+    test('confidence drops when genuine evidence is split across moods', () {
+      final c = _classify(title: 'Happy Sad', durationMs: 240000);
+      expect(c.primaryMood, isNot(SongMood.unknown));
+      expect(c.confidence, lessThan(1.0));
+      // The second strongest mood is carried as genuine secondary evidence.
+      expect(c.secondaryMoods, isNotEmpty);
+      expect(c.scores.containsKey(c.primaryMood), isTrue);
+    });
+
+    test('strong genre signal drives classification', () {
+      final c = _classify(title: 'Track One', genre: 'Classical Ambient');
+      // ambient maps to both chill and focus with equal strength.
+      expect(
+        c.primaryMood,
+        predicate((m) => m == SongMood.chill || m == SongMood.focus),
+      );
+    });
+
+    test('combines title, artist and album evidence for multi-mood', () {
+      final c = _classify(
+        title: 'Heartbreak',
+        artist: 'Some Artist',
+        album: 'Love Letters',
+      );
+      expect(c.primaryMood, SongMood.sad);
+      expect(c.secondaryMoods.containsKey(SongMood.romantic), isTrue);
+    });
+
+    test('incomplete metadata still uses whatever signal exists', () {
+      final c = _classify(
+        title: 'Dance Party',
+        artist: null,
+        album: null,
+        genre: null,
+        year: null,
+        durationMs: 240000,
+      );
+      expect(c.primaryMood, isNot(SongMood.unknown));
+      expect(c.primaryMood, SongMood.happy);
+      expect(c.confidence, greaterThan(0.0));
+    });
   });
 
   group('SmartMixService mix generation', () {
@@ -278,6 +352,63 @@ void main() {
         expect(
           happy.songs.map((s) => s.song.title),
           contains('Happy Summer Party'),
+        );
+      },
+    );
+
+    test('carefully falls back to strongest weak evidence, never to random', () async {
+      // Sad-primary, but its long duration gives a genuine (weak) chill signal.
+      await libraryRepo.syncTracks([
+        _track(title: 'Sad Hearts', durationMs: 480000, id: 1),
+      ]);
+      final chill = await service.generateMix(SmartMixKind.chillMix, limit: 10);
+      expect(chill.songs.map((s) => s.song.title), contains('Sad Hearts'));
+    });
+
+    test('does not manufacture songs for a mood with zero evidence', () async {
+      await libraryRepo.syncTracks([
+        _track(title: 'Sunshine Smile', id: 1),
+        _track(title: 'Gentle Rain', id: 2),
+      ]);
+      final romantic = await service.generateMix(
+        SmartMixKind.romanticMix,
+        limit: 10,
+      );
+      expect(romantic.songs, isEmpty);
+    });
+
+    test('ranks mood relevance first, then personalization', () async {
+      await libraryRepo.syncTracks([
+        _track(title: 'Sunshine Smile Party', id: 1), // happy evidence 3
+        _track(title: 'Sunshine', id: 2), // happy evidence 1, but favorite
+      ]);
+      // Make the weaker-happy track a favorite: personalization must not let it
+      // outrank the strongly-happy track.
+      await libraryRepo.toggleFavorite(2);
+
+      final mix = await service.generateMix(SmartMixKind.happyMix, limit: 10);
+      final titles = mix.songs.map((s) => s.song.title).toList();
+      expect(
+        titles.indexOf('Sunshine Smile Party'),
+        lessThan(titles.indexOf('Sunshine')),
+      );
+    });
+
+    test(
+      'mood mixes consider the full library beyond the old 2000-song cap',
+      () async {
+        // 2100 neutral tracks plus one happy track at the lowest id (the last
+        // position in recently-added order, which the old 2000 cap missed).
+        final tracks = <IngestTrack>[
+          for (var i = 2; i <= 2100; i++) _track(title: 'Track $i', id: i),
+        ];
+        tracks.insert(0, _track(title: 'Happy Sunshine Party', id: 1));
+        await libraryRepo.syncTracks(tracks);
+
+        final mix = await service.generateMix(SmartMixKind.happyMix, limit: 10);
+        expect(
+          mix.songs.map((s) => s.song.title),
+          contains('Happy Sunshine Party'),
         );
       },
     );

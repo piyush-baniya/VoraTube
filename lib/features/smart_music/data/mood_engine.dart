@@ -20,9 +20,13 @@ class MoodClassification {
 
   /// Raw positive evidence score per mood (0 for moods with no evidence).
   ///
-  /// This is the source of truth for multi-mood membership: a song may belong
-  /// to more than one mood mix when several moods carry genuine positive
-  /// evidence, without forcing it into every mood.
+  /// The value is the sum of a mood's strong (keyword/genre) evidence plus its
+  /// supporting (duration/year) nudges. This is the source of truth for
+  /// multi-mood membership: a song may belong to more than one mood mix when
+  /// several moods carry genuine positive evidence, without forcing it into
+  /// every mood. Because duration/year nudges are small, they rarely meet the
+  /// [MoodEngine.primaryEvidenceThreshold] and so do not create false secondary
+  /// membership on their own.
   final Map<SongMood, double> scores;
 }
 
@@ -288,6 +292,12 @@ class MoodEngine {
     }
   }
 
+  /// Threshold below which raw supporting (duration/year) evidence is never
+  /// allowed to promote a mood on its own. A mood only becomes the primary mood
+  /// (and thus drives mix membership) when it carries genuine keyword/genre
+  /// evidence of at least this strength.
+  static const double primaryEvidenceThreshold = 1.0;
+
   MoodClassification classify({
     required String title,
     required String? artist,
@@ -311,42 +321,67 @@ class MoodEngine {
       }
     }
 
-    final scores = <SongMood, double>{};
-
+    // Strong, meaningful evidence: title/artist/album keywords plus a mapped
+    // genre. These alone decide whether a song is classifiable at all.
+    final strong = <SongMood, double>{};
     for (final mood in SongMood.values) {
-      scores[mood] = 0.0;
+      strong[mood] = 0.0;
     }
+    _scoreByKeywords(_normalizeText('$title $artist $album'), strong);
+    _scoreByGenre(genre, strong);
 
-    final searchableText = _normalizeText('$title $artist $album $genre');
-
-    _scoreByKeywords(searchableText, scores);
-    _scoreByGenre(genre, scores);
-    _scoreByDuration(durationMs, scores);
-    _scoreByYear(year, scores);
-
-    final sortedEntries = scores.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    final primaryMood = sortedEntries.first.key;
-    final primaryScore = sortedEntries.first.value;
-    final totalScore = scores.values.reduce((a, b) => a + b);
-    final confidence = totalScore > 0
-        ? (primaryScore / totalScore).clamp(0.0, 1.0)
-        : 0.0;
-
-    final secondaryMoods = <SongMood, double>{};
-    for (var i = 1; i < sortedEntries.length && i <= 3; i++) {
-      if (sortedEntries[i].value > 0) {
-        secondaryMoods[sortedEntries[i].key] = sortedEntries[i].value;
-      }
-    }
-
-    if (primaryScore == 0) {
+    // Supporting evidence: duration/year nudges. These refine ranking and
+    // confidence but must NEVER, on their own, promote an evidence-less song to
+    // a concrete mood (e.g. a 2:50 track is not automatically "energetic", and
+    // a 7-minute track is not automatically "chill").
+    if (!strong.values.any((v) => v > 0)) {
       return const MoodClassification(
         primaryMood: SongMood.unknown,
         confidence: 0.0,
         secondaryMoods: {},
+        scores: {},
       );
+    }
+
+    final support = <SongMood, double>{};
+    for (final mood in SongMood.values) {
+      support[mood] = 0.0;
+    }
+    _scoreByDuration(durationMs, support);
+    _scoreByYear(year, support);
+
+    // The primary mood comes from the strongest genuine (strong) evidence.
+    final primaryMood = strong.entries
+        .reduce((a, b) => a.value >= b.value ? a : b)
+        .key;
+    final primaryStrong = strong[primaryMood]!;
+    final totalStrong = strong.values.reduce((a, b) => a + b);
+    // Confidence reflects how dominant the primary mood is within the *strong*
+    // evidence, so a single weak nudge can never imply false certainty.
+    final confidence = totalStrong > 0
+        ? (primaryStrong / totalStrong).clamp(0.0, 1.0)
+        : 0.0;
+
+    // Secondary moods = other moods with genuine strong evidence, strongest
+    // first (bounded to the clearest three). These are what multi-mood mix
+    // membership is based on.
+    final secondaryMoods = <SongMood, double>{};
+    final secondaryEntries =
+        strong.entries
+            .where((e) => e.key != primaryMood && e.value > 0)
+            .toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+    for (var i = 0; i < secondaryEntries.length && i < 3; i++) {
+      secondaryMoods[secondaryEntries[i].key] = secondaryEntries[i].value;
+    }
+
+    // Combined raw positive evidence (strong + supporting). Supporting nudges
+    // are included here so ranking can break ties, but they are almost always
+    // far below [primaryEvidenceThreshold], so they do not create secondary
+    // mix membership on their own.
+    final scores = <SongMood, double>{};
+    for (final mood in SongMood.values) {
+      scores[mood] = (strong[mood] ?? 0.0) + (support[mood] ?? 0.0);
     }
 
     return MoodClassification(

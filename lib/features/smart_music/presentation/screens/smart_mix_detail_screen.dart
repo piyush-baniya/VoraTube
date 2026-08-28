@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../app/theme/app_tokens.dart';
 import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../../core/player/player_controller.dart';
+import '../../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../../../features/library/data/library_models.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
 import '../../../../../features/library/presentation/widgets/song_actions.dart';
@@ -177,23 +178,34 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
               ),
             ),
           ),
-          SliverList.separated(
-            itemCount: widget.mix.songs.length,
-            separatorBuilder: (_, __) => Divider(
-              height: 0.5,
-              indent: 80,
-              endIndent: AppTokens.s4,
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          if (widget.mix.songs.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: EmptyState(
+                icon: Icons.mood_rounded,
+                title: 'No recommendations yet',
+                message:
+                    'We couldn\'t find songs for this mix. Try again later.',
+              ),
+            )
+          else
+            SliverList.separated(
+              itemCount: widget.mix.songs.length,
+              separatorBuilder: (_, __) => Divider(
+                height: 0.5,
+                indent: 80,
+                endIndent: AppTokens.s4,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              ),
+              itemBuilder: (context, index) {
+                final tile = widget.mix.songs[index];
+                return _MixSongTile(
+                  tile: tile,
+                  index: index,
+                  onTap: () => _playFromIndex(index),
+                );
+              },
             ),
-            itemBuilder: (context, index) {
-              final tile = widget.mix.songs[index];
-              return _MixSongTile(
-                tile: tile,
-                index: index,
-                onTap: () => _playFromIndex(index),
-              );
-            },
-          ),
         ],
       ),
     );
