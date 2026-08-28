@@ -64,6 +64,9 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   bool _disposed = false;
   bool _suppressStats = true;
   String? _statLastKey;
+  String? _statKey;
+  int _statAccumMs = 0;
+  int _statLastPosMs = -1;
   bool _pausedByInterruption = false;
   ReplayGainMode _replayGainMode = ReplayGainMode.off;
   int _playGeneration = 0;
@@ -100,6 +103,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
           if (!_positionController.isClosed) {
             _positionController.add(position);
           }
+          _trackListenedMs(position);
           _schedulePersist();
         });
 
@@ -175,7 +179,10 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       _player.playing ? _player.pause() : _player.play();
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() {
+    _flushCurrentHeard();
+    return _player.pause();
+  }
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
@@ -313,6 +320,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   @override
   Future<void> dispose() async {
     _disposed = true;
+    _flushCurrentHeard();
     _persistDebounce?.cancel();
     await _persistNow();
     await _positionSub?.cancel();
@@ -349,6 +357,9 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
 
   /// Records a play when a *distinct* track starts. Suppressed while the
   /// persisted queue is being restored so launches never inflate counts.
+  ///
+  /// When switching away from a tracked song, it first credits that song's
+  /// measured listening time, then records the fresh start of the new track.
   void _maybeRecordStat(SongRef? ref) {
     if (ref == null || _suppressStats) {
       return;
@@ -356,8 +367,51 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     if (_statLastKey == ref.identityKey) {
       return;
     }
+    // Credit the song we are leaving with the time the engine actually heard.
+    if (_statKey != null && _statAccumMs > 0) {
+      _onTrackStarted?.call(_statKey!, _statAccumMs);
+    }
     _statLastKey = ref.identityKey;
-    _onTrackStarted?.call(ref.identityKey);
+    _statKey = ref.identityKey;
+    _statAccumMs = 0;
+    _statLastPosMs = -1;
+    _onTrackStarted?.call(ref.identityKey, 0);
+  }
+
+  /// Accumulates real listening time for the current tracked song using
+  /// position deltas, only while the engine is playing that same song.
+  /// Paused/stopped time never accumulates, and backwards seeks never inflate
+  /// the count.
+  void _trackListenedMs(Duration position) {
+    if (!_player.playing || _suppressStats || _statKey == null) {
+      _statLastPosMs = -1;
+      return;
+    }
+    final key = _currentRef()?.identityKey;
+    if (key == null || key != _statKey) {
+      _statLastPosMs = -1;
+      return;
+    }
+    final posMs = position.inMilliseconds;
+    if (_statLastPosMs >= 0) {
+      final delta = posMs - _statLastPosMs;
+      if (delta > 0) {
+        _statAccumMs += delta;
+      }
+    }
+    _statLastPosMs = posMs;
+  }
+
+  /// Credits and resets the current tracked song's measured listening time.
+  /// Called when playback stops or pauses, so no heard time is lost, and
+  /// paused/stopped time is never booked.
+  void _flushCurrentHeard() {
+    if (_statKey != null && _statAccumMs > 0) {
+      _onTrackStarted?.call(_statKey!, _statAccumMs);
+    }
+    _statKey = null;
+    _statAccumMs = 0;
+    _statLastPosMs = -1;
   }
 
   void _applyReplayGainToCurrent() {

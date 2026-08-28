@@ -39,6 +39,42 @@ void main() {
     test('short tokens must match exactly to avoid noise', () {
       expect(tokenFuzzyMatch('drake', 'drake123'), false);
     });
+
+    test('admitted the spec typo examples across tokens', () {
+      expect(tokenFuzzyMatch('imagine dragins', 'Imagine Dragons'), true);
+      expect(tokenFuzzyMatch('linkn park', 'Linkin Park'), true);
+      expect(tokenFuzzyMatch('weeknd', 'The Weeknd'), true);
+    });
+
+    test('normalizes case, spaces, punctuation and apostrophes', () {
+      expect(tokenFuzzyMatch("o'clock", 'o clock'), true);
+      expect(tokenFuzzyMatch("o'clock", 'oclock'), true);
+      expect(tokenFuzzyMatch('  hello   world ', 'hello world'), true);
+      expect(tokenFuzzyMatch('hello-world', 'hello world'), true);
+    });
+
+    test('unrelated multi-token query is rejected', () {
+      expect(tokenFuzzyMatch('quantum blender', 'Imagine Dragons'), false);
+    });
+  });
+
+  group('searchTokens / normalizeSearchText', () {
+    test('tokenizes normalized text with apostrophes stripped', () {
+      expect(searchTokens("Beyoncé o'clock 100%"), [
+        'beyoncé',
+        'oclock',
+        '100',
+      ]);
+    });
+
+    test('preserves Unicode letters', () {
+      expect(normalizeSearchText('Beyoncé'), 'beyoncé');
+    });
+
+    test('strips apostrophes and punctuation into spaces', () {
+      expect(normalizeSearchText("don't stop"), 'dont stop');
+      expect(normalizeSearchText('a.b,c-d'), 'a b c d');
+    });
   });
 
   group('relevanceScore', () {
@@ -79,6 +115,37 @@ void main() {
         album: '',
       );
       expect(titleExact, greaterThan(artistExact));
+    });
+
+    test('preserves exact -> prefix -> partial -> fuzzy ranking', () {
+      final exact = relevanceScore(
+        query: 'imagine dragons',
+        title: 'Imagine Dragons',
+        artist: 'Imagine Dragons',
+        album: '',
+      );
+      final prefix = relevanceScore(
+        query: 'imagine',
+        title: 'Imagine Dragons',
+        artist: '',
+        album: '',
+      );
+      final partial = relevanceScore(
+        query: 'agine dragons',
+        title: 'Imagine Dragons',
+        artist: '',
+        album: '',
+      );
+      final fuzzy = relevanceScore(
+        query: 'imagine dragins',
+        title: 'Imagine Dragons',
+        artist: '',
+        album: '',
+      );
+      expect(exact, greaterThan(prefix));
+      expect(prefix, greaterThan(partial));
+      expect(partial, greaterThan(fuzzy));
+      expect(fuzzy, greaterThan(0));
     });
   });
 }

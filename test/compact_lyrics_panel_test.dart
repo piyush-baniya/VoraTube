@@ -59,15 +59,18 @@ void main() {
     expect(find.byIcon(Icons.wifi_off_rounded), findsOneWidget);
   });
 
-  testWidgets('not found shows a distinct empty state, not the offline message', (
-    tester,
-  ) async {
-    await tester.pumpWidget(buildPanel(result: const LyricsResult.notFound()));
-    await tester.pump();
+  testWidgets(
+    'not found shows a distinct empty state, not the offline message',
+    (tester) async {
+      await tester.pumpWidget(
+        buildPanel(result: const LyricsResult.notFound()),
+      );
+      await tester.pump();
 
-    expect(find.text('No internet connection available.'), findsNothing);
-    expect(find.text('No lyrics found'), findsOneWidget);
-  });
+      expect(find.text('No internet connection available.'), findsNothing);
+      expect(find.text('No lyrics found'), findsOneWidget);
+    },
+  );
 
   testWidgets('collapses to a preview of the current line', (tester) async {
     await tester.pumpWidget(buildPanel());

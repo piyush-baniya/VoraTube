@@ -10,6 +10,7 @@ import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../library/presentation/screens/filtered_songs_screen.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../providers/statistics_providers.dart';
 import '../screens/statistics_screen.dart';
 
 final listeningStatsProvider = FutureProvider.autoDispose<ListeningStats>((
@@ -32,6 +33,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(listeningStatsProvider);
+    final breakdown = ref.watch(listeningBreakdownProvider).valueOrNull;
     return async.when(
       skipLoadingOnRefresh: true,
       loading: () => const SizedBox.shrink(),
@@ -96,18 +98,20 @@ class ListeningInsightsStrip extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: _CompactCard(
-                        icon: Icons.play_circle_outline_rounded,
-                        label: 'Total songs played',
-                        value: '${stats.totalPlays}',
+                        icon: Icons.library_music_rounded,
+                        label: 'Songs listened',
+                        value: '${breakdown?.totalUniqueSongs ?? 0}',
                         tint: AppColors.accent,
                       ),
                     ),
                     const SizedBox(width: AppTokens.s2),
                     Expanded(
                       child: _CompactCard(
-                        icon: Icons.library_music_rounded,
-                        label: 'Total songs',
-                        value: '${stats.totalSongs}',
+                        icon: Icons.schedule_rounded,
+                        label: 'Duration listened',
+                        value: formatListeningDuration(
+                          breakdown?.totalListenedMs ?? 0,
+                        ),
                         tint: AppColors.accent,
                       ),
                     ),

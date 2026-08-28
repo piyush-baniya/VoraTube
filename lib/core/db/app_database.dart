@@ -48,6 +48,28 @@ const _songExtrasIndexes = <String>[
       'ON song_extras(art_small_path)',
 ];
 
+/// One row per reported play, timestamped, with the millisecond count the
+/// engine actually heard for that play (pause/stop time is never added).
+///
+/// This is the time-series backing for the daily/weekly/yearly and peak-day
+/// statistics. It is a plain side table (see [songExtrasDdl]) deliberately kept
+/// out of drift's generated code so it can be created idempotently in
+/// [AppDatabase.migration] without a schema version bump.
+const _playHistoryDdl = '''
+CREATE TABLE IF NOT EXISTS play_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+  played_at INTEGER NOT NULL,
+  listened_ms INTEGER NOT NULL DEFAULT 0
+)
+''';
+
+const _playHistoryIndexes = <String>[
+  'CREATE INDEX IF NOT EXISTS play_history_played_at '
+      'ON play_history(played_at)',
+  'CREATE INDEX IF NOT EXISTS play_history_song ON play_history(song_id)',
+];
+
 /// Album-level bookkeeping that has no place on the drift-declared table.
 ///
 /// Only [artResolvedAt]-style attempt tracking lives here. Without it, an album
@@ -79,7 +101,11 @@ class AppDatabase extends _$AppDatabase {
       // only knows about drift-declared tables) as well as upgrades.
       await customStatement(songExtrasDdl);
       await customStatement(albumExtrasDdl);
+      await customStatement(_playHistoryDdl);
       for (final statement in _songExtrasIndexes) {
+        await customStatement(statement);
+      }
+      for (final statement in _playHistoryIndexes) {
         await customStatement(statement);
       }
     },

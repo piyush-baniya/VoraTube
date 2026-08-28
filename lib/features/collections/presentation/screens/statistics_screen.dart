@@ -66,6 +66,9 @@ class StatisticsScreen extends ConsumerWidget {
                   ),
                   const _TopPlayedSection(),
                   const _RecentlyPlayedSection(),
+                  const _PeakDaySection(),
+                  const _WeeklyReportSection(),
+                  const _YearlyReportSection(),
                   const SliverToBoxAdapter(
                     child: SizedBox(height: AppTokens.s8),
                   ),
@@ -384,4 +387,451 @@ class _SongListSection extends ConsumerWidget {
     final ctx = playContextFromTiles(tiles, startIndex);
     ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
   }
+}
+
+class _PeakDaySection extends ConsumerWidget {
+  const _PeakDaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final peak = ref.watch(listeningBreakdownProvider).valueOrNull?.peakDay;
+    return SliverToBoxAdapter(
+      child: _SectionCard(
+        title: 'Peak Day',
+        icon: Icons.local_fire_department_rounded,
+        child: peak == null
+            ? const _SectionEmpty(
+                message: 'Your most active day will appear here.',
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _formatDay(peak.day),
+                    style: Theme.of(context).textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: AppTokens.s2),
+                  Row(
+                    children: [
+                      _MiniStat(
+                        icon: Icons.schedule_rounded,
+                        value: formatListeningDuration(peak.listenedMs),
+                        label: 'listened',
+                      ),
+                      const SizedBox(width: AppTokens.s3),
+                      _MiniStat(
+                        icon: Icons.play_circle_outline_rounded,
+                        value: '${peak.plays}',
+                        label: 'plays',
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _WeeklyReportSection extends ConsumerWidget {
+  const _WeeklyReportSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final breakdown = ref.watch(listeningBreakdownProvider).valueOrNull;
+    return SliverToBoxAdapter(
+      child: _ReportBody(
+        title: 'This Week',
+        icon: Icons.calendar_view_week_rounded,
+        period: breakdown?.week,
+        bars: breakdown?.weekDaily,
+        barLabel: (d) =>
+            const ['M', 'T', 'W', 'T', 'F', 'S', 'S'][d.weekday - 1],
+      ),
+    );
+  }
+}
+
+class _YearlyReportSection extends ConsumerWidget {
+  const _YearlyReportSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final breakdown = ref.watch(listeningBreakdownProvider).valueOrNull;
+    return SliverToBoxAdapter(
+      child: _ReportBody(
+        title: 'This Year',
+        icon: Icons.calendar_month_rounded,
+        period: breakdown?.year,
+        bars: breakdown?.yearMonthly,
+        barLabel: (d) => const [
+          'J',
+          'F',
+          'M',
+          'A',
+          'M',
+          'J',
+          'J',
+          'A',
+          'S',
+          'O',
+          'N',
+          'D',
+        ][d.month - 1],
+      ),
+    );
+  }
+}
+
+class _ReportBody extends StatelessWidget {
+  const _ReportBody({
+    required this.title,
+    required this.icon,
+    required this.period,
+    required this.bars,
+    required this.barLabel,
+  });
+
+  final String title;
+  final IconData icon;
+  final PeriodStats? period;
+  final List<DayListen>? bars;
+  final String Function(DateTime day) barLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasData = period != null && period!.plays > 0;
+    return _SectionCard(
+      title: title,
+      icon: icon,
+      child: !hasData
+          ? _SectionEmpty(message: 'Nothing listened $title yet.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _MiniStat(
+                      icon: Icons.schedule_rounded,
+                      value: formatListeningDuration(period!.listenedMs),
+                      label: 'listened',
+                    ),
+                    const SizedBox(width: AppTokens.s3),
+                    _MiniStat(
+                      icon: Icons.play_circle_outline_rounded,
+                      value: '${period!.plays}',
+                      label: 'plays',
+                    ),
+                    const SizedBox(width: AppTokens.s3),
+                    _MiniStat(
+                      icon: Icons.library_music_rounded,
+                      value: '${period!.uniqueSongs}',
+                      label: 'songs',
+                    ),
+                  ],
+                ),
+                if (period!.topSongs.isNotEmpty) ...[
+                  const SizedBox(height: AppTokens.s3),
+                  const _SubLabel('Top songs'),
+                  const SizedBox(height: AppTokens.s1),
+                  ...period!.topSongs.map(
+                    (e) => _HistoryRow(
+                      title: e.label,
+                      subtitle: e.artist,
+                      trailing: '${e.count} plays',
+                    ),
+                  ),
+                ],
+                if (period!.topArtist != null) ...[
+                  const SizedBox(height: AppTokens.s3),
+                  const _SubLabel('Top artist'),
+                  const SizedBox(height: AppTokens.s1),
+                  _HistoryRow(
+                    title: period!.topArtist!.label,
+                    subtitle: null,
+                    trailing: '${period!.topArtist!.count} plays',
+                  ),
+                ],
+                if (bars != null && bars!.any((b) => b.listenedMs > 0)) ...[
+                  const SizedBox(height: AppTokens.s3),
+                  const _SubLabel('By day'),
+                  const SizedBox(height: AppTokens.s2),
+                  _BarChart(bars: bars!, barLabel: barLabel),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({
+    required this.title,
+    required this.icon,
+    required this.child,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = AppColors.accent;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s2,
+        AppTokens.s4,
+        AppTokens.s2,
+      ),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppTokens.s4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTokens.rXl),
+          color: theme.colorScheme.surfaceContainerLowest.withValues(
+            alpha: 0.4,
+          ),
+          border: Border.all(
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 20, color: accent),
+                const SizedBox(width: AppTokens.s2),
+                Text(
+                  title.toUpperCase(),
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppTokens.s3),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionEmpty extends StatelessWidget {
+  const _SectionEmpty({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      message,
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  const _MiniStat({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: AppColors.accent),
+            const SizedBox(width: 4),
+            Text(
+              value,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SubLabel extends StatelessWidget {
+  const _SubLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      text.toUpperCase(),
+      style: theme.textTheme.labelSmall?.copyWith(
+        letterSpacing: 0.8,
+        fontWeight: FontWeight.w700,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+class _HistoryRow extends StatelessWidget {
+  const _HistoryRow({
+    required this.title,
+    this.subtitle,
+    required this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+  final String trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppTokens.s2),
+          Text(
+            trailing,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BarChart extends StatelessWidget {
+  const _BarChart({required this.bars, required this.barLabel});
+
+  final List<DayListen> bars;
+  final String Function(DateTime day) barLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = AppColors.accent;
+    final maxMs = bars.fold<int>(
+      0,
+      (m, b) => b.listenedMs > m ? b.listenedMs : m,
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        for (final b in bars)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    height:
+                        (maxMs == 0
+                            ? 0
+                            : (b.listenedMs / maxMs).clamp(0.06, 1.0)) *
+                        72,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(6),
+                      color: b.listenedMs > 0
+                          ? accent.withValues(
+                              alpha:
+                                  0.35 +
+                                  0.65 *
+                                      (b.listenedMs / (maxMs == 0 ? 1 : maxMs)),
+                            )
+                          : theme.colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.5),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    barLabel(b.day),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+String _formatDay(DateTime day) {
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  return '${months[day.month - 1]} ${day.day}, ${day.year}';
 }

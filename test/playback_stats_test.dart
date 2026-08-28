@@ -231,11 +231,11 @@ void main() {
         flushInterval: const Duration(hours: 1),
       );
 
-      buffer.add('ms:1');
-      buffer.add('ms:2');
+      buffer.add('ms:1', 0);
+      buffer.add('ms:2', 0);
       expect(buffer.pendingCount, 2);
 
-      buffer.add('ms:3'); // triggers flush at threshold
+      buffer.add('ms:3', 0); // triggers flush at threshold
       await Future<void>.delayed(Duration.zero); // allow microtask
 
       expect(buffer.pendingCount, 0);
@@ -251,9 +251,9 @@ void main() {
         flushInterval: const Duration(hours: 1),
       );
 
-      buffer.add('ms:1');
-      buffer.add('ms:1');
-      buffer.add('ms:1');
+      buffer.add('ms:1', 0);
+      buffer.add('ms:1', 0);
+      buffer.add('ms:1', 0);
 
       expect(buffer.pendingCount, 1);
     });
@@ -265,8 +265,8 @@ void main() {
         flushInterval: const Duration(hours: 1),
       );
 
-      buffer.add('ms:1');
-      buffer.add('ms:5');
+      buffer.add('ms:1', 0);
+      buffer.add('ms:5', 0);
       expect(buffer.pendingCount, 2);
 
       await buffer.flush();

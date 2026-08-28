@@ -21,3 +21,14 @@ final recentlyPlayedSongsProvider =
           .watch(libraryRepositoryProvider)
           .recentlyPlayedSongs(limit: 20);
     });
+
+/// Aggregate listening breakdown built from real play-history data.
+///
+/// Supplies all-time totals, peak day, weekly and yearly reports. Computed
+/// once per screen open (from a single DB aggregation) rather than on every
+/// frame, so it stays cheap even with large libraries.
+final listeningBreakdownProvider =
+    FutureProvider.autoDispose<ListeningBreakdown>((ref) async {
+      ref.watch(libraryRefreshTickProvider);
+      return ref.watch(libraryRepositoryProvider).listeningBreakdown();
+    });

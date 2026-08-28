@@ -186,12 +186,12 @@ abstract interface class PlayerPersistence {
   Future<void> write(String key, String value);
 }
 
-/// Fired by the engine whenever a distinct track starts playing.
-///
-/// The payload is the [SongRef.identityKey] — deliberately storage-free so
-/// `core/player` never depends on Drift. The host app adapts keys to
-/// whatever persistence it wants (VoraTube records play-count stats).
-typedef PlaybackStatsSink = void Function(String identityKey);
+/// Fired by the engine for a distinct track-start (the identity key) together
+/// with the milliseconds the engine actually heard for that track up to that
+/// point. `listenedMs` is 0 on a fresh start; a later call with the same key
+/// and a positive value credits the just-ended playback with real listening
+/// time. Deliberately storage-free so `core/player` never depends on Drift.
+typedef PlaybackStatsSink = void Function(String identityKey, int listenedMs);
 
 /// VoraTube's public playback contract.
 ///

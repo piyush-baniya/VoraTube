@@ -999,12 +999,26 @@ extension LibraryQueries on LibraryRepository {
 
     final songRows =
         await (_db.select(_db.songs)
-              ..where(
-                (tbl) =>
+              ..where((tbl) {
+                final phrase =
                     tbl.titleSearch.like(needle) |
                     tbl.artistSearch.like(needle) |
-                    tbl.albumName.lower().like(needle),
-              )
+                    tbl.albumName.lower().like(needle);
+                var clause = phrase;
+                // OR per-token substrings so typo-tolerant fuzzy matching in
+                // `tokenFuzzyMatch` has candidates to work with: `%linkn park%`
+                // won't select "Linkin Park", but `%park%` does.
+                for (final tok in searchTokens(q)) {
+                  if (tok.length < 3) continue;
+                  final tn = '%$tok%';
+                  clause =
+                      clause |
+                      tbl.titleSearch.like(tn) |
+                      tbl.artistSearch.like(tn) |
+                      tbl.albumName.lower().like(tn);
+                }
+                return clause;
+              })
               ..limit(candidateLimit))
             .get();
 
@@ -1026,6 +1040,11 @@ extension LibraryQueries on LibraryRepository {
 
     final albums = _db.albums;
     final albumNameLower = albums.name.lower();
+    Expression<bool> albumClause = albumNameLower.like(needle);
+    for (final tok in searchTokens(q)) {
+      if (tok.length < 3) continue;
+      albumClause = albumClause | albumNameLower.like('%$tok%');
+    }
     final albumCandidates =
         await (_db.selectOnly(albums)
               ..addColumns([
@@ -1036,7 +1055,7 @@ extension LibraryQueries on LibraryRepository {
                 albums.artSmallPath,
                 albums.artLargePath,
               ])
-              ..where(albumNameLower.like(needle))
+              ..where(albumClause)
               ..limit(candidateLimit))
             .get();
 
@@ -1069,10 +1088,16 @@ extension LibraryQueries on LibraryRepository {
     albumScored.sort((a, b) => b.score.compareTo(a.score));
 
     final artists = _db.artists;
+    final artistsNameLower = artists.name.lower();
+    Expression<bool> artistClause = artistsNameLower.like(needle);
+    for (final tok in searchTokens(q)) {
+      if (tok.length < 3) continue;
+      artistClause = artistClause | artistsNameLower.like('%$tok%');
+    }
     final artistCandidates =
         await (_db.selectOnly(artists)
               ..addColumns([artists.id, artists.artistKey, artists.name])
-              ..where(artists.name.lower().like(needle))
+              ..where(artistClause)
               ..limit(candidateLimit))
             .get();
 
@@ -1091,7 +1116,15 @@ extension LibraryQueries on LibraryRepository {
 
     final playlistCandidates =
         await (_db.select(_db.playlists)
-              ..where((tbl) => tbl.name.lower().like(needle))
+              ..where((tbl) {
+                final nameLower = tbl.name.lower();
+                var clause = nameLower.like(needle);
+                for (final tok in searchTokens(q)) {
+                  if (tok.length < 3) continue;
+                  clause = clause | nameLower.like('%$tok%');
+                }
+                return clause;
+              })
               ..limit(candidateLimit))
             .get();
 
@@ -1337,8 +1370,11 @@ extension CollectionQueries on LibraryRepository {
     return out;
   }
 
-  /// Increments play_count and stamps last_played_at per song. Creates the
-  /// stats row when absent.
+  /// Increments play_count, stamps last_played_at and appends a `play_history`
+  /// row per song. The history row feeds the daily/weekly/yearly and peak-day
+  /// statistics; its `listened_ms` is written later by
+  /// [addPlaybackListenedMs] once the engine reports how long the track was
+  /// actually heard for.
   Future<void> recordPlayback(List<int> songRowIds, DateTime at) async {
     if (songRowIds.isEmpty) {
       return;
@@ -1353,8 +1389,34 @@ extension CollectionQueries on LibraryRepository {
           'play_count = play_count + 1, last_played_at = excluded.last_played_at',
           [id, millis],
         );
+        b.customStatement(
+          'INSERT INTO play_history (song_id, played_at, listened_ms) '
+          'VALUES (?, ?, 0)',
+          [id, millis],
+        );
       }
     });
+  }
+
+  /// Credits `listenedMs` to the most recent unclosed `play_history` row for a
+  /// song. The engine reports this when a track ends (advance/completion/stop),
+  /// so only time actually heard — never paused or stopped time — is recorded.
+  Future<void> addPlaybackListenedMs({
+    required int songRowId,
+    required int listenedMs,
+    required DateTime at,
+  }) async {
+    if (listenedMs <= 0) {
+      return;
+    }
+    await _db.customStatement(
+      'UPDATE play_history SET listened_ms = listened_ms + ? '
+      'WHERE id = ('
+      'SELECT id FROM play_history WHERE song_id = ? AND played_at <= ? '
+      'ORDER BY id DESC LIMIT 1'
+      ')',
+      [listenedMs, songRowId, at.millisecondsSinceEpoch],
+    );
   }
 
   /// Persists a user-assigned mood for a song (the value stored in
@@ -1497,7 +1559,210 @@ extension CollectionQueries on LibraryRepository {
   Future<List<SongTileData>> recentlyPlayedSongs({int limit = 5}) async {
     return collectionSongs(CollectionKind.recentlyPlayed, limit: limit);
   }
+
+  /// Aggregates real, persisted listening history into the statistics screen's
+  /// time-based breakdown. Every figure is derived from `play_history` rows —
+  /// actual measured listening time and the timestamp each play started.
+  ///
+  /// [now] is injected so week/year boundaries can be tested deterministically.
+  Future<ListeningBreakdown> listeningBreakdown({DateTime? now}) async {
+    final reference = now ?? DateTime.now();
+    final weekStart = DateTime.utc(
+      reference.year,
+      reference.month,
+      reference.day,
+    ).subtract(Duration(days: reference.weekday - 1));
+
+    // One bounded pass over the joined history so all bucketing happens in
+    // Dart with correct local-date handling, rather than many SQL passes.
+    final rows = await _db
+        .customSelect(
+          'SELECT ph.played_at AS played_at, ph.listened_ms AS listened_ms, '
+          's.title AS title, s.artist AS artist '
+          'FROM play_history ph JOIN songs s ON s.id = ph.song_id '
+          'ORDER BY ph.played_at ASC',
+        )
+        .get();
+
+    int totalListenedMs = 0;
+    int totalPlays = 0;
+    final uniqueSongs = <String>{};
+    // dayKey (yyyy-mm-dd) -> ms
+    final dayMs = <String, int>{};
+    // dayKey -> plays
+    final dayPlays = <String, int>{};
+    // year+monthKey -> ms
+    final monthMs = <String, int>{};
+    // period key -> artistKey normalized -> plays
+    final weekArtistPlays = <String, int>{};
+    final yearArtistPlays = <String, int>{};
+    // period key -> song play counts (keyed by normalized title+artist)
+    final weekSongPlays = <String, int>{};
+    final yearSongPlays = <String, int>{};
+    // period key -> song metadata (normalized key -> {title, artist})
+    final weekSongMeta = <String, ({String title, String? artist})>{};
+    final yearSongMeta = <String, ({String title, String? artist})>{};
+
+    for (final row in rows) {
+      final playedAtMs = (row.data['played_at'] as num).toInt();
+      final listenedMs = (row.data['listened_ms'] as num).toInt();
+      final title = (row.data['title'] as String?) ?? '';
+      final artist = (row.data['artist'] as String?) ?? '';
+      final day = DateTime.fromMillisecondsSinceEpoch(playedAtMs);
+      final dayKey =
+          '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      final monthKey = '${day.year}-${day.month.toString().padLeft(2, '0')}';
+
+      totalListenedMs += listenedMs;
+      totalPlays += 1;
+      uniqueSongs.add(_songHistoryKey(title, artist));
+      dayMs.update(dayKey, (v) => v + listenedMs, ifAbsent: () => listenedMs);
+      dayPlays.update(dayKey, (v) => v + 1, ifAbsent: () => 1);
+      monthMs.update(
+        monthKey,
+        (v) => v + listenedMs,
+        ifAbsent: () => listenedMs,
+      );
+
+      final inWeek = !day.isBefore(weekStart);
+      final songKey = _songHistoryKey(title, artist);
+      final artistKey = artist.isEmpty ? '(Unknown)' : artist.toLowerCase();
+
+      if (inWeek) {
+        weekArtistPlays.update(artistKey, (v) => v + 1, ifAbsent: () => 1);
+        weekSongPlays.update(songKey, (v) => v + 1, ifAbsent: () => 1);
+        weekSongMeta[songKey] = (title: title, artist: artist);
+      }
+      final inYear = day.year == reference.year;
+      if (inYear) {
+        yearArtistPlays.update(artistKey, (v) => v + 1, ifAbsent: () => 1);
+        yearSongPlays.update(songKey, (v) => v + 1, ifAbsent: () => 1);
+        yearSongMeta[songKey] = (title: title, artist: artist);
+      }
+    }
+
+    // --- Week report ---
+    var weekMs = 0;
+    var weekPlays = 0;
+    for (var i = 0; i < 7; i++) {
+      final d = weekStart.add(Duration(days: i));
+      final key =
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      weekMs += dayMs[key] ?? 0;
+      weekPlays += dayPlays[key] ?? 0;
+    }
+    // Distinct songs seen this week == distinct normalized entries in the week
+    // song map, which is keyed per in-week row.
+    final weekUniqueSongs = weekSongMeta.length;
+
+    // --- Year report ---
+    var yearMs = 0;
+    var yearPlays = 0;
+    final yearUniqueSongs = yearSongMeta.length;
+    for (final v in monthMs.entries) {
+      final y = int.tryParse(v.key.split('-').first) ?? 0;
+      if (y == reference.year) {
+        yearMs += v.value;
+      }
+    }
+    for (final v in yearSongPlays.values) {
+      yearPlays += v;
+    }
+
+    // --- Peak day ---
+    PeakDayStats? peakDay;
+    if (dayMs.isNotEmpty) {
+      String? peakKey;
+      var peak = -1;
+      for (final e in dayMs.entries) {
+        if (e.value > peak) {
+          peak = e.value;
+          peakKey = e.key;
+        }
+      }
+      if (peakKey != null) {
+        final parts = peakKey.split('-');
+        peakDay = PeakDayStats(
+          day: DateTime(
+            int.parse(parts[0]),
+            int.parse(parts[1]),
+            int.parse(parts[2]),
+          ),
+          listenedMs: peak,
+          plays: dayPlays[peakKey] ?? 0,
+        );
+      }
+    }
+
+    // --- Top songs / artists ---
+    List<HistoryTopEntry> topEntries(
+      Map<String, int> plays,
+      Map<String, ({String title, String? artist})> meta,
+    ) {
+      final sorted = plays.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      return [
+        for (final e in sorted.take(3))
+          HistoryTopEntry(
+            label: meta[e.key]?.title ?? 'Unknown song',
+            artist: meta[e.key]?.artist,
+            count: e.value,
+          ),
+      ];
+    }
+
+    HistoryTopEntry? topArtist(Map<String, int> plays) {
+      if (plays.isEmpty) return null;
+      final best = plays.entries.reduce((a, b) => b.value > a.value ? b : a);
+      return HistoryTopEntry(label: best.key, count: best.value);
+    }
+
+    // weekDaily / yearMonthly bars (zero-filled so charts render cleanly).
+    final weekDaily = <DayListen>[];
+    for (var i = 0; i < 7; i++) {
+      final d = weekStart.add(Duration(days: i));
+      final key =
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      weekDaily.add(DayListen(day: d, listenedMs: dayMs[key] ?? 0));
+    }
+    final yearMonthly = <DayListen>[];
+    for (var m = 1; m <= 12; m++) {
+      final key = '${reference.year}-${m.toString().padLeft(2, '0')}';
+      yearMonthly.add(
+        DayListen(
+          day: DateTime(reference.year, m, 1),
+          listenedMs: monthMs[key] ?? 0,
+        ),
+      );
+    }
+
+    return ListeningBreakdown(
+      totalListenedMs: totalListenedMs,
+      totalPlays: totalPlays,
+      totalUniqueSongs: uniqueSongs.length,
+      peakDay: peakDay,
+      week: PeriodStats(
+        listenedMs: weekMs,
+        plays: weekPlays,
+        uniqueSongs: weekUniqueSongs,
+        topSongs: topEntries(weekSongPlays, weekSongMeta),
+        topArtist: topArtist(weekArtistPlays),
+      ),
+      year: PeriodStats(
+        listenedMs: yearMs,
+        plays: yearPlays,
+        uniqueSongs: yearUniqueSongs,
+        topSongs: topEntries(yearSongPlays, yearSongMeta),
+        topArtist: topArtist(yearArtistPlays),
+      ),
+      weekDaily: weekDaily,
+      yearMonthly: yearMonthly,
+    );
+  }
 }
+
+String _songHistoryKey(String title, String artist) =>
+    '${title.toLowerCase()}|${artist.toLowerCase()}';
 
 extension LibrarySongActions on LibraryRepository {
   Future<String?> setCustomArtworkForSongWithBytes(

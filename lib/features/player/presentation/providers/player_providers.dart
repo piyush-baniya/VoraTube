@@ -128,9 +128,10 @@ final class DriftPlayerPersistence implements PlayerPersistence {
   Future<void> write(String key, String value) => _repository.kvSet(key, value);
 }
 
-/// Buffers engine track-start events and flushes them into
-/// [LibraryRepository.recordPlayback] in batches, so rapid skipping never
-/// hammers SQLite with single-row writes.
+/// Buffers engine playback events and flushes them into
+/// [LibraryRepository.recordPlayback] (fresh starts) and
+/// [LibraryRepository.addPlaybackListenedMs] (real listening time) in batches,
+/// so rapid skipping never hammers SQLite with single-row writes.
 class PlaybackStatsBuffer {
   PlaybackStatsBuffer(
     this._repository, {
@@ -143,16 +144,29 @@ class PlaybackStatsBuffer {
   final int _flushThreshold;
   final Duration _flushInterval;
 
-  final Set<String> _pending = {};
+  final Set<String> _pendingStarts = {};
+  final Map<String, int> _pendingHeard = {};
   Timer? _timer;
 
-  int get pendingCount => _pending.length;
+  int get pendingCount => _pendingStarts.length;
 
-  void add(String identityKey) {
-    if (!_pending.add(identityKey)) {
+  /// Records one engine event. A `listenedMs == 0` event is a fresh distinct
+  /// start (counts a play and appends a history row); a positive `listenedMs`
+  /// credits real listening time to that song's most recent history row
+  /// without double-counting a new play.
+  void add(String identityKey, int listenedMs) {
+    if (listenedMs > 0) {
+      _pendingHeard.update(
+        identityKey,
+        (v) => v + listenedMs,
+        ifAbsent: () => listenedMs,
+      );
+    } else if (_pendingStarts.add(identityKey)) {
+      // fall through to scheduling below
+    } else {
       return;
     }
-    if (_pending.length >= _flushThreshold) {
+    if (_pendingStarts.length + _pendingHeard.length >= _flushThreshold) {
       unawaited(flush());
       return;
     }
@@ -162,16 +176,33 @@ class PlaybackStatsBuffer {
   Future<void> flush() async {
     _timer?.cancel();
     _timer = null;
-    if (_pending.isEmpty) {
+    if (_pendingStarts.isEmpty && _pendingHeard.isEmpty) {
       return;
     }
-    final keys = Set<String>.from(_pending);
-    _pending.clear();
+    final starts = Set<String>.from(_pendingStarts);
+    final heard = Map<String, int>.from(_pendingHeard);
+    _pendingStarts.clear();
+    _pendingHeard.clear();
     try {
+      final keys = {...starts, ...heard.keys};
       final keyToRow = await _repository.rowIdsByIdentityKeys(keys);
-      final rowIds = keyToRow.values.toList(growable: false);
-      if (rowIds.isNotEmpty) {
-        await _repository.recordPlayback(rowIds, DateTime.now());
+      if (starts.isNotEmpty) {
+        final rowIds = [
+          for (final k in starts)
+            if (keyToRow[k] != null) keyToRow[k]!,
+        ];
+        if (rowIds.isNotEmpty) {
+          await _repository.recordPlayback(rowIds, DateTime.now());
+        }
+      }
+      for (final e in heard.entries) {
+        final rowId = keyToRow[e.key];
+        if (rowId == null || e.value <= 0) continue;
+        await _repository.addPlaybackListenedMs(
+          songRowId: rowId,
+          listenedMs: e.value,
+          at: DateTime.now(),
+        );
       }
     } catch (_) {
       // Stats are best-effort; failures must never surface to playback.

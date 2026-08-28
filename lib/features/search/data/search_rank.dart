@@ -34,24 +34,42 @@ int levenshtein(String a, String b) {
   return prev[b.length];
 }
 
+/// Normalizes a piece of text for search comparison.
+///
+/// Lowercases, drops apostrophes entirely (so "don't" and "dont", and
+/// "o'clock" and "oclock", align), then collapses every remaining run of
+/// non-alphanumeric characters — spaces, dashes, dots and punctuation — down
+/// to a single space. Letters and digits (including accented/Unicode letters)
+/// are preserved, so "Beyoncé" stays distinct while noise like "100%" and
+/// "a.b,c-d" normalizes cleanly.
+String normalizeSearchText(String input) {
+  var s = input.toLowerCase().replaceAll("'", '');
+  s = s.replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ');
+  return s.trim();
+}
+
+/// The normalized, non-empty tokens of a query or piece of text.
+///
+/// These are the units that typo-tolerant matching and per-token candidate
+/// selection both operate on.
+List<String> searchTokens(String text) {
+  return normalizeSearchText(text)
+      .split(' ')
+      .where((t) => t.isNotEmpty)
+      .toList();
+}
+
 /// Whether every significant query token matches some token in [fieldText],
 /// allowing up to [maxDistance] single-character edits per token.
 ///
 /// Short tokens (< 4 chars) must match exactly to avoid noise. A query token
 /// matches a candidate token if they are equal or within the edit distance.
+/// Both sides are normalized (case/punctuation/apostrophes) before matching.
 bool tokenFuzzyMatch(String query, String fieldText, {int maxDistance = 1}) {
-  final qTokens = query
-      .toLowerCase()
-      .split(RegExp(r'\s+'))
-      .where((t) => t.isNotEmpty)
-      .toList();
+  final qTokens = searchTokens(query);
   if (qTokens.isEmpty) return true;
 
-  final fieldTokens = fieldText
-      .toLowerCase()
-      .split(RegExp(r'\s+'))
-      .where((t) => t.isNotEmpty)
-      .toList();
+  final fieldTokens = searchTokens(fieldText);
   if (fieldTokens.isEmpty) return false;
 
   for (final qt in qTokens) {
@@ -81,27 +99,31 @@ int relevanceScore({
   required String artist,
   required String album,
 }) {
-  final q = query.toLowerCase().trim();
-  final t = title.toLowerCase();
-  final a = artist.toLowerCase();
-  final al = album.toLowerCase();
+  final q = normalizeSearchText(query);
+  final t = normalizeSearchText(title);
+  final a = normalizeSearchText(artist);
+  final al = normalizeSearchText(album);
 
   if (t == q) return 1000;
   if (a == q) return 900;
   if (al == q) return 800;
 
-  int fieldScore(String field, int base) {
+  int fieldScore(String field, int base, String rawLabel) {
     if (field == q) return base + 500;
     if (field.startsWith(q)) return base + 300; // prefix
     if (field.contains(' $q') || field.startsWith('$q ')) return base + 200;
     if (field.contains(q)) return base + 100;
+    // No exact/prefix/word/substring hit, but the overall match admitted this
+    // field only through typo tolerance — keep it above a pure miss, yet below
+    // every clean partial match, preserving exact -> prefix -> partial -> fuzzy.
+    if (rawLabel.isNotEmpty && tokenFuzzyMatch(q, rawLabel)) return base + 40;
     return 0;
   }
 
   final score = [
-    fieldScore(t, 400),
-    fieldScore(a, 300),
-    fieldScore(al, 200),
+    fieldScore(t, 400, title),
+    fieldScore(a, 300, artist),
+    fieldScore(al, 200, album),
   ].reduce((x, y) => x > y ? x : y);
 
   // Small bonus for matches across the earliest query token, so partial

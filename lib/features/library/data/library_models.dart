@@ -136,3 +136,106 @@ final class ListeningStats {
     return '${minutes}m';
   }
 }
+
+/// A single "top" entry (song or artist) derived from [ListeningBreakdown].
+///
+/// `count` is the number of plays contributed by that entry in the period.
+final class HistoryTopEntry {
+  const HistoryTopEntry({
+    required this.label,
+    required this.count,
+    this.artist,
+  });
+
+  final String label;
+  final String? artist;
+  final int count;
+}
+
+/// A period (week / year) aggregated from [ListeningBreakdown].
+final class PeriodStats {
+  const PeriodStats({
+    required this.listenedMs,
+    required this.plays,
+    required this.uniqueSongs,
+    this.topSongs = const [],
+    this.topArtist,
+  });
+
+  final int listenedMs;
+  final int plays;
+  final int uniqueSongs;
+  final List<HistoryTopEntry> topSongs;
+  final HistoryTopEntry? topArtist;
+
+  bool get hasActivity => plays > 0;
+}
+
+/// The single most-listened day within the analyzed window.
+final class PeakDayStats {
+  const PeakDayStats({
+    required this.day,
+    required this.listenedMs,
+    required this.plays,
+  });
+
+  final DateTime day;
+  final int listenedMs;
+  final int plays;
+}
+
+/// A day-of-listening bar used by the lightweight weekly chart.
+final class DayListen {
+  const DayListen({required this.day, required this.listenedMs});
+
+  final DateTime day;
+  final int listenedMs;
+}
+
+/// Complete, time-series-backed listening breakdown for the statistics screen.
+///
+/// Unlike [ListeningStats] (which estimates listening time from play counts),
+/// every field here is aggregated from persisted `play_history` records —
+/// actual, measured listening time plus the timestamp of each play.
+final class ListeningBreakdown {
+  const ListeningBreakdown({
+    required this.totalListenedMs,
+    required this.totalPlays,
+    required this.totalUniqueSongs,
+    this.peakDay,
+    required this.week,
+    required this.year,
+    required this.weekDaily,
+    required this.yearMonthly,
+  });
+
+  final int totalListenedMs;
+  final int totalPlays;
+  final int totalUniqueSongs;
+  final PeakDayStats? peakDay;
+  final PeriodStats week;
+  final PeriodStats year;
+  final List<DayListen> weekDaily;
+  final List<DayListen> yearMonthly;
+
+  bool get hasActivity => totalPlays > 0;
+}
+
+/// Formats milliseconds as `Xm`, `Xh Ym` or `Xd Yh` — matching the compact
+/// Home stats style (e.g. `42 min`, `2 hr 14 min`, `18 hr 32 min`).
+String formatListeningDuration(int ms) {
+  if (ms < 0) ms = 0;
+  final totalMinutes = ms ~/ 60000;
+  final days = totalMinutes ~/ (60 * 24);
+  final hours = (totalMinutes % (60 * 24)) ~/ 60;
+  final minutes = totalMinutes % 60;
+  if (days > 0) {
+    if (hours > 0) return '${days}d ${hours}h';
+    return '${days}d';
+  }
+  if (hours > 0) {
+    if (minutes > 0) return '${hours}h ${minutes}m';
+    return '${hours}h';
+  }
+  return '${minutes}m';
+}
