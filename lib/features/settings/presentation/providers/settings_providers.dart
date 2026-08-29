@@ -183,16 +183,54 @@ final themeModeProvider = Provider<ThemeMode>((ref) {
 
 // ── Storage ─────────────────────────────────────────────────────────────
 
+/// Walks [dir] classifying files as cached artwork (VoraTube's `_s`/`_l`
+/// thumbnail suffixes) or imported music. Individual failures are tolerated
+/// so a single unreadable or concurrently-deleted file cannot blank the whole
+/// card.
+Future<(int artBytes, int musicBytes)> _measureTree(Directory dir) async {
+  var artBytes = 0;
+  var musicBytes = 0;
+  try {
+    await for (final entity in dir.list(recursive: true, followLinks: false)) {
+      if (entity is! File) {
+        continue;
+      }
+      try {
+        final bytes = await entity.length();
+        final name = entity.uri.pathSegments.last;
+        if (name.contains('_s.') || name.contains('_l.')) {
+          artBytes += bytes;
+        } else {
+          musicBytes += bytes;
+        }
+      } catch (_) {
+        // File vanished or is unreadable; it does not invalidate the rest.
+      }
+    }
+  } catch (_) {
+    // Directory disappeared or was denied mid-walk.
+  }
+  return (artBytes, musicBytes);
+}
+
 final storageInfoProvider = FutureProvider.autoDispose<StorageInfo>((
   ref,
 ) async {
   final ingest = ref.watch(ingestServiceProvider);
-  final dbSize = await _getFileSize(await _getDatabasePath());
+
+  // The database must still contribute honest numbers even when its path is
+  // unavailable; a platform-channel failure must never error the whole card.
+  int dbSize = 0;
+  try {
+    dbSize = await _getFileSize(await _getDatabasePath());
+  } catch (_) {}
+
   int artSize = 0;
   int impSize = 0;
-  // On Android, imported music lives in MediaStore (not app-controlled files),
-  // so importedFilesRoot() is unsupported there. Guard it so storage info still
-  // reports the database + artwork cache sizes instead of erroring out.
+
+  // iOS keeps imported music + embedded artwork in app documents. Android
+  // audio lives in MediaStore (no app-controlled files), so this is unsupported
+  // there and must be tolerated, not fatal.
   Directory? root;
   try {
     root = await ingest.importedFilesRoot();
@@ -200,18 +238,24 @@ final storageInfoProvider = FutureProvider.autoDispose<StorageInfo>((
     root = null;
   }
   if (root != null && await root.exists()) {
-    await for (final e in root.list(recursive: true, followLinks: false)) {
-      if (e is File) {
-        final s = await e.length();
-        final name = e.uri.pathSegments.last;
-        if (name.contains('_s.png') || name.contains('_l')) {
-          artSize += s;
-        } else {
-          impSize += s;
-        }
-      }
-    }
+    final measured = await _measureTree(root);
+    artSize += measured.$1;
+    impSize += measured.$2;
   }
+
+  // Android writes native resolved-artwork thumbnails into `<filesDir>/art`,
+  // which path_provider surfaces as the app support directory.
+  if (Platform.isAndroid && root == null) {
+    try {
+      final support = await getApplicationSupportDirectory();
+      final artDir = Directory('${support.path}${Platform.pathSeparator}art');
+      if (await artDir.exists()) {
+        final measured = await _measureTree(artDir);
+        artSize += measured.$1;
+      }
+    } catch (_) {}
+  }
+
   return StorageInfo(
     databaseSizeBytes: dbSize,
     artworkCacheSizeBytes: artSize,

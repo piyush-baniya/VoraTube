@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Modify this file to customize your launch splash screen -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+    <!-- VoraTube brand near-black (matches AppColors.voidBlack). Using the
+         brand backdrop instead of the default white prevents a bright flash
+         between the OS launch window and the custom animated splash, so the
+         transition into the app feels seamless. -->
+    <item>
+        <shape>
+            <solid android:color="#FF09090B" />
+        </shape>
+    </item>
 
     <!-- You can insert your own image assets here -->
     <!-- <item>

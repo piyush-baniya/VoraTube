@@ -61,9 +61,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        stats.hasActivity
-                            ? '${stats.totalPlays} plays'
-                            : 'View Stats',
+                        'View Stats',
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),

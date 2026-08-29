@@ -60,7 +60,10 @@ class SmartMixStrip extends ConsumerWidget {
                     const SizedBox(width: AppTokens.s2),
                 itemBuilder: (context, index) {
                   final mix = visible[index];
-                  return SizedBox(width: 160, child: MixCard(mix: mix));
+                  return SizedBox(
+                    width: 160,
+                    child: MixCard(mix: mix, showActions: false),
+                  );
                 },
               ),
             ),

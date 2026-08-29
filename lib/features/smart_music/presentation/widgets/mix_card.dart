@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'dart:io';
-
 import '../../../../../app/theme/app_tokens.dart';
 import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../../core/player/player_controller.dart';
@@ -16,12 +14,18 @@ class MixCard extends ConsumerWidget {
   const MixCard({
     super.key,
     required this.mix,
+    this.showActions = true,
     this.onTap,
     this.onPlay,
     this.onShuffle,
   });
 
   final SmartMix mix;
+
+  /// Whether the Play/Shuffle row is shown. Cards inside the compact
+  /// horizontal strip keep this `false` so they fit the bounded strip height;
+  /// the detail screen passes the default `true`.
+  final bool showActions;
   final VoidCallback? onTap;
   final VoidCallback? onPlay;
   final VoidCallback? onShuffle;
@@ -68,10 +72,10 @@ class MixCard extends ConsumerWidget {
                   ),
               ],
             ),
-            const Spacer(),
+            const SizedBox(height: AppTokens.s2),
             if (mix.artworkPaths.isNotEmpty) ...[
               SizedBox(
-                height: 64,
+                height: _artworkHeight,
                 child: Stack(
                   children: mix.artworkPaths.take(4).map((path) {
                     final index = mix.artworkPaths.indexOf(path);
@@ -83,12 +87,12 @@ class MixCard extends ConsumerWidget {
                         child: file != null
                             ? Image.file(
                                 file,
-                                width: 64,
-                                height: 64,
+                                width: _artworkHeight,
+                                height: _artworkHeight,
                                 fit: BoxFit.cover,
                                 gaplessPlayback: true,
                                 cacheWidth: ArtworkFileCache.decodeWidth(
-                                  64,
+                                  _artworkHeight,
                                   MediaQuery.devicePixelRatioOf(context),
                                 ),
                                 errorBuilder: (_, __, ___) =>
@@ -123,36 +127,38 @@ class MixCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: AppTokens.s2),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed:
-                        onPlay ?? () => _playMix(context, ref, shuffle: false),
-                    icon: const Icon(Icons.play_arrow_rounded, size: 16),
-                    label: const Text('Play'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      minimumSize: const Size(0, 32),
+            if (showActions)
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          onPlay ??
+                          () => _playMix(context, ref, shuffle: false),
+                      icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                      label: const Text('Play'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        minimumSize: const Size(0, 32),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: AppTokens.s1),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed:
-                        onShuffle ??
-                        () => _playMix(context, ref, shuffle: true),
-                    icon: const Icon(Icons.shuffle_rounded, size: 16),
-                    label: const Text('Shuffle'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      minimumSize: const Size(0, 32),
+                  const SizedBox(width: AppTokens.s1),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          onShuffle ??
+                          () => _playMix(context, ref, shuffle: true),
+                      icon: const Icon(Icons.shuffle_rounded, size: 16),
+                      label: const Text('Shuffle'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        minimumSize: const Size(0, 32),
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
           ],
         ),
       ),
@@ -161,7 +167,7 @@ class MixCard extends ConsumerWidget {
 
   Widget _buildArtworkFallback(ColorScheme colorScheme) {
     return Container(
-      height: 64,
+      height: _artworkHeight,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppTokens.rSm),
         gradient: LinearGradient(
@@ -180,6 +186,11 @@ class MixCard extends ConsumerWidget {
       ),
     );
   }
+
+  /// Compact strip cards use a smaller artwork square so the fixed strip
+  /// height is never exceeded; detail-screen cards keep the larger size.
+  double get _artworkHeight =>
+      showActions ? AppTokens.artworkLg : AppTokens.artworkSm;
 
   (IconData, List<Color>) _getMixStyle(SmartMixKind kind) {
     switch (kind) {

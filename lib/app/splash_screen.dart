@@ -146,11 +146,10 @@ class _SplashScreenState extends State<_SplashScreen>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Image.asset(
-                        'assets/voratube_logo.png',
-                        height: 96,
-                        color: isDark ? null : _brandTint(accent),
-                      ),
+                      // The logo is a full-colour brand asset; it must never be
+                      // tinted into a monochrome silhouette. Render it as-is so
+                      // the brand mark keeps its real colours in both themes.
+                      Image.asset('assets/voratube_logo.png', height: 96),
                       const SizedBox(height: AppTokens.s6),
                       Text(
                         'VoraTube',

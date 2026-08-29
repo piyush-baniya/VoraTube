@@ -65,9 +65,8 @@ class _LibraryHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     // Narrow watch so a play/pause or buffering emission does not repaint the
-    // whole Library header; only a track identity change re-renders it.
+    // whole Library header. Only a track change re-renders it.
     final current = ref.watch(currentTrackProvider);
 
     return Padding(
@@ -79,10 +78,19 @@ class _LibraryHeader extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Image.asset(
-            'assets/voratube_logo.png',
+          SizedBox(
+            width: 32,
             height: 32,
-            color: colorScheme.onSurface,
+            child: Image.asset(
+              'assets/voratube_logo.png',
+              fit: BoxFit.contain,
+              // The real logo is a full-colour asset; tinting it with the
+              // theme's onSurface would flatten it to a monochrome silhouette
+              // and lose the brand mark. `contain` keeps the original aspect
+              // ratio, so the mark never distorts on any screen width.
+              errorBuilder: (_, _, _) =>
+                  const Icon(Icons.music_note_rounded, size: 24),
+            ),
           ),
           const SizedBox(width: AppTokens.s3),
           Expanded(

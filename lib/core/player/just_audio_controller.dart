@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
@@ -469,25 +470,34 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     _statLastPosMs = -1;
   }
 
+  /// dB → linear multiplier (0 dB → 1.0).
+  double _dbToLinear(double db) => math.pow(10.0, db / 20.0).toDouble();
+
   /// Recomputes and applies the engine output volume.
   ///
-  /// Effective volume = user multiplier × volume boost × ReplayGain multiplier
-  /// × duck factor. The ReplayGain multiplier comes from the current track's
-  /// stored gain info (peak-protected, so it rarely exceeds 1.0);
-  /// just_audio/ExoPlayer clamps engine volume to 0..1, so the result is
-  /// clamped defensively. The boost lets playback reach native maximum faster
-  /// but cannot exceed the engine ceiling, so it is distortion-safe.
+  /// Effective volume = user multiplier × volume boost × gain multiplier
+  /// × duck factor. The gain multiplier is the preamp when ReplayGain is off,
+  /// or the current track's stored ReplayGain info (preamp-inclusive,
+  /// peak-protected) when on. just_audio/ExoPlayer clamps engine volume to
+  /// 0..1, so the result is clamped defensively; the boost lets playback reach
+  /// native maximum faster but cannot exceed the engine ceiling, so it is
+  /// distortion-safe.
   Future<void> _applyVolume() async {
     if (_disposed) {
       return;
     }
     final ref = _currentRef();
+    // Preamp scaling applies in every mode (0 dB = no change), so the setting
+    // has a real, predictable effect even for libraries with no ReplayGain tags.
+    final preampLinear = _dbToLinear(_preampDb);
     final gainMultiplier = switch (_replayGainMode) {
-      ReplayGainMode.off => 1.0,
+      ReplayGainMode.off => preampLinear,
       ReplayGainMode.track =>
-        ref?.replayGain?.trackGainMultiplier(preampDb: _preampDb) ?? 1.0,
+        ref?.replayGain?.trackGainMultiplier(preampDb: _preampDb) ??
+            preampLinear,
       ReplayGainMode.album =>
-        ref?.replayGain?.albumGainMultiplier(preampDb: _preampDb) ?? 1.0,
+        ref?.replayGain?.albumGainMultiplier(preampDb: _preampDb) ??
+            preampLinear,
     };
     final duckFactor = _ducked ? 0.33 : 1.0;
     final effective =

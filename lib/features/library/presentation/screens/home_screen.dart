@@ -10,6 +10,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
+import '../../../collections/presentation/providers/statistics_providers.dart';
 import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
@@ -17,8 +18,10 @@ import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
+import '../../../library/data/library_repository.dart' show CollectionKind;
 import '../../../library/presentation/widgets/song_tile.dart';
 import '../../../library/presentation/screens/all_songs_screen.dart';
+import '../../../library/presentation/screens/filtered_songs_screen.dart';
 
 /// The Home dashboard: a curated, glanceable view over the library —
 /// favorites, listening insights, continue listening, mood, and a bounded
@@ -201,6 +204,20 @@ class _DashboardBody extends ConsumerWidget {
           SliverToBoxAdapter(child: _EmptyStateHero()),
 
         SliverToBoxAdapter(child: ListeningInsightsStrip()),
+
+        SliverToBoxAdapter(
+          child: _MostPlayedLibrarySection(
+            onSeeAll: () => Navigator.of(context).push(
+              pushSharedAxis<void>(
+                context,
+                FilteredSongsScreen.collection(
+                  CollectionKind.mostPlayed,
+                  'Most played',
+                ),
+              ),
+            ),
+          ),
+        ),
 
         SliverToBoxAdapter(child: MoodStrip()),
 
@@ -750,6 +767,134 @@ class _SkeletonSongTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "Most Played in Your Library" — a bounded horizontal strip of the top
+/// played songs, placed below the "Your Listening" / statistics block.
+///
+/// This is deliberately distinct from the single-feature "Your Listening"
+/// card (which surfaces only the #1 song). This strip surfaces the broader
+/// top list while staying compact via a lazy horizontal scroll.
+class _MostPlayedLibrarySection extends ConsumerWidget {
+  const _MostPlayedLibrarySection({this.onSeeAll});
+
+  final VoidCallback? onSeeAll;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(topPlayedSongsProvider);
+    return async.when(
+      skipLoadingOnRefresh: true,
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (tiles) {
+        if (tiles.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SectionHeader(
+              title: 'Most played in your library',
+              actionLabel: onSeeAll != null ? 'See All' : null,
+              onAction: onSeeAll,
+            ),
+            SizedBox(
+              height: _stripHeight(context),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                itemCount: tiles.length,
+                separatorBuilder: (_, _) => const SizedBox(width: AppTokens.s2),
+                itemBuilder: (context, index) {
+                  final ctx = playContextFromTiles(tiles, index);
+                  return _MostPlayedCard(
+                    tile: tiles[index],
+                    onTap: () => ref
+                        .read(playerProvider)
+                        .playQueue(ctx.refs, startIndex: ctx.startIndex),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: AppTokens.s2),
+          ],
+        );
+      },
+    );
+  }
+
+  double _stripHeight(BuildContext context) {
+    // Square artwork (88) + gap + up to two scaled text lines. Height scales
+    // with the system text scale so the cards never clip at larger text sizes.
+    final scaler = MediaQuery.textScalerOf(context);
+    return 88 + AppTokens.s2 + scaler.scale(42);
+  }
+}
+
+class _MostPlayedCard extends StatelessWidget {
+  const _MostPlayedCard({required this.tile, required this.onTap});
+
+  final SongTileData tile;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return SizedBox(
+      width: 120,
+      child: PressableScale(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTokens.rLg),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.accent.withValues(alpha: 0.12),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppTokens.rLg),
+                child: ArtworkView(
+                  path: tile.artPath,
+                  size: 88,
+                  radius: AppTokens.rLg,
+                  square: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppTokens.s1),
+            Text(
+              tile.song.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (tile.song.artist != null)
+              Text(
+                tile.song.artist!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +23,23 @@ SongRef _song({int id = 1, String title = 'Test Song'}) {
     album: 'Test Album',
     durationMs: 200000,
   );
+}
+
+/// A [FakePlayerController] whose [PlayerController.snapshot] stream emits
+/// live [PlayerSnapshot]s. Used to prove the MiniPlayer updates immediately
+/// when the authoritative current track changes — not only after a pause/play
+/// round-trip.
+class _StreamPlayer extends FakePlayerController {
+  _StreamPlayer({required PlayerSnapshot initial}) : super(initial: initial);
+
+  final _snapshots = StreamController<PlayerSnapshot>.broadcast();
+
+  @override
+  Stream<PlayerSnapshot> get snapshot => _snapshots.stream;
+
+  void push(PlayerSnapshot snap) {
+    if (!_snapshots.isClosed) _snapshots.add(snap);
+  }
 }
 
 /// Records which playback actions the UI triggers, so tests can assert that
@@ -62,7 +81,7 @@ void main() {
     await db.close();
   });
 
-  ProviderScope _wrap(_RecordingPlayer player, {bool empty = false}) {
+  ProviderScope _wrap(FakePlayerController player) {
     return ProviderScope(
       overrides: [
         appDatabaseProvider.overrideWithValue(db),
@@ -104,13 +123,56 @@ void main() {
   });
 
   testWidgets('is hidden when no track is loaded', (tester) async {
-    await tester.pumpWidget(_wrap(_RecordingPlayer(), empty: true));
+    await tester.pumpWidget(_wrap(_RecordingPlayer()));
     await tester.pump();
 
     expect(find.byType(MiniPlayer), findsOneWidget);
     expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
     expect(find.text('Test Song'), findsNothing);
   });
+
+  testWidgets(
+    'updates the displayed track immediately when the current track changes',
+    (tester) async {
+      // Regression (Phase 1, Fix 3): selecting a new song must refresh the
+      // MiniPlayer instantly — it must never require a pause/play round-trip.
+      final player = _StreamPlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: false,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 2,
+          currentIndex: 0,
+          durationMs: 200000,
+          current: _song(id: 1, title: 'Song A'),
+        ),
+      );
+
+      await tester.pumpWidget(_wrap(player));
+      await tester.pump();
+      expect(find.text('Song A'), findsOneWidget);
+
+      // Switch to Song B through the authoritative snapshot stream.
+      player.push(
+        PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: false,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 2,
+          currentIndex: 1,
+          durationMs: 200000,
+          current: _song(id: 2, title: 'Song B'),
+        ),
+      );
+      // No pause/play — just let the provider recompute from the stream.
+      await tester.pumpAndSettle();
+
+      expect(find.text('Song B'), findsOneWidget);
+      expect(find.text('Song A'), findsNothing);
+    },
+  );
 
   testWidgets('previous disabled at queue start dispatches nothing', (
     tester,
