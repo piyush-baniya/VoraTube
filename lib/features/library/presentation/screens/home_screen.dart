@@ -10,7 +10,6 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
-import '../../../collections/presentation/providers/statistics_providers.dart';
 import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
@@ -18,10 +17,8 @@ import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
-import '../../../library/data/library_repository.dart' show CollectionKind;
 import '../../../library/presentation/widgets/song_tile.dart';
 import '../../../library/presentation/screens/all_songs_screen.dart';
-import '../../../library/presentation/screens/filtered_songs_screen.dart';
 
 /// The Home dashboard: a curated, glanceable view over the library —
 /// favorites, listening insights, continue listening, mood, and a bounded
@@ -145,9 +142,12 @@ class _NowPlayingBadge extends StatelessWidget {
     final accent = AppColors.accent;
 
     return PressableScale(
-      onTap: () =>
-          Navigator.of(context)
-              .push(pushHero<void>(context, const FullPlayerScreen())),
+      // The full player is immersive: push it on the root navigator so it
+      // covers the whole shell including the MiniPlayer and bottom bar.
+      onTap: () => Navigator.of(
+        context,
+        rootNavigator: true,
+      ).push(pushHero<void>(context, const FullPlayerScreen())),
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s3,
@@ -205,20 +205,6 @@ class _DashboardBody extends ConsumerWidget {
 
         SliverToBoxAdapter(child: ListeningInsightsStrip()),
 
-        SliverToBoxAdapter(
-          child: _MostPlayedLibrarySection(
-            onSeeAll: () => Navigator.of(context).push(
-              pushSharedAxis<void>(
-                context,
-                FilteredSongsScreen.collection(
-                  CollectionKind.mostPlayed,
-                  'Most played',
-                ),
-              ),
-            ),
-          ),
-        ),
-
         SliverToBoxAdapter(child: MoodStrip()),
 
         SliverToBoxAdapter(
@@ -254,14 +240,10 @@ class _DashboardBody extends ConsumerWidget {
                 // which case we surface a progress state instead of a dead end.
                 child: isScanning
                     ? const _ScanningState()
-                    : EmptyState(
+                    : const EmptyState(
                         icon: Icons.library_music_rounded,
-                        title: 'Nothing here yet',
-                        message: 'Scan or import music to fill your library.',
-                        actionLabel: 'Scan Library',
-                        onAction: () => ref
-                            .read(scanControllerProvider.notifier)
-                            .startScan(),
+                        title: 'No Music',
+                        message: 'Add music to your device to get started.',
                       ),
               );
             }
@@ -314,6 +296,7 @@ class _ContinueListeningHero extends ConsumerWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final accent = AppColors.accent;
+    final isPlaying = ref.watch(playbackIsPlayingProvider);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(
@@ -350,27 +333,32 @@ class _ContinueListeningHero extends ConsumerWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 112,
-            height: 112,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppTokens.rLg),
-              boxShadow: [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.15),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                  spreadRadius: -2,
+          // Artwork opens the full player; the resumed song is whoever the
+          // player restored, so the deep link carries the same track.
+          GestureDetector(
+            onTap: () => _openFullPlayer(context),
+            child: Container(
+              width: 112,
+              height: 112,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppTokens.rLg),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withValues(alpha: 0.15),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4),
+                    spreadRadius: -2,
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppTokens.rLg),
+                child: ArtworkView(
+                  path: current.artPath,
+                  size: 112,
+                  radius: AppTokens.rLg,
+                  showShadow: true,
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppTokens.rLg),
-              child: ArtworkView(
-                path: current.artPath,
-                size: 112,
-                radius: AppTokens.rLg,
-                showShadow: true,
               ),
             ),
           ),
@@ -380,39 +368,50 @@ class _ContinueListeningHero extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Continue Listening',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: accent,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
+                GestureDetector(
+                  onTap: () => _openFullPlayer(context),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Continue Listening',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: accent,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const SizedBox(height: AppTokens.s1),
+                      Text(
+                        current.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          height: 1.2,
+                        ),
+                      ),
+                      if (current.artist != null) ...[
+                        const SizedBox(height: AppTokens.s1),
+                        Text(
+                          current.artist!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                const SizedBox(height: AppTokens.s1),
-                Text(
-                  current.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    height: 1.2,
-                  ),
-                ),
-                if (current.artist != null) ...[
-                  const SizedBox(height: AppTokens.s1),
-                  Text(
-                    current.artist!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
                 const SizedBox(height: AppTokens.s3),
                 PressableScale(
-                  onTap: () => Navigator.of(context)
-                      .push(pushHero<void>(context, const FullPlayerScreen())),
+                  // Resume the restored queue under the player's own state:
+                  // this toggles the engine so the saved track/position plays
+                  // immediately (MiniPlayer and full player follow the same
+                  // authoritative snapshot).
+                  onTap: () => ref.read(playerProvider).togglePlay(),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppTokens.s5,
@@ -434,13 +433,15 @@ class _ContinueListeningHero extends ConsumerWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.play_arrow_rounded,
+                          isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
                           size: 18,
                           color: colorScheme.onPrimary,
                         ),
                         const SizedBox(width: AppTokens.s2),
                         Text(
-                          'Play',
+                          isPlaying ? 'Pause' : 'Play',
                           style: theme.textTheme.labelMedium?.copyWith(
                             color: colorScheme.onPrimary,
                             fontWeight: FontWeight.w700,
@@ -456,6 +457,13 @@ class _ContinueListeningHero extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  void _openFullPlayer(BuildContext context) {
+    Navigator.of(
+      context,
+      rootNavigator: true,
+    ).push(pushHero<void>(context, const FullPlayerScreen()));
   }
 }
 
@@ -517,51 +525,63 @@ class _EmptyStateHero extends ConsumerWidget {
           ),
           const SizedBox(height: AppTokens.s1),
           Text(
-            'Your music library is ready. Scan or import to begin.',
+            'Select any track from your library to begin playback.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: AppTokens.s4),
-          PressableScale(
-            onTap: () => ref.read(scanControllerProvider.notifier).startScan(),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppTokens.s5,
-                vertical: AppTokens.s2,
-              ),
-              decoration: BoxDecoration(
-                color: accent,
-                borderRadius: BorderRadius.circular(AppTokens.rFull),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                    spreadRadius: -2,
+          Consumer(
+            builder: (context, ref, _) {
+              final tiles =
+                  ref.watch(homeSongsProvider).valueOrNull ?? const [];
+              if (tiles.isEmpty) return const SizedBox.shrink();
+              return PressableScale(
+                onTap: () {
+                  final ctx = playContextFromTiles(tiles, 0);
+                  ref
+                      .read(playerProvider)
+                      .playQueue(ctx.refs, startIndex: ctx.startIndex);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppTokens.s5,
+                    vertical: AppTokens.s2,
                   ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.folder_open_rounded,
-                    size: 18,
-                    color: colorScheme.onPrimary,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: BorderRadius.circular(AppTokens.rFull),
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                        spreadRadius: -2,
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: AppTokens.s2),
-                  Text(
-                    'Scan Library',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: colorScheme.onPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.play_arrow_rounded,
+                        size: 20,
+                        color: colorScheme.onPrimary,
+                      ),
+                      const SizedBox(width: AppTokens.s2),
+                      Text(
+                        'Play Music',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: colorScheme.onPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -767,134 +787,6 @@ class _SkeletonSongTile extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// "Most Played in Your Library" — a bounded horizontal strip of the top
-/// played songs, placed below the "Your Listening" / statistics block.
-///
-/// This is deliberately distinct from the single-feature "Your Listening"
-/// card (which surfaces only the #1 song). This strip surfaces the broader
-/// top list while staying compact via a lazy horizontal scroll.
-class _MostPlayedLibrarySection extends ConsumerWidget {
-  const _MostPlayedLibrarySection({this.onSeeAll});
-
-  final VoidCallback? onSeeAll;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(topPlayedSongsProvider);
-    return async.when(
-      skipLoadingOnRefresh: true,
-      loading: () => const SizedBox.shrink(),
-      error: (_, _) => const SizedBox.shrink(),
-      data: (tiles) {
-        if (tiles.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SectionHeader(
-              title: 'Most played in your library',
-              actionLabel: onSeeAll != null ? 'See All' : null,
-              onAction: onSeeAll,
-            ),
-            SizedBox(
-              height: _stripHeight(context),
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-                itemCount: tiles.length,
-                separatorBuilder: (_, _) => const SizedBox(width: AppTokens.s2),
-                itemBuilder: (context, index) {
-                  final ctx = playContextFromTiles(tiles, index);
-                  return _MostPlayedCard(
-                    tile: tiles[index],
-                    onTap: () => ref
-                        .read(playerProvider)
-                        .playQueue(ctx.refs, startIndex: ctx.startIndex),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: AppTokens.s2),
-          ],
-        );
-      },
-    );
-  }
-
-  double _stripHeight(BuildContext context) {
-    // Square artwork (88) + gap + up to two scaled text lines. Height scales
-    // with the system text scale so the cards never clip at larger text sizes.
-    final scaler = MediaQuery.textScalerOf(context);
-    return 88 + AppTokens.s2 + scaler.scale(42);
-  }
-}
-
-class _MostPlayedCard extends StatelessWidget {
-  const _MostPlayedCard({required this.tile, required this.onTap});
-
-  final SongTileData tile;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return SizedBox(
-      width: 120,
-      child: PressableScale(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppTokens.rLg),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.accent.withValues(alpha: 0.12),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(AppTokens.rLg),
-                child: ArtworkView(
-                  path: tile.artPath,
-                  size: 88,
-                  radius: AppTokens.rLg,
-                  square: true,
-                ),
-              ),
-            ),
-            const SizedBox(height: AppTokens.s1),
-            Text(
-              tile.song.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (tile.song.artist != null)
-              Text(
-                tile.song.artist!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

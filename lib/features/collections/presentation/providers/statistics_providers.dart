@@ -6,10 +6,14 @@ import '../../../library/presentation/providers/library_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 
 /// Top-played songs by play count (bounded, newest-first tie-break).
+///
+/// Watches both ticks: [libraryRefreshTickProvider] for scans/imports and
+/// [statsRefreshTickProvider] for live play-count changes.
 final topPlayedSongsProvider = FutureProvider.autoDispose<List<SongTileData>>((
   ref,
 ) async {
   ref.watch(libraryRefreshTickProvider);
+  ref.watch(statsRefreshTickProvider);
   return ref.watch(libraryRepositoryProvider).topPlayedSongs(limit: 20);
 });
 
@@ -17,6 +21,7 @@ final topPlayedSongsProvider = FutureProvider.autoDispose<List<SongTileData>>((
 final recentlyPlayedSongsProvider =
     FutureProvider.autoDispose<List<SongTileData>>((ref) async {
       ref.watch(libraryRefreshTickProvider);
+      ref.watch(statsRefreshTickProvider);
       return ref
           .watch(libraryRepositoryProvider)
           .recentlyPlayedSongs(limit: 20);
@@ -30,5 +35,6 @@ final recentlyPlayedSongsProvider =
 final listeningBreakdownProvider =
     FutureProvider.autoDispose<ListeningBreakdown>((ref) async {
       ref.watch(libraryRefreshTickProvider);
+      ref.watch(statsRefreshTickProvider);
       return ref.watch(libraryRepositoryProvider).listeningBreakdown();
     });

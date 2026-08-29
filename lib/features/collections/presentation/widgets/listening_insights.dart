@@ -18,16 +18,19 @@ final listeningStatsProvider = FutureProvider.autoDispose<ListeningStats>((
   ref,
 ) async {
   ref.watch(libraryRefreshTickProvider);
+  ref.watch(statsRefreshTickProvider);
   final repo = ref.watch(libraryRepositoryProvider);
   return repo.listeningStats();
 });
 
 /// "Your Listening" statistics block.
 ///
-/// Shows a single featured card (your most played song) followed by a compact
-/// row of complementary stat cards. The featured card is deliberately distinct
-/// from the compact cards so the block reads as a hierarchy rather than four
-/// interchangeable tiles.
+/// Shows the section header with the "View Stats" escape into the full
+/// statistics screen, followed by the compact stat cards and then a single
+/// featured card for your most played song. The featured card is deliberately
+/// distinct from the compact cards so the block reads as a hierarchy rather
+/// than four interchangeable tiles. A single card (rather than a horizontal
+/// strip) keeps "Most Played" focused on the #1 song.
 class ListeningInsightsStrip extends ConsumerWidget {
   const ListeningInsightsStrip({super.key});
 
@@ -78,13 +81,6 @@ class ListeningInsightsStrip extends ConsumerWidget {
                 ),
               ),
             ),
-            // Featured: most played song (or library summary when idle).
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-              child: _FeaturedCard(stats: stats),
-            ),
-            const SizedBox(height: AppTokens.s2),
-            // Compact stat chips.
             // Compact stat chips. Height scales with text size so the cards
             // never overflow or clip at larger system font scales.
             SizedBox(
@@ -118,6 +114,13 @@ class ListeningInsightsStrip extends ConsumerWidget {
                 ),
               ),
             ),
+            const SizedBox(height: AppTokens.s2),
+            // Featured: most played song (or library summary when idle).
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+              child: _FeaturedCard(stats: stats),
+            ),
+            const SizedBox(height: AppTokens.s3),
           ],
         );
       },

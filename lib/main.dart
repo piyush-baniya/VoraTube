@@ -7,6 +7,7 @@ import 'core/db/app_database.dart';
 import 'core/player/just_audio_controller.dart';
 import 'features/library/data/library_repository.dart';
 import 'features/library/presentation/providers/library_providers.dart';
+import 'features/library/presentation/providers/library_view_providers.dart';
 import 'features/player/presentation/providers/player_providers.dart';
 
 Future<void> main() async {
@@ -15,7 +16,14 @@ Future<void> main() async {
   final db = AppDatabase(driftDatabase(name: 'voratube'));
   final repository = LibraryRepository(db);
 
-  final statsBuffer = PlaybackStatsBuffer(repository);
+  // Wired after the container exists so a flush can bump the stats refresh
+  // tick that statistics-facing providers watch (main.dart cannot reference
+  // the container before it is created, so the callback is late-bound).
+  var notifyStatsChanged = () {};
+  final statsBuffer = PlaybackStatsBuffer(
+    repository,
+    onFlushed: () => notifyStatsChanged(),
+  );
 
   final player = await JustAudioController.create(
     persistence: DriftPlayerPersistence(repository),
@@ -30,6 +38,13 @@ Future<void> main() async {
       playerProvider.overrideWithValue(player),
     ],
   );
+
+  // Every committed stats write re-queries the listening strip, statistics
+  // screen and collection counts/lists. This never resets the paged browsing
+  // lists, which watch the library tick instead.
+  notifyStatsChanged = () {
+    container.read(statsRefreshTickProvider.notifier).state++;
+  };
 
   // ProviderScope → VoraTubeApp → MaterialApp → splash → permission gate →
   // HomeShell. Keeping the SplashGate/PermissionGate inside the MaterialApp

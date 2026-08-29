@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -404,56 +407,29 @@ class _SongTileState extends ConsumerState<SongTile> {
   }
 }
 
-class _PlayingIndicator extends StatefulWidget {
+class _PlayingIndicator extends StatelessWidget {
   const _PlayingIndicator({required this.size});
 
   final double size;
 
   @override
-  State<_PlayingIndicator> createState() => _PlayingIndicatorState();
-}
-
-class _PlayingIndicatorState extends State<_PlayingIndicator>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1000),
-      vsync: this,
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Container(
-          width: widget.size,
-          height: widget.size,
+    return RepaintBoundary(
+      child: IgnorePointer(
+        child: Container(
+          width: size,
+          height: size,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppTokens.rSm),
             border: Border.all(
-              color: colorScheme.primary.withValues(
-                alpha: 0.3 * _controller.value + 0.1,
-              ),
+              color: colorScheme.primary.withValues(alpha: 0.5),
               width: 2,
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -467,52 +443,51 @@ class _EqualizerAnimation extends StatefulWidget {
   State<_EqualizerAnimation> createState() => _EqualizerAnimationState();
 }
 
-class _EqualizerAnimationState extends State<_EqualizerAnimation>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+class _EqualizerAnimationState extends State<_EqualizerAnimation> {
+  static const Duration _period = Duration(milliseconds: 150);
+  Timer? _timer;
+  int _tick = 0;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    )..repeat();
+    _timer = Timer.periodic(_period, (_) {
+      if (!mounted) return;
+      setState(() => _tick++);
+    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _timer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: List.generate(3, (index) {
-            final delay = index * 0.15;
-            final value = (_controller.value + delay) % 1.0;
-            final height = 4.0 + (value * 12.0);
+    final t = _tick.toDouble();
 
-            return Padding(
-              padding: const EdgeInsets.only(left: 2),
-              child: Container(
-                width: 3,
-                height: height,
-                decoration: BoxDecoration(
-                  color: widget.color,
-                  borderRadius: BorderRadius.circular(1.5),
-                ),
+    return RepaintBoundary(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: List.generate(3, (index) {
+          final wave = (math.sin(t * 0.42 + index * 1.1) + 1) / 2;
+          final height = 3.5 + (wave * 12.5);
+
+          return Padding(
+            padding: const EdgeInsets.only(left: 2),
+            child: Container(
+              width: 3,
+              height: height,
+              decoration: BoxDecoration(
+                color: widget.color,
+                borderRadius: BorderRadius.circular(1.5),
               ),
-            );
-          }),
-        );
-      },
+            ),
+          );
+        }),
+      ),
     );
   }
 }

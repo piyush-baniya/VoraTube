@@ -231,4 +231,36 @@ void main() {
 
     expect(player.calls, contains('seek'));
   });
+
+  testWidgets('transport controls expose accessibility labels', (tester) async {
+    final player = _playerWithTrack(atStart: true);
+    await tester.pumpWidget(_wrap(player));
+    await tester.pumpAndSettle();
+
+    expect(find.bySemanticsLabel('Previous'), findsOneWidget);
+    expect(find.bySemanticsLabel('Play'), findsWidgets);
+    expect(find.bySemanticsLabel('Next'), findsOneWidget);
+
+    // While playing, the primary control reads as Pause.
+    final playing = _RecordingPlayer(
+      initial: PlayerSnapshot(
+        status: PlayerStatus.ready,
+        isPlaying: true,
+        repeatMode: RepeatMode.off,
+        shuffleEnabled: false,
+        queueLength: 2,
+        currentIndex: 0,
+        durationMs: 200000,
+        current: _song(),
+      ),
+      queue: [
+        _song(id: 1),
+        _song(id: 2, title: 'Song 2'),
+      ],
+    );
+    await tester.pumpWidget(_wrap(playing));
+    await tester.pumpAndSettle();
+
+    expect(find.bySemanticsLabel('Pause'), findsOneWidget);
+  });
 }

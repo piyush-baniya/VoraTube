@@ -27,6 +27,7 @@ final class CollectionSummary {
 final collectionSummariesProvider =
     FutureProvider.autoDispose<List<CollectionSummary>>((ref) async {
       ref.watch(libraryRefreshTickProvider);
+      ref.watch(statsRefreshTickProvider);
       final collections = ref.watch(collectionsProvider);
       return collections.summaries();
     });
@@ -35,6 +36,7 @@ final collectionSummariesProvider =
 final collectionSongsProvider = FutureProvider.autoDispose
     .family<List<SongTileData>, CollectionKind>((ref, kind) async {
       ref.watch(libraryRefreshTickProvider);
+      ref.watch(statsRefreshTickProvider);
       final collections = ref.read(collectionsProvider);
       return collections.songsOf(kind);
     });

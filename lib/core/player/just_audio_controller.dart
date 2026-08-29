@@ -76,6 +76,20 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   ReplayGainMode _replayGainMode = ReplayGainMode.off;
   int _playGeneration = 0;
 
+  /// Whether the user wants playback to continue. Set by the play-oriented
+  /// controls and cleared by pause/stop; [`_skipBrokenSource`] leans on it so a
+  /// failed first-play keeps going into the next queue item instead of pausing.
+  bool _wantPlayback = false;
+
+  /// True between the start and end of a [`_skipBrokenSource`] pass, so a
+  /// burst of idle events from one failed source does not fire multiple skips.
+  bool _skipInFlight = false;
+
+  /// Consecutive engine-driven auto-skips since the last successfully-loaded
+  /// source. Bounds runaway skipping on an all-broken queue so the player stops
+  /// cleanly rather than spinning.
+  int _consecutiveFailures = 0;
+
   /// True between the start and end of a [playQueue] transition.
   ///
   /// The stop→setAudioSources→play sequence is multi-await, and just_audio
@@ -101,7 +115,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       session.becomingNoisyEventStream.listen((_) => _player.pause()),
     );
 
-    _player.processingStateStream.listen((_) => _emit());
+    _player.processingStateStream.listen(_handleProcessingState);
     _player.playingStream.listen((_) => _emit());
     _player.loopModeStream.listen((_) => _emit());
     _player.shuffleModeEnabledStream.listen((_) => _emit());
@@ -150,6 +164,99 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     }
   }
 
+  /// Reacts to source-lifecycle changes.
+  ///
+  /// A source that fails to prepare lands the engine in `idle` with nothing
+  /// loadable: just_audio will not advance on its own, so without this the
+  /// player would sit on the broken track forever (stale `current`, duration
+  /// 0, media-session state NONE — exactly the AutoBackup defect seen in
+  /// Phase 3 device verification). Auto-skip instead. Transient idle events
+  /// inside a [playQueue] transition are gated by [_queueTransition] so the
+  /// coherent snapshot the winning generation emits is never touched.
+  void _handleProcessingState(ProcessingState state) {
+    if (_disposed) {
+      return;
+    }
+    if (!_queueTransition &&
+        state == ProcessingState.idle &&
+        _queueRefs.isNotEmpty) {
+      unawaited(_skipBrokenSource());
+      return;
+    }
+    if (state == ProcessingState.ready) {
+      _consecutiveFailures = 0;
+    }
+    _emit();
+  }
+
+  /// Moves past a source the engine could not load.
+  ///
+  /// [playQueue] already collapses its own transition into one snapshot, so
+  /// only idle events outside a transition reach here. The skip keeps the
+  /// user's play intent: when a tap started playback, hitting a broken track
+  /// falls through to the next item and playback continues.
+  Future<void> _skipBrokenSource() async {
+    if (_disposed || _skipInFlight) {
+      return;
+    }
+    _skipInFlight = true;
+    try {
+      _consecutiveFailures++;
+      final total = _player.sequence.length;
+      final wasPlaying = _wantPlayback;
+      if (total == 0 || _consecutiveFailures > total) {
+        // Nothing to play (single-track stop, or every item failed):
+        // release cleanly instead of looping forever.
+        _consecutiveFailures = 0;
+        _wantPlayback = false;
+        try {
+          await _player
+              .setAudioSources(const [])
+              .timeout(const Duration(seconds: 3));
+        } catch (_) {
+          // Best-effort release; the next playQueue rebuilds from scratch.
+        }
+        _queueRefs = const [];
+        _schedulePersist(immediate: true);
+        _emit();
+        return;
+      }
+      if (_player.hasNext) {
+        await _player.seekToNext();
+        // play() is dispatched: awaiting it here has the same hang hazard as
+        // playQueue, and a stalled skip would leave [_skipInFlight] set so no
+        // later broken source could ever be skipped again.
+        if (wasPlaying) {
+          unawaited(_player.play());
+        }
+        return;
+      }
+      // The last queue item is unplayable. More than one item: wrap to the top
+      // so a repeat-enabled queue self-heals. A single broken track has nowhere
+      // to go: stop cleanly.
+      if (total > 1) {
+        await _player.seek(Duration.zero, index: 0);
+        if (wasPlaying) {
+          unawaited(_player.play());
+        }
+      } else {
+        _wantPlayback = false;
+        try {
+          await _player
+              .setAudioSources(const [])
+              .timeout(const Duration(seconds: 3));
+        } catch (_) {
+          // Best-effort release; the next playQueue rebuilds from scratch.
+        }
+        _queueRefs = const [];
+        _schedulePersist(immediate: true);
+        _emit();
+      }
+    } finally {
+      _skipInFlight = false;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // PlayerController
   // -------------------------------------------------------------------------
@@ -171,15 +278,19 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     final gen = ++_playGeneration;
     final safeIndex = startIndex.clamp(0, songs.length - 1);
     _queueTransition = true;
+    _wantPlayback = true;
     // Bind the refs before touching the engine so the index reported by any
     // engine event after setAudioSources always resolves against the queue it
     // belongs to, never the previous one.
     _queueRefs = List.unmodifiable(songs);
     try {
-      await _player.stop();
-      if (gen != _playGeneration) {
-        return;
-      }
+      // The stop is a request, not a gate: just_audio's stop()-then-setAudioSources
+      // ordering only matters for the engine's internal sequence swap, which
+      // setAudioSources performs anyway. Stopping is dispatched (never awaited)
+      // because awaiting a just_audio engine call here can hang the whole
+      // transition, stranding the player in [_queueTransition] with emissions
+      // suppressed — the same hazard class as the play() hang.
+      unawaited(_player.stop());
       await _player.setAudioSources([
         for (final s in songs) _sourceFor(s),
       ], initialIndex: safeIndex);
@@ -187,11 +298,12 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
         return;
       }
       await _syncQueueMetadata();
-      if (gen != _playGeneration) {
-        return;
-      }
-      await _player.play();
-      _maybeRecordStat(_currentRef());
+      // just_audio's [play] future can hang even though the engine starts and
+      // runs normally (position stream keeps advancing). Awaiting it would
+      // strand the transition in [_queueTransition] and freeze every later
+      // [emit]. Dispatch instead; the engine's own event streams drive the
+      // snapshots.
+      unawaited(_player.play());
       _schedulePersist(immediate: true);
     } finally {
       // Only the winning generation clears the transition flag and emits the
@@ -200,16 +312,34 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       if (gen == _playGeneration) {
         _queueTransition = false;
         _emit();
+        // Record the first-play AFTER the transition lifts: called inside the
+        // transition it would be gated out, so the first track of a tap-to-play
+        // never incremented stats. Skip when the loaded item could not be
+        // prepared (engine idle) so broken files are never counted as plays.
+        if (_player.processingState != ProcessingState.idle) {
+          _maybeRecordStat(_currentRef());
+        }
       }
     }
   }
 
   @override
-  Future<void> togglePlay() async =>
-      _player.playing ? _player.pause() : _player.play();
+  Future<void> togglePlay() async {
+    if (_player.playing) {
+      _wantPlayback = false;
+      await _player.pause();
+    } else {
+      _wantPlayback = true;
+      // play() is dispatched, never awaited: its future can hang even though
+      // the engine starts (see playQueue). Awaiting here stalled the resume
+      // path used by Continue Listening, the MiniPlayer and the full player.
+      unawaited(_player.play());
+    }
+  }
 
   @override
   Future<void> pause() {
+    _wantPlayback = false;
     _flushCurrentHeard();
     return _player.pause();
   }
@@ -234,8 +364,9 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     if (index < 0 || index >= length) {
       return;
     }
+    _wantPlayback = true;
     await _player.seek(Duration.zero, index: index);
-    await _player.play();
+    unawaited(_player.play());
   }
 
   @override
@@ -314,11 +445,31 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
 
   @override
   Future<void> stop() async {
-    await _player.setAudioSources(const []);
-    _queueRefs = const [];
+    _wantPlayback = false;
     _statLastKey = null;
+    _queueRefs = const [];
+    // Clear the UI state unconditionally, before touching the engine: the
+    // sequence must never linger as an orphan AudioTrack playing with no UI.
     _schedulePersist(immediate: true);
     _emit();
+    // Stop first: this reliably releases the audio sink. Clearing the sequence
+    // while playback is active is what wedges the platform thread on some
+    // devices (ExoPlayer eagerly loads the first item to preload), leaving the
+    // old queue decoding in the background with no UI — the observed raster
+    // lockup / orphan-track class. Correct order is stop, then empty swap.
+    try {
+      await _player.stop().timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // The engine settles on its own; never let a stalled stop block the UI.
+    }
+    try {
+      await _player
+          .setAudioSources(const [])
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // Best-effort: the queue snapshot is already empty, so the next playQueue
+      // rebuilds the engine state from scratch regardless.
+    }
   }
 
   @override
@@ -554,7 +705,12 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       return;
     }
     final state = _player.processingState;
+    // During a preload:false restore the engine is idle while a known queue is
+    // loaded — report READY so the UI and media session never claim NONE for a
+    // track that exists. Only a genuinely empty engine is truly idle.
+    final hasKnownQueue = _player.sequence.isNotEmpty;
     final status = switch (state) {
+      ProcessingState.idle when hasKnownQueue => PlayerStatus.ready,
       ProcessingState.idle => PlayerStatus.idle,
       ProcessingState.loading => PlayerStatus.loading,
       ProcessingState.buffering => PlayerStatus.ready,
@@ -602,7 +758,11 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
 
   void _broadcastSystemState() {
     final state = _player.processingState;
+    // Mirror _emit: a restored-but-unloaded queue is READY, not idle, so the
+    // system media session never reports NONE for an existing track.
+    final hasKnownQueue = _player.sequence.isNotEmpty;
     final processing = switch (state) {
+      ProcessingState.idle when hasKnownQueue => AudioProcessingState.ready,
       ProcessingState.idle => AudioProcessingState.idle,
       ProcessingState.loading => AudioProcessingState.loading,
       ProcessingState.buffering => AudioProcessingState.buffering,
@@ -637,11 +797,19 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     }
     if (immediate) {
       _persistDebounce?.cancel();
+      _persistDebounce = null;
       unawaited(_persistNow());
       return;
     }
-    _persistDebounce?.cancel();
+    // A pending flush is not re-armed by further position ticks: while playing,
+    // ticks arrive faster than the 2s debounce, so a cancel+restart scheme
+    // would starve _persistNow forever and the saved resume position/index
+    // would never advance during playback.
+    if (_persistDebounce != null) {
+      return;
+    }
     _persistDebounce = Timer(const Duration(seconds: 2), () {
+      _persistDebounce = null;
       unawaited(_persistNow());
     });
   }
@@ -695,6 +863,9 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
         for (final k in saved.identityKeys)
           if (byKey[k] != null) byKey[k]!,
       ];
+      if (ordered.isEmpty) {
+        return;
+      }
       final index = saved.index.clamp(0, ordered.length - 1);
       _queueRefs = List.unmodifiable(ordered);
       await _player.setAudioSources(
@@ -702,6 +873,18 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
         preload: false,
         initialIndex: index,
         initialPosition: Duration(milliseconds: saved.positionMs),
+      );
+      // A preload:false restore leaves the engine idle: no item is loaded, the
+      // saved position is never applied, and (because processingState stays
+      // idle) the media session broadcasts NONE with position 0 while the
+      // restored queue hides a real current track — the "Continue Listening
+      // shows NONE" defect. Seek to the saved index to load that item headfully
+      // (without starting playback), which applies the saved position and puts
+      // the engine in READY/PAUSED so lock-screen/notification controls and the
+      // player UI agree with the restored queue.
+      await _player.seek(
+        Duration(milliseconds: saved.positionMs),
+        index: index,
       );
       await _player.setShuffleModeEnabled(saved.shuffleEnabled);
       await setRepeat(saved.repeatMode);

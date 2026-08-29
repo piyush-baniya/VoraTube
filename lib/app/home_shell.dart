@@ -8,6 +8,12 @@ import '../features/search/presentation/screens/search_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
 import 'widgets/glass_nav_bar.dart';
 
+/// The app shell: a tabbed scaffold with a persistent [MiniPlayer].
+///
+/// Tab bodies live inside a nested [Navigator] so drilled-down routes (playlist
+/// details, statistics, genres, smart mixes, filtered songs) still render under
+/// the single persistent [MiniPlayer]. Only the immersive [FullPlayerScreen]
+/// pushes onto the root navigator, covering the whole shell.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -17,29 +23,31 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   static const int _libraryIndex = 1;
-  int _currentIndex = 0;
 
-  /// Tabs that have been opened at least once.
-  ///
-  /// [IndexedStack] builds every child eagerly, which runs each screen's
-  /// `initState` at launch — that made Search grab focus and open the keyboard
-  /// over the Library, and paid the cost of every screen's providers before the
-  /// user had asked for any of them. Building a tab only once it is first
-  /// selected avoids both, while [IndexedStack] still preserves its state for
-  /// every subsequent visit.
-  final Set<int> _visited = {0};
+  /// The nested navigator hosting tab content and every pushed detail route.
+  /// Backwards pops are delegated to it by [NavigatorPopHandler].
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
-  void _onDestinationSelected(int index) {
-    if (index == _currentIndex) return;
-    setState(() {
-      _currentIndex = index;
-      _visited.add(index);
-    });
+  /// Mirrors the selected tab. A notifier instead of plain state so the tab
+  /// index can drive both the bottom bar and the nested navigator's base route
+  /// without rebuilding either subtree on unrelated shell changes.
+  final ValueNotifier<int> _tabIndex = ValueNotifier<int>(0);
+
+  @override
+  void dispose() {
+    _tabIndex.dispose();
+    super.dispose();
   }
 
-  /// Screens held by the [IndexedStack]. Search is passed an [onBack] that
-  /// returns to the Library tab: Search lives as a tab (not a pushed route),
-  /// so popping the navigator would blank the whole app.
+  void _onDestinationSelected(int index) {
+    if (index == _tabIndex.value) return;
+    _tabIndex.value = index;
+  }
+
+  /// Screens held by the [IndexedStack] hosted on the nested navigator's base
+  /// route. Search is passed an [onBack] that returns to the Library tab:
+  /// Search lives as a tab (not a pushed route), so popping the navigator
+  /// would blank the whole app.
   List<Widget> get _screens => [
     HomeScreen(onSeeAllSongs: () => _onDestinationSelected(_libraryIndex)),
     const LibraryScreen(),
@@ -54,49 +62,126 @@ class _HomeShellState extends State<HomeShell> {
       body: Column(
         children: [
           Expanded(
-            child: IndexedStack(
-              index: _currentIndex,
-              children: <Widget>[
-                for (var i = 0; i < _screens.length; i++)
-                  if (_visited.contains(i))
-                    _screens[i]
-                  else
-                    const SizedBox.shrink(),
-              ],
+            child: NavigatorPopHandler(
+              onPopWithResult: (_) => _navigatorKey.currentState?.pop(),
+              // The nested navigator is the tab root. Whenever it can pop (a
+              // detail route is open) the handler claims the system back
+              // button and pops that route; otherwise back bubbles to the root
+              // navigator, which owns the full player and app exit.
+              child: Navigator(
+                key: _navigatorKey,
+                onGenerateRoute: (settings) => MaterialPageRoute(
+                  settings: settings,
+                  builder: (_) =>
+                      _TabsHost(index: _tabIndex, screens: _screens),
+                ),
+              ),
             ),
           ),
+          // Persistent across every tab and detail route: this sits outside the
+          // nested navigator, so pushed routes cannot cover it.
           const MiniPlayer(),
         ],
       ),
-      bottomNavigationBar: GlassNavBar(
-        currentIndex: _currentIndex,
-        onDestinationSelected: _onDestinationSelected,
-        destinations: const [
-          GlNavDestination(
-            icon: Icons.home_outlined,
-            selectedIcon: Icons.home,
-            label: 'Home',
-          ),
-          GlNavDestination(
-            icon: Icons.library_music_outlined,
-            selectedIcon: Icons.library_music,
-            label: 'Library',
-          ),
-          GlNavDestination(
-            icon: Icons.search_outlined,
-            selectedIcon: Icons.search,
-            label: 'Search',
-          ),
-          GlNavDestination(
-            icon: Icons.playlist_play_outlined,
-            selectedIcon: Icons.playlist_play,
-            label: 'Playlists',
-          ),
-          GlNavDestination(
-            icon: Icons.settings_outlined,
-            selectedIcon: Icons.settings,
-            label: 'Settings',
-          ),
+      bottomNavigationBar: ValueListenableBuilder<int>(
+        valueListenable: _tabIndex,
+        builder: (context, index, _) => GlassNavBar(
+          currentIndex: index,
+          onDestinationSelected: _onDestinationSelected,
+          destinations: const [
+            GlNavDestination(
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home,
+              label: 'Home',
+            ),
+            GlNavDestination(
+              icon: Icons.library_music_outlined,
+              selectedIcon: Icons.library_music,
+              label: 'Library',
+            ),
+            GlNavDestination(
+              icon: Icons.search_outlined,
+              selectedIcon: Icons.search,
+              label: 'Search',
+            ),
+            GlNavDestination(
+              icon: Icons.playlist_play_outlined,
+              selectedIcon: Icons.playlist_play,
+              label: 'Playlists',
+            ),
+            GlNavDestination(
+              icon: Icons.settings_outlined,
+              selectedIcon: Icons.settings,
+              label: 'Settings',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The lazy, state-preserving tab body shown on the nested navigator's base
+/// route.
+///
+/// [IndexedStack] builds every child eagerly, which runs each screen's
+/// `initState` at launch — that made Search grab focus and open the keyboard
+/// over the Library, and paid the cost of every screen's providers before the
+/// user had asked for any of them. Building a tab only once it is first
+/// selected avoids both, while [IndexedStack] still preserves its state for
+/// every subsequent visit.
+class _TabsHost extends StatefulWidget {
+  const _TabsHost({required this.index, required this.screens});
+
+  final ValueNotifier<int> index;
+  final List<Widget> screens;
+
+  @override
+  State<_TabsHost> createState() => _TabsHostState();
+}
+
+class _TabsHostState extends State<_TabsHost> {
+  /// Tabs that have been opened at least once.
+  final Set<int> _visited = {0};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.index.addListener(_onIndexChanged);
+  }
+
+  @override
+  void didUpdateWidget(_TabsHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index) {
+      oldWidget.index.removeListener(_onIndexChanged);
+      widget.index.addListener(_onIndexChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.index.removeListener(_onIndexChanged);
+    super.dispose();
+  }
+
+  void _onIndexChanged() {
+    if (!mounted) return;
+    setState(() => _visited.add(widget.index.value));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: widget.index,
+      builder: (context, index, _) => IndexedStack(
+        index: index,
+        children: <Widget>[
+          for (var i = 0; i < widget.screens.length; i++)
+            if (_visited.contains(i))
+              widget.screens[i]
+            else
+              const SizedBox.shrink(),
         ],
       ),
     );

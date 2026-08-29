@@ -48,6 +48,11 @@ class RingtonePreviewer {
     _posSub = _player.positions.listen((pos) => _onPosition(pos));
   }
 
+  /// Updates the preview window dynamically (e.g. while dragging or shifting).
+  void updateSelection(RingtoneSelection selection) {
+    _selection = selection;
+  }
+
   void _onPosition(Duration pos) {
     final sel = _selection;
     if (!_previewing || sel == null) return;

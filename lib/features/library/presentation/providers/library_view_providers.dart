@@ -8,6 +8,17 @@ import 'library_providers.dart';
 /// watching entire tables.
 final libraryRefreshTickProvider = StateProvider<int>((ref) => 0);
 
+/// Bumped after listening statistics are written (play counts, heard ms,
+/// history rows).
+///
+/// Stats-facing providers (listening strip, statistics screen, collection
+/// counts/lists) watch this so newly played songs surface live. It is a
+/// dedicated tick rather than a reuse of [libraryRefreshTickProvider], because
+/// that one resets the paged browsing list to page zero on every bump — a cost
+/// only rare scans/imports should pay, not a stats flush that can fire every
+/// few seconds during playback.
+final statsRefreshTickProvider = StateProvider<int>((ref) => 0);
+
 final librarySectionProvider = StateProvider<LibrarySection>(
   (ref) => LibrarySection.songs,
 );

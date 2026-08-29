@@ -79,8 +79,14 @@ class GlassNavBar extends StatelessWidget {
             // Each Expanded destination divides the full width evenly, so the
             // active pill must be sized and centred against the full width too.
             final itemW = width / destinations.length;
-            final centerX = itemW * (currentIndex + 0.5);
-            final alignX = -1 + (2 * centerX / width);
+            // The pill is `itemW` wide and must centre on the active tab's
+            // icon. AnimatedAlign maps Alignment.x over the leftover space
+            // (width - itemW), so solving for the pill centre to equal the tab
+            // centre yields -1..1 evenly spaced per tab, not a fraction of the
+            // full width.
+            final alignX = destinations.length > 1
+                ? (2 * currentIndex) / (destinations.length - 1) - 1
+                : 0.0;
 
             return Stack(
               children: [

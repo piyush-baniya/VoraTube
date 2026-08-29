@@ -56,6 +56,7 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
   }
 
   void _onControllerChange() {
+    _previewer.updateSelection(_controller.selection);
     if (mounted) setState(() {});
   }
 
@@ -362,47 +363,41 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
             Wrap(
               spacing: AppTokens.s3,
               runSpacing: AppTokens.s3,
-              alignment: WrapAlignment.spaceBetween,
+              alignment: WrapAlignment.spaceAround,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                SizedBox(
-                  width: 168,
-                  child: _precisionRow(
-                    theme,
-                    label: 'Start',
-                    value: RingtoneSelection.formatCeil(selection.start),
-                    onMinus: selection.start > Duration.zero
-                        ? () => _controller.setStartMs(
-                            selection.start.inMilliseconds - 1000,
-                          )
-                        : null,
-                    onPlus: () => _controller.setStartMs(
-                      selection.start.inMilliseconds + 1000,
-                    ),
+                _precisionRow(
+                  theme,
+                  label: 'Start',
+                  value: RingtoneSelection.formatCeil(selection.start),
+                  onMinus: selection.start > Duration.zero
+                      ? () => _controller.setStartMs(
+                          selection.start.inMilliseconds - 1000,
+                        )
+                      : null,
+                  onPlus: () => _controller.setStartMs(
+                    selection.start.inMilliseconds + 1000,
                   ),
                 ),
-                SizedBox(
-                  width: 168,
-                  child: _precisionRow(
-                    theme,
-                    label: 'End',
-                    value: RingtoneSelection.formatCeil(selection.end),
-                    onMinus: () => _controller.setEndMs(
-                      selection.end.inMilliseconds - 1000,
-                    ),
-                    onPlus: selection.end < selection.total
-                        ? () => _controller.setEndMs(
-                            selection.end.inMilliseconds + 1000,
-                          )
-                        : null,
-                  ),
+                _precisionRow(
+                  theme,
+                  label: 'End',
+                  value: RingtoneSelection.formatCeil(selection.end),
+                  onMinus: () =>
+                      _controller.setEndMs(selection.end.inMilliseconds - 1000),
+                  onPlus: selection.end < selection.total
+                      ? () => _controller.setEndMs(
+                          selection.end.inMilliseconds + 1000,
+                        )
+                      : null,
                 ),
               ],
             ),
             const SizedBox(height: AppTokens.s3),
             Wrap(
               spacing: AppTokens.s2,
-              runSpacing: AppTokens.s1,
-              alignment: WrapAlignment.end,
+              runSpacing: AppTokens.s2,
+              alignment: WrapAlignment.center,
               children: [
                 TextButton.icon(
                   onPressed: () => _controller.selectAll(),

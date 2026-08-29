@@ -72,6 +72,7 @@ class VoraTubeIngestBridge(context: Context) {
             MediaStore.Audio.Media.ARTIST_ID,
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.MIME_TYPE,
         )
         val optionalColumns = listOf(
             "album_artist",
@@ -88,7 +89,9 @@ class VoraTubeIngestBridge(context: Context) {
         resolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             projection.toTypedArray(),
-            "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media._ID} > ?",
+            "${MediaStore.Audio.Media.IS_MUSIC} != 0 " +
+                "AND ${MediaStore.Audio.Media._ID} > ? " +
+                "AND ${MediaStore.Audio.Media.DURATION} >= $MIN_DURATION_MS",
             arrayOf(afterId.toString()),
             "${MediaStore.Audio.Media._ID} ASC",
         )?.use { cursor ->
@@ -104,11 +107,17 @@ class VoraTubeIngestBridge(context: Context) {
             val artistIdIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST_ID)
             val pathIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val sizeIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+            val mimeIdx = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.MIME_TYPE)
             for (column in optionalColumns) {
                 optionalIndices[column] = cursor.getColumnIndex(column)
             }
 
             while (cursor.moveToNext() && rows.size < limit) {
+                val path = cursor.getString(pathIdx)?.trim()
+                val mime = cursor.getString(mimeIdx)?.trim()?.lowercase()
+                if (!isAcceptableAudio(mime, path)) {
+                    continue
+                }
                 val audioId = cursor.getLong(idIdx)
                 val row = HashMap<String, Any?>(16)
                 row["id"] = audioId
@@ -121,7 +130,7 @@ class VoraTubeIngestBridge(context: Context) {
                 row["dateModifiedSec"] = cursor.getLong(modifiedIdx)
                 row["albumId"] = cursor.getLong(albumIdIdx)
                 row["artistId"] = cursor.getLong(artistIdIdx)
-                row["path"] = cursor.getString(pathIdx)?.trim()
+                row["path"] = path
                 row["sizeBytes"] = cursor.getLong(sizeIdx)
                 optionalIndices["album_artist"]?.takeIf { it >= 0 }?.let {
                     row["albumArtist"] = normalize(cursor.getString(it))
@@ -403,6 +412,29 @@ class VoraTubeIngestBridge(context: Context) {
         return rawTrack % TRACK_MODULUS
     }
 
+    /**
+     * Decides whether a MediaStore row is real, playable music.
+     *
+     * `IS_MUSIC != 0` alone is fallible - a corrupt backup or a renamed
+     * document can still be flagged as music. Accept a row only when its MIME
+     * is a known audio type, or when the extension is one VoraTube can play
+     * (covering rows with a null MIME, and audio MIME variants the whitelist
+     * does not enumerate). The whitelists deliberately mirror
+     * `lib/core/ingest/audio_formats.dart`.
+     */
+    private fun isAcceptableAudio(mime: String?, path: String?): Boolean {
+        val ext = path?.substringAfterLast('.', "")?.lowercase()
+        val hasExt = ext != null && ext.isNotEmpty()
+        if (mime != null) {
+            if (mime in MIME_WHITELIST) return true
+            if (hasExt && ext in EXT_WHITELIST && mime.startsWith("audio/")) {
+                return true
+            }
+            return false
+        }
+        return hasExt && ext in EXT_WHITELIST
+    }
+
     private fun nullableInt(cursor: android.database.Cursor, idx: Int): Int? {
         if (idx < 0 || cursor.isNull(idx)) return null
         return cursor.getInt(idx)
@@ -440,6 +472,66 @@ class VoraTubeIngestBridge(context: Context) {
         const val SMALL = "small"
         const val LARGE = "large"
         const val ART_DIR = "art"
+
+        /** Rows shorter than this are notifications/sound effects, not music. */
+        const val MIN_DURATION_MS = 1000L
+
+        /**
+         * Audio MIME types VoraTube accepts. Mirrors
+         * `lib/core/ingest/audio_formats.dart` and must stay in sync: this set
+         * (plus the extension fallback) decides which MediaStore rows exist.
+         */
+        val MIME_WHITELIST = setOf(
+            "audio/mpeg",
+            "audio/mp3",
+            "audio/x-mp3",
+            "audio/mp4",
+            "audio/mp4a-latm",
+            "audio/x-m4a",
+            "audio/m4a",
+            "audio/aac",
+            "audio/aacp",
+            "audio/x-aac",
+            "audio/flac",
+            "audio/x-flac",
+            "audio/ogg",
+            "audio/x-ogg",
+            "audio/oga",
+            "audio/opus",
+            "audio/x-opus+ogg",
+            "audio/vorbis",
+            "audio/x-vorbis+ogg",
+            "audio/wav",
+            "audio/x-wav",
+            "audio/wave",
+            "audio/vnd.wave",
+            "audio/amr",
+            "audio/3gpp",
+            "audio/aiff",
+            "audio/x-aiff",
+            "audio/x-caf",
+            "audio/mka",
+            "audio/x-matroska",
+        )
+
+        /** Extension fallback for rows with no (or an unlisted) MIME. */
+        val EXT_WHITELIST = setOf(
+            "mp3",
+            "m4a",
+            "m4b",
+            "aac",
+            "flac",
+            "wav",
+            "aif",
+            "aiff",
+            "ogg",
+            "oga",
+            "opus",
+            "mka",
+            "amr",
+            "caf",
+            "mp4",
+        )
 
         /**
          * Removed in Android 10 (API 29). Kept only for the pre-Q fallback —

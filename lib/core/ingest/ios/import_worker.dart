@@ -4,23 +4,10 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
+import '../audio_formats.dart';
 import '../ingest_service.dart';
 import '../metadata/metadata_reader.dart';
 import '../../../core/utils/string_utils.dart';
-
-/// Extensions VoraTube accepts on iOS import. OGG/Vorbis is deliberately
-/// absent: iOS system decoders cannot play it, so ingesting it would
-/// produce entries that can never be played. ALAC arrives as `.m4a`.
-const supportedImportExtensions = <String>{
-  'mp3',
-  'm4a',
-  'm4b',
-  'aac',
-  'flac',
-  'wav',
-  'aif',
-  'aiff',
-};
 
 final class ProcessImportRequest {
   const ProcessImportRequest({
@@ -72,7 +59,7 @@ Future<ProcessedImport> processPickedImportFile(
 }) async {
   final dot = request.fileName.lastIndexOf('.');
   final ext = dot < 0 ? '' : request.fileName.substring(dot + 1).toLowerCase();
-  if (!supportedImportExtensions.contains(ext)) {
+  if (!iOsImportExtensions.contains(ext)) {
     throw ImportProcessingException('Unsupported format (.$ext)');
   }
 

@@ -134,13 +134,54 @@ class StorageInfoCard extends ConsumerWidget {
       ),
       child: Column(
         children: [
-          _InfoRow(
-            icon: Icons.storage_rounded,
-            label: 'Total Storage',
-            value: info.totalSize,
-            iconColor: colorScheme.primary,
+          if (info.device != null) ...[
+            _InfoRow(
+              icon: Icons.storage_rounded,
+              label: 'Total Storage',
+              value: info.deviceTotalSize!,
+              iconColor: colorScheme.primary,
+            ),
+            _PremiumDivider(),
+            _InfoRow(
+              icon: Icons.pie_chart_rounded,
+              label: 'Used',
+              value: info.deviceUsedSize!,
+              iconColor: colorScheme.primary.withValues(alpha: 0.8),
+            ),
+            _PremiumDivider(),
+            _InfoRow(
+              icon: Icons.sd_card_rounded,
+              label: 'Available',
+              value: info.deviceAvailableSize!,
+              iconColor: colorScheme.secondary,
+            ),
+            _PremiumDivider(),
+          ] else
+            _InfoRow(
+              icon: Icons.info_outline_rounded,
+              label: 'On-device storage',
+              value: 'Unavailable on this platform',
+              iconColor: colorScheme.onSurfaceVariant,
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.s5,
+              AppTokens.s3,
+              AppTokens.s5,
+              AppTokens.s1,
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'APP USAGE',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  letterSpacing: 1.2,
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           ),
-          _PremiumDivider(),
           _InfoRow(
             icon: Icons.data_object_rounded,
             label: 'Database',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../../core/storage/device_storage_service.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../data/settings_models.dart';
 
@@ -16,6 +17,7 @@ class StorageInfo {
     required this.artworkCacheSizeBytes,
     required this.importedMusicSizeBytes,
     required this.totalSizeBytes,
+    this.device,
   });
 
   final int databaseSizeBytes;
@@ -23,10 +25,22 @@ class StorageInfo {
   final int importedMusicSizeBytes;
   final int totalSizeBytes;
 
+  /// Real on-device figures. Null when the platform could not report them
+  /// (no native storage handler, partition unreadable) — the card must keep
+  /// working from the app-usage figures alone.
+  final DeviceStorageInfo? device;
+
   String get databaseSize => _formatBytes(databaseSizeBytes);
   String get artworkCacheSize => _formatBytes(artworkCacheSizeBytes);
   String get importedMusicSize => _formatBytes(importedMusicSizeBytes);
   String get totalSize => _formatBytes(totalSizeBytes);
+
+  String? get deviceTotalSize =>
+      device == null ? null : _formatBytes(device!.totalBytes);
+  String? get deviceUsedSize =>
+      device == null ? null : _formatBytes(device!.usedBytes);
+  String? get deviceAvailableSize =>
+      device == null ? null : _formatBytes(device!.availableBytes);
 
   static String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -218,6 +232,10 @@ final storageInfoProvider = FutureProvider.autoDispose<StorageInfo>((
 ) async {
   final ingest = ref.watch(ingestServiceProvider);
 
+  // Real device storage first. A platform-channel failure or unreadable
+  // partition yields null here; the remaining app-usage numbers still render.
+  final device = await DeviceStorageService().getStorageInfo();
+
   // The database must still contribute honest numbers even when its path is
   // unavailable; a platform-channel failure must never error the whole card.
   int dbSize = 0;
@@ -261,5 +279,6 @@ final storageInfoProvider = FutureProvider.autoDispose<StorageInfo>((
     artworkCacheSizeBytes: artSize,
     importedMusicSizeBytes: impSize,
     totalSizeBytes: dbSize + artSize + impSize,
+    device: device,
   );
 });

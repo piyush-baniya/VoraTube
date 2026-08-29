@@ -159,56 +159,68 @@ class MiniPlayer extends ConsumerWidget {
                   ),
                   // Transport cluster: previous | play/pause | next
                   const SizedBox(width: AppTokens.s1),
-                  _TransportButton(
-                    icon: Icons.skip_previous_rounded,
-                    enabled: hasPrevious,
-                    onTap: () => ref.read(playerProvider).previous(),
-                    colorScheme: colorScheme,
+                  Semantics(
+                    button: true,
+                    label: 'Previous',
+                    child: _TransportButton(
+                      icon: Icons.skip_previous_rounded,
+                      enabled: hasPrevious,
+                      onTap: () => ref.read(playerProvider).previous(),
+                      colorScheme: colorScheme,
+                    ),
                   ),
                   const SizedBox(width: AppTokens.s2),
-                  PressableScale(
-                    onTap: () => ref.read(playerProvider).togglePlay(),
-                    child: SizedBox(
-                      width: AppTokens.touchTarget,
-                      height: AppTokens.touchTarget,
-                      child: Center(
-                        child: Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [colorScheme.primary, AppColors.accent],
-                            ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: colorScheme.primary.withValues(
-                                  alpha: 0.35,
-                                ),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
+                  Semantics(
+                    button: true,
+                    label: snapshot.isPlaying ? 'Pause' : 'Play',
+                    child: PressableScale(
+                      onTap: () => ref.read(playerProvider).togglePlay(),
+                      child: SizedBox(
+                        width: AppTokens.touchTarget,
+                        height: AppTokens.touchTarget,
+                        child: Center(
+                          child: Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [colorScheme.primary, AppColors.accent],
                               ),
-                            ],
-                          ),
-                          child: Icon(
-                            snapshot.isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            size: 22,
-                            color: colorScheme.onPrimary,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: colorScheme.primary.withValues(
+                                    alpha: 0.35,
+                                  ),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              snapshot.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 22,
+                              color: colorScheme.onPrimary,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: AppTokens.s2),
-                  _TransportButton(
-                    icon: Icons.skip_next_rounded,
-                    enabled: hasNext,
-                    onTap: () => ref.read(playerProvider).next(),
-                    colorScheme: colorScheme,
+                  Semantics(
+                    button: true,
+                    label: 'Next',
+                    child: _TransportButton(
+                      icon: Icons.skip_next_rounded,
+                      enabled: hasNext,
+                      onTap: () => ref.read(playerProvider).next(),
+                      colorScheme: colorScheme,
+                    ),
                   ),
                   const SizedBox(width: AppTokens.s2),
                 ],
@@ -221,7 +233,9 @@ class MiniPlayer extends ConsumerWidget {
   }
 
   void _openFullPlayer(BuildContext context) {
-    Navigator.of(context).push(
+    // Immersive full player: push on the root navigator so it covers the whole
+    // shell, including this MiniPlayer and the bottom bar.
+    Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder(
         transitionDuration: AppTokens.slow,
         reverseTransitionDuration: AppTokens.medium,
@@ -307,6 +321,17 @@ class _MiniProgress extends ConsumerWidget {
   final PlayerSnapshot snapshot;
   final ValueChanged<Duration> onSeek;
 
+  void _seekAt(BuildContext context, double dx, Duration duration) {
+    final width = context.size?.width ?? 0;
+    if (width <= 0) {
+      return;
+    }
+    final fraction = (dx / width).clamp(0.0, 1.0);
+    onSeek(
+      Duration(milliseconds: (duration.inMilliseconds * fraction).round()),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -322,27 +347,29 @@ class _MiniProgress extends ConsumerWidget {
                 ? position.inMilliseconds / duration.inMilliseconds
                 : 0.0;
 
-            // Tappable progress: a taller invisible hit area so the thin 3px
-            // bar is easy to seek without hurting the compact layout.
+            // Tappable + draggable progress: a taller invisible hit area so the
+            // thin 3px bar is easy to seek without hurting the compact layout.
+            // A tap seeks to the tapped fraction; a horizontal drag scrubs. The
+            // recognizers here deliberately claim only taps and horizontal
+            // drags — a vertical swipe is never claimed by this region, so the
+            // outer vertical-drag gesture (open player / stop) always wins for
+            // swipes starting over the progress bar instead of being eaten as a
+            // phantom seek (the seek-vs-swipe arena race).
             return GestureDetector(
               key: const Key('mini_progress'),
               behavior: HitTestBehavior.translucent,
               onTapUp: duration.inMilliseconds <= 0
                   ? null
-                  : (details) {
-                      final width = context.size?.width ?? 0;
-                      if (width <= 0) return;
-                      final fraction = (details.localPosition.dx / width).clamp(
-                        0.0,
-                        1.0,
-                      );
-                      onSeek(
-                        Duration(
-                          milliseconds: (duration.inMilliseconds * fraction)
-                              .round(),
-                        ),
-                      );
-                    },
+                  : (details) =>
+                        _seekAt(context, details.localPosition.dx, duration),
+              onHorizontalDragStart: duration.inMilliseconds <= 0
+                  ? null
+                  : (details) =>
+                        _seekAt(context, details.localPosition.dx, duration),
+              onHorizontalDragUpdate: duration.inMilliseconds <= 0
+                  ? null
+                  : (details) =>
+                        _seekAt(context, details.localPosition.dx, duration),
               child: SizedBox(
                 height: 16,
                 child: Align(

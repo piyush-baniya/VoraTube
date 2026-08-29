@@ -161,12 +161,18 @@ class PlaybackStatsBuffer {
     this._repository, {
     int flushThreshold = 20,
     Duration flushInterval = const Duration(seconds: 5),
+    this.onFlushed,
   }) : _flushThreshold = flushThreshold,
        _flushInterval = flushInterval;
 
   final LibraryRepository _repository;
   final int _flushThreshold;
   final Duration _flushInterval;
+
+  /// Invoked after a successful write so callers can signal "statistics data
+  /// changed" (e.g. bump a refresh tick). Only called when rows were actually
+  /// written.
+  void Function()? onFlushed;
 
   final Set<String> _pendingStarts = {};
   final Map<String, int> _pendingHeard = {};
@@ -230,7 +236,11 @@ class PlaybackStatsBuffer {
       }
     } catch (_) {
       // Stats are best-effort; failures must never surface to playback.
+      return;
     }
+    // Only signal after the whole batch committed, so listeners never run
+    // while the writes they would re-read are still in flight.
+    onFlushed?.call();
   }
 }
 

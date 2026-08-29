@@ -5,6 +5,7 @@ import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import com.piyushbaniya.vora_tube.audio.VoraTubeAudioUtilBridge
 import com.piyushbaniya.vora_tube.ingest.VoraTubeIngestBridge
+import com.piyushbaniya.vora_tube.storage.VoraTubeDeviceStorageBridge
 
 class MainActivity : AudioServiceActivity() {
 
@@ -13,6 +14,8 @@ class MainActivity : AudioServiceActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         VoraTubeIngestBridge(applicationContext)
+            .register(flutterEngine.dartExecutor.binaryMessenger)
+        VoraTubeDeviceStorageBridge(applicationContext)
             .register(flutterEngine.dartExecutor.binaryMessenger)
         val bridge = VoraTubeAudioUtilBridge(applicationContext)
         this.audioBridge = bridge

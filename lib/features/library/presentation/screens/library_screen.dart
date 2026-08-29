@@ -123,9 +123,12 @@ class _NowPlayingBadge extends StatelessWidget {
     final accent = AppColors.accent;
 
     return PressableScale(
-      onTap: () =>
-          Navigator.of(context)
-              .push(pushHero<void>(context, const FullPlayerScreen())),
+      // Immersive full player: push on the root navigator so it covers the
+      // whole shell including the MiniPlayer and bottom bar.
+      onTap: () => Navigator.of(
+        context,
+        rootNavigator: true,
+      ).push(pushHero<void>(context, const FullPlayerScreen())),
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s3,

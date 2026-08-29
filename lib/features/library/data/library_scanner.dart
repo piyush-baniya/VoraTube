@@ -1,3 +1,4 @@
+import '../../../core/ingest/audio_formats.dart';
 import '../../../core/ingest/ingest_service.dart';
 import 'library_repository.dart';
 
@@ -51,7 +52,15 @@ class LibraryScanner {
         break;
       }
 
-      final changed = batch
+      // Only real, playable music is ever ingested. Anything else — a corrupt
+      // backup flagged IS_MUSIC, a zero-length artifact, a renamed document —
+      // is skipped here AND left out of [seenMediaStoreIds], so a track that
+      // was wrongly synced before is removed as "absent" on the next scan.
+      final playable = batch
+          .where(isValidPlayableTrack)
+          .toList(growable: false);
+
+      final changed = playable
           .where(
             (track) =>
                 !seenKeys.contains(track.identityKey) &&
@@ -67,7 +76,7 @@ class LibraryScanner {
         dirtyAlbums.addAll(result.dirtyAlbumKeys);
       }
 
-      for (final track in batch) {
+      for (final track in playable) {
         seenKeys.add(track.identityKey);
         if (track.mediaStoreId != null) {
           seenMediaStoreIds.add(track.mediaStoreId!);

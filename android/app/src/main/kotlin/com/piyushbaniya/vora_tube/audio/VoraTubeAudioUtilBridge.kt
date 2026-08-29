@@ -191,6 +191,7 @@ class VoraTubeAudioUtilBridge(context: Context) {
         var muxer: MediaMuxer? = null
         var decoder: MediaCodec? = null
         var encoder: MediaCodec? = null
+        var muxerStarted = false
         try {
             extractor.setDataSource(appContext, uri, null)
             var audioTrackIndex = -1
@@ -219,7 +220,7 @@ class VoraTubeAudioUtilBridge(context: Context) {
             val encFormat = MediaFormat.createAudioFormat(M4A_MIME, sampleRate, channelCount)
             encFormat.setInteger(
                 MediaFormat.KEY_BIT_RATE,
-                (sampleRate * channelCount).coerceIn(64000, 196000),
+                (sampleRate * channelCount * 2).coerceIn(64000, 192000),
             )
             encFormat.setInteger(
                 MediaFormat.KEY_AAC_PROFILE,
@@ -232,27 +233,74 @@ class VoraTubeAudioUtilBridge(context: Context) {
             val startUs = startMs * 1000L
             val endUs = endMs * 1000L
 
+            android.util.Log.d("VoraTubeAudio", "Starting trim: startUs=$startUs, endUs=$endUs, sampleRate=$sampleRate, channels=$channelCount, mime=$mime")
+            extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            android.util.Log.d("VoraTubeAudio", "Sought extractor: current sampleTime=${extractor.sampleTime}, track=${extractor.sampleTrackIndex}")
+
             decoder.start()
             encoder.start()
 
             var muxerTrack = -1
-            var muxerStarted = false
             var decoderInputDone = false
             var passedWindowEnd = false
             var encoderEosQueued = false
             var allMuxed = false
+            var totalPcmBytesQueued = 0L
+            var totalMuxerSamples = 0L
             val encInfo = MediaCodec.BufferInfo()
 
+            fun drainEncoder() {
+                var encIdle = false
+                while (!encIdle) {
+                    val encIdx = encoder.dequeueOutputBuffer(encInfo, 2000L)
+                    when {
+                        encIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> encIdle = true
+                        encIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            if (!muxerStarted) {
+                                val newFmt = encoder.outputFormat
+                                android.util.Log.d("VoraTubeAudio", "Encoder format changed: $newFmt")
+                                muxerTrack = muxer.addTrack(newFmt)
+                                muxer.start()
+                                muxerStarted = true
+                            }
+                        }
+                        encIdx >= 0 -> {
+                            val isConfig = (encInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
+                            val isEos = (encInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                            if (encInfo.size > 0 && muxerStarted && !isConfig) {
+                                val encOut = encoder.getOutputBuffer(encIdx)
+                                if (encOut != null) {
+                                    encOut.position(encInfo.offset)
+                                    encOut.limit(encInfo.offset + encInfo.size)
+                                    muxer.writeSampleData(muxerTrack, encOut, encInfo)
+                                    totalMuxerSamples++
+                                }
+                            }
+                            encoder.releaseOutputBuffer(encIdx, false)
+                            if (isEos) {
+                                android.util.Log.d("VoraTubeAudio", "Encoder EOS reached! Total muxed samples: $totalMuxerSamples")
+                                allMuxed = true
+                                encIdle = true
+                            }
+                        }
+                        else -> encIdle = true
+                    }
+                }
+            }
+
+            var loopCount = 0
             while (!allMuxed) {
-                // 1) Feed the decoder until EOS.
-                if (!decoderInputDone) {
+                loopCount++
+                // 1) Feed the decoder until EOS or end of window.
+                if (!decoderInputDone && !passedWindowEnd) {
                     val inIdx = decoder.dequeueInputBuffer(3000L)
                     if (inIdx >= 0) {
                         val inBuf = decoder.getInputBuffer(inIdx)
-                        val sampleSize = extractor.sampleSize.toInt()
-                        if (sampleSize > 0 && inBuf != null) {
-                            extractor.readSampleData(inBuf, 0)
-                            val sourcePtsUs = extractor.sampleTime.toLong()
+                        inBuf?.clear()
+                        val sampleSize = if (inBuf != null) extractor.readSampleData(inBuf, 0) else -1
+                        val curTrack = extractor.sampleTrackIndex
+                        val sourcePtsUs = extractor.sampleTime
+                        if (sampleSize > 0 && inBuf != null && curTrack == audioTrackIndex) {
                             decoder.queueInputBuffer(
                                 inIdx,
                                 0,
@@ -262,6 +310,7 @@ class VoraTubeAudioUtilBridge(context: Context) {
                             )
                             extractor.advance()
                         } else {
+                            android.util.Log.d("VoraTubeAudio", "Extractor finished or invalid track (sampleSize=$sampleSize, track=$curTrack). Queueing decoder EOS.")
                             decoder.queueInputBuffer(
                                 inIdx,
                                 0,
@@ -274,100 +323,91 @@ class VoraTubeAudioUtilBridge(context: Context) {
                     }
                 }
 
-                // 2) Drain decoded PCM into the encoder, dropping samples outside
-                //    [startUs, endUs] and rebasing retained ones to zero.
+                // 2) Drain decoded PCM into the encoder.
                 var decIdle = false
-                while (!decIdle) {
+                while (!decIdle && !passedWindowEnd) {
                     val decInfo = MediaCodec.BufferInfo()
-                    val outIdx = decoder.dequeueOutputBuffer(decInfo, 0L)
+                    val outIdx = decoder.dequeueOutputBuffer(decInfo, 2000L)
                     when {
                         outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> decIdle = true
-                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {}
+                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                            android.util.Log.d("VoraTubeAudio", "Decoder output format: ${decoder.outputFormat}")
+                        }
                         outIdx >= 0 -> {
                             val pcm = decoder.getOutputBuffer(outIdx)
                             val srcPts = decInfo.presentationTimeUs
-                            val isEos = decInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
-                            val config = decInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                            if (pcm != null && !config && decInfo.size > 0 &&
-                                srcPts in startUs until endUs
-                            ) {
-                                val encIn = encoder.dequeueInputBuffer(3000L)
-                                if (encIn >= 0) {
-                                    val encBuf = encoder.getInputBuffer(encIn)
-                                    encBuf?.clear()
-                                    pcm.position(decInfo.offset)
-                                    encBuf?.put(pcm)
-                                    encoder.queueInputBuffer(
-                                        encIn,
-                                        0,
-                                        decInfo.size,
-                                        (srcPts - startUs).coerceAtLeast(0L),
-                                        decInfo.flags,
-                                    )
-                                }
-                            } else if (srcPts >= endUs) {
-                                // Decoder has produced a buffer past our window:
-                                // the whole selection has now been decoded.
+                            val isEos = (decInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+                            val isConfig = (decInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
+
+                            if (srcPts >= endUs || isEos) {
+                                android.util.Log.d("VoraTubeAudio", "Passed window end: srcPts=$srcPts (endUs=$endUs), isEos=$isEos")
                                 passedWindowEnd = true
+                            }
+
+                            if (pcm != null && !isConfig && decInfo.size > 0 && srcPts in startUs until endUs) {
+                                var queued = false
+                                var attempts = 0
+                                while (!queued && attempts < 100) {
+                                    val encIn = encoder.dequeueInputBuffer(3000L)
+                                    if (encIn >= 0) {
+                                        val encBuf = encoder.getInputBuffer(encIn)
+                                        encBuf?.clear()
+                                        pcm.position(decInfo.offset)
+                                        pcm.limit(decInfo.offset + decInfo.size)
+                                        encBuf?.put(pcm)
+                                        val encPts = (srcPts - startUs).coerceAtLeast(0L)
+                                        encoder.queueInputBuffer(
+                                            encIn,
+                                            0,
+                                            decInfo.size,
+                                            encPts,
+                                            0,
+                                        )
+                                        totalPcmBytesQueued += decInfo.size
+                                        queued = true
+                                    } else {
+                                        drainEncoder()
+                                        attempts++
+                                    }
+                                }
+                                if (!queued) {
+                                    throw IllegalStateException("Audio encoder stalled during trim")
+                                }
                             }
                             decoder.releaseOutputBuffer(outIdx, false)
-                            if (isEos) {
-                                passedWindowEnd = true
-                                decIdle = true
-                            }
                         }
                         else -> decIdle = true
                     }
                 }
 
-                // 3) Signal encoder EOS only once the selection has been fully
-                //    decoded (i.e. the decoder passed the window end). Queuing it
-                //    any earlier would truncate the clip to whatever had already
-                //    been fed, cutting off the tail of the selection.
+                // 3) Signal encoder EOS once selection is fully decoded.
                 if (passedWindowEnd && !encoderEosQueued) {
-                    val encIn = encoder.dequeueInputBuffer(3000L)
-                    if (encIn >= 0) {
-                        encoder.queueInputBuffer(
-                            encIn,
-                            0,
-                            0,
-                            0,
-                            MediaCodec.BUFFER_FLAG_END_OF_STREAM,
-                        )
-                        encoderEosQueued = true
+                    android.util.Log.d("VoraTubeAudio", "Signalling encoder EOS after $totalPcmBytesQueued PCM bytes")
+                    var eosQueued = false
+                    var attempts = 0
+                    while (!eosQueued && attempts < 100) {
+                        val encIn = encoder.dequeueInputBuffer(3000L)
+                        if (encIn >= 0) {
+                            encoder.queueInputBuffer(
+                                encIn,
+                                0,
+                                0,
+                                (endUs - startUs).coerceAtLeast(0L),
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM,
+                            )
+                            eosQueued = true
+                            encoderEosQueued = true
+                        } else {
+                            drainEncoder()
+                            attempts++
+                        }
                     }
                 }
 
                 // 4) Drain encoded data into the muxer.
-                var encIdle = false
-                while (!encIdle) {
-                    val encIdx = encoder.dequeueOutputBuffer(encInfo, 0L)
-                    when {
-                        encIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> encIdle = true
-                        encIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                            if (!muxerStarted) {
-                                muxerTrack = muxer.addTrack(encoder.outputFormat)
-                                muxer.start()
-                                muxerStarted = true
-                            }
-                        }
-                        encIdx >= 0 -> {
-                            if (encInfo.size > 0 && muxerStarted) {
-                                val encOut = encoder.getOutputBuffer(encIdx)
-                                encOut?.position(encInfo.offset)
-                                encOut?.limit(encInfo.offset + encInfo.size)
-                                muxer.writeSampleData(muxerTrack, encOut!!, encInfo)
-                            }
-                            encoder.releaseOutputBuffer(encIdx, false)
-                            if (encInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                                allMuxed = true
-                                encIdle = true
-                            }
-                        }
-                        else -> encIdle = true
-                    }
-                }
+                drainEncoder()
             }
+            android.util.Log.d("VoraTubeAudio", "Trim complete: totalPcmBytes=$totalPcmBytesQueued, totalMuxerSamples=$totalMuxerSamples, outFileSize=${outFile.length()}")
         } finally {
             try {
                 extractor.release()
@@ -375,9 +415,11 @@ class VoraTubeAudioUtilBridge(context: Context) {
             }
             closeQuietly(decoder)
             closeQuietly(encoder)
-            try {
-                muxer?.stop()
-            } catch (_: Exception) {
+            if (muxerStarted) {
+                try {
+                    muxer?.stop()
+                } catch (_: Exception) {
+                }
             }
             try {
                 muxer?.release()
