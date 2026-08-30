@@ -51,10 +51,7 @@ class SmartMixStrip extends ConsumerWidget {
               height: 176,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppTokens.s4,
-                  vertical: AppTokens.s1,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
                 itemCount: visible.length,
                 separatorBuilder: (_, __) =>
                     const SizedBox(width: AppTokens.s2),

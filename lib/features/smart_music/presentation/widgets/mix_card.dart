@@ -118,15 +118,31 @@ class MixCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 2),
-            Text(
-              mix.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+            // Compact strip cards flex the description so a fixed strip height
+            // never overflows; ellipsis keeps the card tidy at large text.
+            // Detail-screen cards avoid Flexible because their columns are
+            // unbounded inside the scroll view.
+            if (showActions)
+              Text(
+                mix.description,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              )
+            else
+              Flexible(
+                child: Text(
+                  mix.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: AppTokens.s2),
+            if (showActions) const SizedBox(height: AppTokens.s2),
             if (showActions)
               Row(
                 children: [

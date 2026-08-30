@@ -183,7 +183,7 @@ class _HomePlaylistCard extends ConsumerWidget {
           children: [
             PlaylistCollage(
               summary: playlist,
-              size: 112,
+              size: 104,
               radius: AppTokens.rMd,
             ),
             const SizedBox(height: AppTokens.s2),
@@ -195,12 +195,16 @@ class _HomePlaylistCard extends ConsumerWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            Text(
-              '${playlist.songCount} ${playlist.songCount == 1 ? 'song' : 'songs'}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+            // The count flexes so fixed strip heights never overflow while
+            // still fitting at large text scales.
+            Flexible(
+              child: Text(
+                '${playlist.songCount} ${playlist.songCount == 1 ? 'song' : 'songs'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],
