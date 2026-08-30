@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
+import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../data/playlist_models.dart';
 import '../providers/playlist_providers.dart';
 import '../screens/playlist_detail_screen.dart';
@@ -22,6 +23,13 @@ class HomePlaylistStrip extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    // With no music on the device there is nothing a playlist could hold, so
+    // the strip (including its Create CTA) is hidden and the "No Music" empty
+    // state leads instead. "Loading" defaults to visible to avoid a flash.
+    final hasSongs = ref.watch(libraryHasSongsProvider).valueOrNull ?? true;
+    if (!hasSongs) {
+      return const SizedBox.shrink();
+    }
     final async = ref.watch(playlistsOverviewProvider);
 
     return async.when(
