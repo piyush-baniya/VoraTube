@@ -23,6 +23,11 @@ class VoraTubeApp extends ConsumerWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
+      // Default MaterialApp applies a 200ms AnimatedTheme color crossfade in
+      // which every theme-dependent widget across all visited IndexedStack tabs
+      // rebuilds and repaints each frame — visibly laggy on mid-range devices
+      // during a light/dark switch. Switching in a single frame feels instant.
+      themeAnimationDuration: Duration.zero,
       // The splash and permission gates live inside the MaterialApp so they
       // have Directionality/Theme/MediaQuery ancestors. This is the single,
       // correct application root: ProviderScope → MaterialApp → gates → shell.

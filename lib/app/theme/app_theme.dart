@@ -4,9 +4,12 @@ import 'app_colors.dart';
 import 'app_tokens.dart';
 
 abstract final class AppTheme {
-  static ThemeData get dark => _build(_darkScheme, isDark: true);
+  /// Memoized so MaterialApp rebuilds (theme switches, root provider churn)
+  /// reuse the identical ThemeData instead of reconstructing the whole theme
+  /// graph every time.
+  static final ThemeData dark = _build(_darkScheme, isDark: true);
 
-  static ThemeData get light => _build(_lightScheme, isDark: false);
+  static final ThemeData light = _build(_lightScheme, isDark: false);
 
   static ColorScheme get _darkScheme => const ColorScheme.dark(
     primary: AppColors.accent,

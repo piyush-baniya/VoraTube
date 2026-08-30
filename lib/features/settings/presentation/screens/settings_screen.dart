@@ -21,10 +21,6 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
     return SafeArea(
       child: CustomScrollView(
         slivers: [
@@ -133,15 +129,6 @@ class _AudioSection extends ConsumerWidget {
           max: 12.0,
           divisions: 24,
           label: '${audioSettings.preampDb.toStringAsFixed(1)} dB',
-        ),
-        SettingsTile(
-          title: 'Gapless Playback',
-          subtitle: 'Seamless track transitions (always on)',
-          trailing: Icon(
-            Icons.check_circle_rounded,
-            color: Theme.of(context).colorScheme.tertiary,
-            size: 18,
-          ),
         ),
         SettingsTile(
           title: 'Volume Normalization',
