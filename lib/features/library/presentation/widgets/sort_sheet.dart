@@ -17,34 +17,39 @@ Future<void> showSortSheet(BuildContext context, WidgetRef ref) async {
     ),
     builder: (context) {
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-              child: Text(
-                'Sort songs',
-                style: Theme.of(context).textTheme.titleMedium,
+        // Wrapping in a scroll view keeps the sheet usable (and overflow-free)
+        // when large text scaling or short landscape viewports make the fixed
+        // list of sort options taller than the sheet can show.
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Text(
+                  'Sort songs',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ),
-            ),
-            for (final sort in SongSort.values)
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                title: Text(sort.label),
-                trailing: sort == current
-                    ? Icon(
-                        Icons.check_rounded,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : null,
-                onTap: () {
-                  controller.state = sort;
-                  Navigator.of(context).pop();
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
+              for (final sort in SongSort.values)
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+                  title: Text(sort.label),
+                  trailing: sort == current
+                      ? Icon(
+                          Icons.check_rounded,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () {
+                    controller.state = sort;
+                    Navigator.of(context).pop();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       );
     },
