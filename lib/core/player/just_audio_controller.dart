@@ -4,8 +4,8 @@ import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' hide RepeatMode;
 import 'package:just_audio/just_audio.dart';
 
 import 'player_controller.dart';
@@ -16,7 +16,9 @@ const String _kSnapshotKey = 'playback.snapshot.v1';
 ///
 /// Everything engine-specific lives here. Consumers see only
 /// [PlayerController] types.
-class JustAudioController extends BaseAudioHandler implements PlayerController {
+class JustAudioController extends BaseAudioHandler
+    with WidgetsBindingObserver
+    implements PlayerController {
   JustAudioController({
     required PlayerPersistence playbackStorage,
     required Future<List<SongRef>> Function(List<String>) songResolver,
@@ -165,6 +167,11 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
           _schedulePersist();
         });
 
+    // Persist the exact track + position at the moment the app backgrounds or
+    // the engine is torn down, so the latest position isn't lost to the
+    // debounce window. Reuses the existing persist path; no architecture change.
+    WidgetsBinding.instance.addObserver(this);
+
     await _restoreIfNeeded();
     _suppressStats = false;
     _emit();
@@ -190,6 +197,19 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
         } else {
           _pausedByInterruption = false;
         }
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Force a final persist when the app leaves the foreground so a process
+    // kill can't drop up to the debounce window of the latest restore point.
+    // This reuses the existing persist path (true current index + position);
+    // it does not change the queue/session architecture.
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      unawaited(_persistNow());
     }
   }
 
@@ -583,6 +603,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   @override
   Future<void> dispose() async {
     _disposed = true;
+    WidgetsBinding.instance.removeObserver(this);
     _flushCurrentHeard();
     _persistDebounce?.cancel();
     await _persistNow();
