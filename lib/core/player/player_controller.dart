@@ -45,6 +45,21 @@ int volumeBoostMillibel(double multiplier) {
   return (percent * 6.0).round();
 }
 
+/// Maps a Preamp setting (in dB) to the millibel gain it contributes to the
+/// platform's loudness enhancer.
+///
+/// The enhancer only *raises* gain (0 mB = no change); it cannot attenuate. So
+/// only positive Preamp values appear here — a +dB Preamp is real gain that
+/// the clamped base volume (0..1) would otherwise swallow, and 1 dB = 100 mB.
+/// Negative and zero Preamp return 0 mB; they attenuate through the clamped
+/// base volume instead (which can go below 1.0), so the full −12..+12 range
+/// stays meaningful. Returning engine gain (not the UI number) keeps this the
+/// real integration boundary fed to the audio FX chain.
+int preampBoostMillibel(double preampDb) {
+  final db = preampDb.clamp(0.0, 12.0);
+  return (db * 100.0).round(); // 1 dB = 100 mB
+}
+
 /// Minimal track reference handed to the player.
 ///
 /// Deliberately free of database and platform-engine types so feature code

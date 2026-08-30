@@ -596,6 +596,10 @@ class JustAudioController extends BaseAudioHandler
     _replayGainMode = mode;
     _preampDb = preampDb.clamp(-12.0, 12.0);
     unawaited(_applyVolume());
+    // Positive Preamp is real gain above the 0..1 volume clamp, so push it
+    // through the same native loudness enhancer as the Volume Booster. This
+    // makes Preamp changes take effect live mid-playback.
+    unawaited(_applyBoostGain());
     _schedulePersist(immediate: true);
   }
 
@@ -764,16 +768,19 @@ class JustAudioController extends BaseAudioHandler
     }
   }
 
-  /// Applies the current Volume Booster as real gain on the native loudness
-  /// enhancer attached to just_audio's Android audio session.
+  /// Applies the current Volume Booster + Preamp as real gain on the native
+  /// loudness enhancer attached to just_audio's Android audio session.
   ///
-  /// This is the layer that actually raises playback above 100%. It is
-  /// best-effort and evergreen: it subscribes once to the audio-session stream
-  /// so the enhancer is (re)attached whenever ExoPlayer assigns a session, and
-  /// it always mirrors the latest multiplier — so session changes, track
-  /// transitions, pause/resume and a live 100→150→200→100 sweep all keep the
-  /// gain correct. On non-Android hosts or when the platform channel is
-  /// missing, it silently no-ops and playback continues at normal volume.
+  /// This is the layer that actually raises playback above 100%: ExoPlayer
+  /// clamps base volume to 0..1, so a positive Preamp (e.g. +6 dB) would
+  /// otherwise be swallowed by the clamp and change nothing. Both gain sources
+  /// add together in millibels on this one enhancer. It is best-effort and
+  /// evergreen: it subscribes once to the audio-session stream so the enhancer
+  /// is (re)attached whenever ExoPlayer assigns a session, and it always
+  /// mirrors the latest Preamp/Booster — so session changes, track transitions,
+  /// pause/resume and a live sweep all keep the gain correct. On non-Android
+  /// hosts or when the platform channel is missing, it silently no-ops and
+  /// playback continues at normal volume.
   Future<void> _applyBoostGain() async {
     if (_disposed || !Platform.isAndroid) {
       return;
@@ -785,7 +792,7 @@ class JustAudioController extends BaseAudioHandler
       // above will apply the gain as soon as ExoPlayer exposes a session.
       return;
     }
-    final millibel = volumeBoostMillibel(_boostMultiplier);
+    final millibel = _enhancerMillibel();
     try {
       await _volumeBoosterChannel.invokeMethod<void>(
         'attach',
@@ -800,6 +807,11 @@ class JustAudioController extends BaseAudioHandler
     }
   }
 
+  /// Combined real gain (millibels) for the native enhancer: the Volume
+  /// Booster's mapping plus the positive Preamp's per-dB boost.
+  int _enhancerMillibel() =>
+      volumeBoostMillibel(_boostMultiplier) + preampBoostMillibel(_preampDb);
+
   /// Subscribes (once) to just_audio's audio-session stream so the loudness
   /// enhancer is attached as soon as ExoPlayer publishes a session, and is
   /// re-attached if that session ever changes (e.g. fresh playback start).
@@ -810,7 +822,10 @@ class JustAudioController extends BaseAudioHandler
     _boostSessionListening = true;
     _sessionSubs.add(
       _player.androidAudioSessionIdStream.distinct().listen((_) {
-        if (_boostMultiplier > 1.0) {
+        // Re-apply whenever there is any real gain (Booster >100% or a
+        // positive Preamp), so a Preamp-only change still gets attached to a
+        // freshly assigned session.
+        if (_enhancerMillibel() > 0) {
           unawaited(_applyBoostGain());
         }
       }),
