@@ -105,12 +105,20 @@ class _PressableScaleState extends State<PressableScale>
       return widget.child;
     }
 
+    // Only register long-press recognizers when a callback actually exists.
+    // An always-attached LongPressGestureRecognizer steals the gesture arena
+    // from ReorderableDelayedDragStartListener wrappers, breaking
+    // long-press-and-drag reordering on reorderable song tiles.
+    final onLongPressStart = widget.onLongPress != null
+        ? _handleLongPressStart
+        : null;
+
     return GestureDetector(
       onTapDown: _handleTapDown,
       onTapUp: _handleTapUp,
       onTapCancel: _handleTapCancel,
-      onLongPressStart: _handleLongPressStart,
-      onLongPressEnd: _handleLongPressEnd,
+      onLongPressStart: onLongPressStart,
+      onLongPressEnd: widget.onLongPress != null ? _handleLongPressEnd : null,
       behavior: HitTestBehavior.opaque,
       child: AnimatedBuilder(
         animation: _scaleAnimation,

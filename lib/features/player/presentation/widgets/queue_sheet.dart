@@ -282,35 +282,42 @@ class _QueueTile extends ConsumerWidget {
         return true; // Could add confirmation dialog here
       },
       onDismissed: (_) => onRemove(),
-      child: PressableScale(
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.symmetric(
-            horizontal: AppTokens.s4,
-            vertical: AppTokens.s1,
-          ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppTokens.s3,
-            vertical: AppTokens.s2,
-          ),
-          decoration: BoxDecoration(
-            color: isCurrent
-                ? colorScheme.primary.withValues(alpha: 0.08)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppTokens.rMd),
-            border: isCurrent
-                ? Border.all(
-                    color: colorScheme.primary.withValues(alpha: 0.2),
-                    width: AppTokens.borderHairline,
-                  )
-                : null,
-          ),
-          child: Row(
-            children: [
-              // Drag handle
-              ReorderableDragStartListener(
-                index: index,
-                child: Semantics(
+      // Wrap the entire tile so long-press-and-drag reordering works anywhere
+      // on the song, not just on the small drag-handle icon. A plain tap still
+      // jumps to the track, and a quick horizontal swipe still removes the
+      // song (Dismissible wins the gesture arena on immediate horizontal
+      // drags, before the delayed long-press starts).
+      child: ReorderableDelayedDragStartListener(
+        index: index,
+        child: PressableScale(
+          onTap: onTap,
+          child: Container(
+            margin: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s4,
+              vertical: AppTokens.s1,
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s3,
+              vertical: AppTokens.s2,
+            ),
+            decoration: BoxDecoration(
+              color: isCurrent
+                  ? colorScheme.primary.withValues(alpha: 0.08)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+              border: isCurrent
+                  ? Border.all(
+                      color: colorScheme.primary.withValues(alpha: 0.2),
+                      width: AppTokens.borderHairline,
+                    )
+                  : null,
+            ),
+            child: Row(
+              children: [
+                // Drag handle — visual affordance only. The surrounding
+                // ReorderableDelayedDragStartListener already makes the whole
+                // row draggable, so the user can grab any part of the song.
+                Semantics(
                   label: 'Reorder ${song.title}',
                   child: Icon(
                     Icons.drag_indicator_rounded,
@@ -318,97 +325,99 @@ class _QueueTile extends ConsumerWidget {
                     color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                   ),
                 ),
-              ),
-              const SizedBox(width: AppTokens.s2),
-              // Position / equalizer
-              Container(
-                width: 32,
-                height: 32,
-                decoration: isCurrent
-                    ? BoxDecoration(
-                        color: colorScheme.primary.withValues(alpha: 0.12),
-                        shape: BoxShape.circle,
-                      )
-                    : null,
-                child: Center(
-                  child: isCurrent
-                      ? _EqualizerBars(color: colorScheme.primary)
-                      : Text(
-                          '${index + 1}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(width: AppTokens.s3),
-              // Artwork
-              ClipRRect(
-                borderRadius: BorderRadius.circular(AppTokens.rSm),
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: song.artPath != null && song.artPath!.isNotEmpty
-                      ? Image.file(
-                          File(song.artPath!),
-                          fit: BoxFit.cover,
-                          cacheWidth: 88,
-                          gaplessPlayback: true,
-                          errorBuilder: (_, _, _) => _fallback(theme),
+                const SizedBox(width: AppTokens.s2),
+                // Position / equalizer
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: isCurrent
+                      ? BoxDecoration(
+                          color: colorScheme.primary.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
                         )
-                      : _fallback(theme),
+                      : null,
+                  child: Center(
+                    child: isCurrent
+                        ? _EqualizerBars(color: colorScheme.primary)
+                        : Text(
+                            '${index + 1}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppTokens.s3),
-              // Metadata
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      song.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: isCurrent
-                            ? FontWeight.w600
-                            : FontWeight.w500,
-                        color: isCurrent
-                            ? colorScheme.primary
-                            : colorScheme.onSurface,
-                      ),
-                    ),
-                    if (song.artist != null)
+                const SizedBox(width: AppTokens.s3),
+                // Artwork
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(AppTokens.rSm),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: song.artPath != null && song.artPath!.isNotEmpty
+                        ? Image.file(
+                            File(song.artPath!),
+                            fit: BoxFit.cover,
+                            cacheWidth: 88,
+                            gaplessPlayback: true,
+                            errorBuilder: (_, _, _) => _fallback(theme),
+                          )
+                        : _fallback(theme),
+                  ),
+                ),
+                const SizedBox(width: AppTokens.s3),
+                // Metadata
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Text(
-                        song.artist!,
+                        song.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: isCurrent
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: isCurrent
+                              ? colorScheme.primary
+                              : colorScheme.onSurface,
                         ),
                       ),
-                  ],
-                ),
-              ),
-              // Remove button
-              PressableScale(
-                onTap: onRemove,
-                child: Container(
-                  padding: const EdgeInsets.all(AppTokens.s1),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 16,
-                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      if (song.artist != null)
+                        Text(
+                          song.artist!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                // Remove button
+                PressableScale(
+                  onTap: onRemove,
+                  child: Container(
+                    padding: const EdgeInsets.all(AppTokens.s1),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 16,
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.6,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
