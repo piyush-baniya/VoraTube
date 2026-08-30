@@ -1579,10 +1579,18 @@ extension CollectionQueries on LibraryRepository {
     final totalSongs = totalSongsRow.read(songsCountExp) ?? 0;
 
     // Bounded total plays and listening time via joined aggregation.
+    //
+    // total_ms is the SUM of *actual measured listening time* from
+    // play_history — the same single source of truth as the week/year graphs,
+    // so the header's "Listening Time" always agrees with the rest of the
+    // Statistics screen and Home strip. (The older play-count x duration_ms
+    // estimate inflated the number because it assumed every play heard the
+    // whole song, producing inconsistent "7h header vs 2h graph" figures.)
     final statsRows = await _db
         .customSelect(
           'SELECT COALESCE(SUM(st.play_count), 0) AS total_plays, '
-          'COALESCE(SUM(st.play_count * s.duration_ms), 0) AS total_ms '
+          'COALESCE((SELECT SUM(ph.listened_ms) FROM play_history ph), 0) '
+          'AS total_ms '
           'FROM song_stats st JOIN songs s ON s.id = st.song_id',
         )
         .getSingleOrNull();
@@ -1661,11 +1669,18 @@ extension CollectionQueries on LibraryRepository {
   /// [now] is injected so week/year boundaries can be tested deterministically.
   Future<ListeningBreakdown> listeningBreakdown({DateTime? now}) async {
     final reference = now ?? DateTime.now();
-    final weekStart = DateTime.utc(
+    final referenceDay = DateTime(
       reference.year,
       reference.month,
       reference.day,
-    ).subtract(Duration(days: reference.weekday - 1));
+    );
+    // Local-midnight Monday so the week boundary and its 7 daily bars use the
+    // same local-date keys as [dayMs]/[dayKey] below. (A UTC-midnight week-start
+    // drifted from the local day buckets, so early local-hours plays on the
+    // week's first day were mis-bucketed or dropped entirely.)
+    final weekStart = referenceDay.subtract(
+      Duration(days: reference.weekday - 1),
+    );
 
     // One bounded pass over the joined history so all bucketing happens in
     // Dart with correct local-date handling, rather than many SQL passes.

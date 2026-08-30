@@ -298,6 +298,59 @@ void main() {
       expect(recent.map((t) => t.song.id), [1]);
     });
   });
+
+  group('single source of truth: header time == graph time', () {
+    test('listeningStats.totalListeningMs equals actual listened ms, not '
+        'play_count x duration', () async {
+      // Song 1 is played and actually heard for 120s; Song 2 heard for 30s.
+      // The song durations are ~180s, so the OLD estimate
+      // (play_count x duration_ms) would report ~360s — much larger than the
+      // real ~150s. The header and the graphs must agree.
+      await repo.recordPlayback([1], DateTime(2025, 6, 18, 10));
+      await repo.addPlaybackListenedMs(
+        songRowId: 1,
+        listenedMs: 120000,
+        at: DateTime(2025, 6, 18, 10, 2),
+      );
+      await repo.recordPlayback([2], DateTime(2025, 6, 18, 11));
+      await repo.addPlaybackListenedMs(
+        songRowId: 2,
+        listenedMs: 30000,
+        at: DateTime(2025, 6, 18, 11, 1),
+      );
+
+      final stats = await repo.listeningStats();
+      final breakdown = await repo.listeningBreakdown(
+        now: DateTime(2025, 6, 18, 12),
+      );
+
+      // Exact actual heard time, not play_count x duration.
+      expect(stats.totalListeningMs, 150000);
+      // Header (stats) and graph aggregate (breakdown) share one value.
+      expect(stats.totalListeningMs, breakdown.totalListenedMs);
+      expect(stats.formattedListeningTime, '2m');
+    });
+
+    test('week report includes early local-hours plays on the week start', () async {
+      // Reference = local Wednesday 2025-06-18, so the local week starts Monday
+      // 2025-06-16 at local midnight. A play at 00:30 local Monday must count
+      // in "this week" and appear on the Monday graph bar.
+      await repo.recordPlayback([1], DateTime(2025, 6, 16, 0, 30));
+      await repo.addPlaybackListenedMs(
+        songRowId: 1,
+        listenedMs: 60000,
+        at: DateTime(2025, 6, 16, 0, 35),
+      );
+
+      final b = await repo.listeningBreakdown(now: DateTime(2025, 6, 18, 12));
+      expect(b.week.plays, 1);
+      expect(b.week.listenedMs, 60000);
+      final monday = b.weekDaily.firstWhere(
+        (d) => d.day.year == 2025 && d.day.month == 6 && d.day.day == 16,
+      );
+      expect(monday.listenedMs, 60000);
+    });
+  });
 }
 
 Future<String> _tempDir() async {
