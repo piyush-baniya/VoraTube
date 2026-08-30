@@ -12,6 +12,15 @@ import 'player_controller.dart';
 
 const String _kSnapshotKey = 'playback.snapshot.v1';
 
+/// Position-stream resolution used for lyrics highlight, progress bar and the
+/// listening-time accumulator. A fixed ~200 ms period keeps the lyrics
+/// highlight in step with the actual playback position (a coarse maxPeriod of
+/// up to 1 s previously made lines lag by up to a full second). just_audio
+/// clamps the effective period to [minPeriod, maxPeriod].
+const int positionStreamSteps = 800;
+const Duration positionStreamMinPeriod = Duration(milliseconds: 200);
+const Duration positionStreamMaxPeriod = Duration(milliseconds: 200);
+
 /// Production [PlayerController] backed by just_audio + audio_service.
 ///
 /// Everything engine-specific lives here. Consumers see only
@@ -164,11 +173,18 @@ class JustAudioController extends BaseAudioHandler
     _player.durationStream.listen((_) => _emit());
     _player.currentIndexStream.listen((_) => _onCurrentIndexChanged());
 
+    // Position stream resolution: ~200 ms fixed cadence (just_audio's native
+    // default). The lyrics highlight follows this stream, so a coarse period
+    // (previously up to 1 s for songs longer than ~2 min) made the active line
+    // lag up to a full second behind the actual playback position. Seeks still
+    // emit immediately via playbackEventStream. The stats accumulator is
+    // delta-based between successive samples, so a finer cadence does not
+    // change recorded listening time.
     _positionSub = _player
         .createPositionStream(
-          steps: 120,
-          minPeriod: const Duration(milliseconds: 200),
-          maxPeriod: const Duration(seconds: 1),
+          steps: positionStreamSteps,
+          minPeriod: positionStreamMinPeriod,
+          maxPeriod: positionStreamMaxPeriod,
         )
         .listen((position) {
           if (!_positionController.isClosed) {
