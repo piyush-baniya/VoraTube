@@ -130,32 +130,16 @@ class JustAudioController extends BaseAudioHandler
   /// coherent snapshot emitted by the winning generation after it finishes.
   bool _queueTransition = false;
 
-  /// Resolves a system-readable content URI for the artwork at [artPath]
-  /// by invoking the ingest bridge's [publishSystemArtwork] method.
-  /// Returns the [Uri] if successful, otherwise null.
-  /// This is best-effort; if it fails the original [file://] URI is kept.
-  Future<Uri?> _resolveSystemArtUri(String artPath) async {
-    if (artPath.isEmpty) return null;
-    // Derive a stable key from the filename stem (e.g. ms_5214426321079491600)
-    final name = artPath.split(Platform.pathSeparator).last;
-    var stem = name.replaceFirst('.webp', '');
-    if (stem.endsWith('_l')) stem = stem.substring(0, stem.length - 2);
-    if (stem.endsWith('_s')) stem = stem.substring(0, stem.length - 2);
-    final key = stem;
-    try {
-      final result = await MethodChannel('voratube/ingest_v1')
-          .invokeMethod<String>('publishSystemArtwork', {
-            'artPath': artPath,
-            'key': key,
-          });
-      if (result == null || result.isEmpty) return null;
-      return Uri.tryParse(result);
-    } catch (e) {
-      return null;
-    }
-  }
-
   Future<void> _init() async {
+    if (Platform.isAndroid) {
+      // Remove artwork rows previously copied into MediaStore Downloads by the
+      // old publishSystemArtwork flow (they showed up in gallery apps).
+      unawaited(
+        const MethodChannel('voratube/ingest_v1')
+            .invokeMethod<void>('cleanupPublishedArtwork')
+            .catchError((_) {}),
+      );
+    }
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
 
@@ -850,27 +834,7 @@ class JustAudioController extends BaseAudioHandler
 
   Future<void> _syncCurrentMediaItem() async {
     final ref = _currentRef();
-    // Add provisional media item (with file URI – works in‑process for notification)
     mediaItem.add(ref == null ? null : _mediaItemFor(ref));
-
-    // Attempt to resolve a system-readable artUri for the lock-screen/media-card.
-    // This is best-effort; if it succeeds the media item is refreshed with the
-    // content-URI so that SystemUI (MediaDataManager) can load the artwork.
-    final artPath = ref?.artPath;
-    if (artPath != null && artPath.isNotEmpty) {
-      try {
-        final sysUri = await _resolveSystemArtUri(artPath);
-        if (sysUri != null && !_disposed) {
-          // Refresh the media item only if the same track is still current
-          final r = _currentRef();
-          if (r != null && r.artPath == artPath) {
-            mediaItem.add(_mediaItemFor(r, artUri: sysUri));
-          }
-        }
-      } catch (e) {
-        // ignore; provisional item already added
-      }
-    }
   }
 
   SongRef? _currentRef() {
@@ -884,7 +848,7 @@ class JustAudioController extends BaseAudioHandler
     return _queueRefs[index];
   }
 
-  MediaItem _mediaItemFor(SongRef song, {Uri? artUri}) {
+  MediaItem _mediaItemFor(SongRef song) {
     return MediaItem(
       id: song.identityKey,
       title: song.title,
@@ -893,11 +857,9 @@ class JustAudioController extends BaseAudioHandler
       duration: song.durationMs > 0
           ? Duration(milliseconds: song.durationMs)
           : null,
-      artUri:
-          artUri ??
-          (song.artPath == null || song.artPath!.isEmpty
-              ? null
-              : Uri.file(song.artPath!)),
+      artUri: song.artPath == null || song.artPath!.isEmpty
+          ? null
+          : Uri.file(song.artPath!),
     );
   }
 
