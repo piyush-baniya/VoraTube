@@ -422,8 +422,10 @@ class _PlaylistCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: BoxDecoration(
@@ -432,120 +434,125 @@ class _PlaylistCard extends ConsumerWidget {
             top: Radius.circular(AppTokens.rXxl),
           ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: AppTokens.s3),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(AppTokens.s5),
-              child: Row(
-                children: [
-                  PlaylistCollage(
-                    summary: playlist,
-                    size: 56,
-                    radius: AppTokens.rMd,
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: AppTokens.s3),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  const SizedBox(width: AppTokens.s4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          playlist.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(AppTokens.s5),
+                  child: Row(
+                    children: [
+                      PlaylistCollage(
+                        summary: playlist,
+                        size: 56,
+                        radius: AppTokens.rMd,
+                      ),
+                      const SizedBox(width: AppTokens.s4),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              playlist.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '${playlist.songCount} ${playlist.songCount == 1 ? 'song' : 'songs'}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
-                        Text(
-                          '${playlist.songCount} ${playlist.songCount == 1 ? 'song' : 'songs'}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                Divider(
+                  height: 1,
+                  color: colorScheme.outlineVariant,
+                  indent: AppTokens.s5,
+                  endIndent: AppTokens.s5,
+                ),
+                _ContextMenuTile(
+                  icon: Icons.play_arrow_rounded,
+                  label: 'Play',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _playPlaylist(context, ref);
+                  },
+                ),
+                _ContextMenuTile(
+                  icon: Icons.shuffle_rounded,
+                  label: 'Shuffle play',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _playPlaylist(context, ref);
+                  },
+                ),
+                _ContextMenuTile(
+                  icon: playlist.pinned
+                      ? Icons.push_pin_outlined
+                      : Icons.push_pin_rounded,
+                  label: playlist.pinned ? 'Unpin' : 'Pin to top',
+                  iconColor: playlist.pinned
+                      ? colorScheme.onSurfaceVariant
+                      : colorScheme.primary,
+                  onTap: () {
+                    Navigator.pop(context);
+                    ref
+                        .read(playlistRepositoryProvider)
+                        .setPinned(playlist.id, !playlist.pinned);
+                    ref.read(playlistRefreshTickProvider.notifier).state++;
+                  },
+                ),
+                _ContextMenuTile(
+                  icon: Icons.edit_rounded,
+                  label: 'Rename',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showRenameDialog(context, ref);
+                  },
+                ),
+                _ContextMenuTile(
+                  icon: Icons.content_copy_rounded,
+                  label: 'Duplicate',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _duplicatePlaylist(context, ref);
+                  },
+                ),
+                _ContextMenuTile(
+                  icon: Icons.delete_rounded,
+                  label: 'Delete',
+                  iconColor: colorScheme.error,
+                  labelColor: colorScheme.error,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _confirmDelete(context, ref);
+                  },
+                ),
+                SizedBox(
+                  height: MediaQuery.paddingOf(context).bottom + AppTokens.s4,
+                ),
+              ],
             ),
-            Divider(
-              height: 1,
-              color: colorScheme.outlineVariant,
-              indent: AppTokens.s5,
-              endIndent: AppTokens.s5,
-            ),
-            _ContextMenuTile(
-              icon: Icons.play_arrow_rounded,
-              label: 'Play',
-              onTap: () {
-                Navigator.pop(context);
-                _playPlaylist(context, ref);
-              },
-            ),
-            _ContextMenuTile(
-              icon: Icons.shuffle_rounded,
-              label: 'Shuffle play',
-              onTap: () {
-                Navigator.pop(context);
-                _playPlaylist(context, ref);
-              },
-            ),
-            _ContextMenuTile(
-              icon: playlist.pinned
-                  ? Icons.push_pin_outlined
-                  : Icons.push_pin_rounded,
-              label: playlist.pinned ? 'Unpin' : 'Pin to top',
-              iconColor: playlist.pinned
-                  ? colorScheme.onSurfaceVariant
-                  : colorScheme.primary,
-              onTap: () {
-                Navigator.pop(context);
-                ref
-                    .read(playlistRepositoryProvider)
-                    .setPinned(playlist.id, !playlist.pinned);
-                ref.read(playlistRefreshTickProvider.notifier).state++;
-              },
-            ),
-            _ContextMenuTile(
-              icon: Icons.edit_rounded,
-              label: 'Rename',
-              onTap: () {
-                Navigator.pop(context);
-                _showRenameDialog(context, ref);
-              },
-            ),
-            _ContextMenuTile(
-              icon: Icons.content_copy_rounded,
-              label: 'Duplicate',
-              onTap: () {
-                Navigator.pop(context);
-                _duplicatePlaylist(context, ref);
-              },
-            ),
-            _ContextMenuTile(
-              icon: Icons.delete_rounded,
-              label: 'Delete',
-              iconColor: colorScheme.error,
-              labelColor: colorScheme.error,
-              onTap: () {
-                Navigator.pop(context);
-                _confirmDelete(context, ref);
-              },
-            ),
-            SizedBox(
-              height: MediaQuery.paddingOf(context).bottom + AppTokens.s4,
-            ),
-          ],
+          ),
         ),
       ),
     );
