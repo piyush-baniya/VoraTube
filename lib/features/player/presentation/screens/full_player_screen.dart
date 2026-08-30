@@ -192,19 +192,38 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
   ) {
     // Lyrics may grow/scroll freely here; the playback controls sit below in
     // the fixed region of the parent Column and are never pushed around.
-    return Column(
-      children: [
-        const SizedBox(height: AppTokens.s3),
-        // Compact lyrics panel
-        Expanded(child: Center(child: CompactLyricsPanel(height: 280))),
-        const SizedBox(height: AppTokens.s4),
-        _SongMetadata(
-          title: current.title,
-          artist: current.artist,
-          album: current.album,
-        ),
-        const SizedBox(height: AppTokens.s4),
-      ],
+    //
+    // Landscape safety: the panel must FILL the space the Expanded region
+    // actually provides instead of rendering at a fixed 280 dp. Centering a
+    // fixed-height panel inside a shorter landscape region clips the lyrics
+    // (silently — RenderPositionedBox paints out of bounds without throwing).
+    // CompactLyricsPanel already adapts its layout to the real constraints
+    // (viewportHeight = constraints.maxHeight), so filling is correct on both
+    // orientations.
+    //
+    // Very short landscape viewports (e.g. 320 dp tall phones) cannot fit the
+    // fixed spacers plus the full three-line metadata block below the panel —
+    // the non-flexible siblings alone overflow the Column. In that compact
+    // case shrink to the title only and tighten the spacers so everything
+    // stays on-screen; on normal heights the full metadata is shown.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 200;
+        return Column(
+          children: [
+            if (!compact) const SizedBox(height: AppTokens.s3),
+            // Compact lyrics panel — fills whatever height the region has.
+            Expanded(child: CompactLyricsPanel(height: 280)),
+            SizedBox(height: compact ? AppTokens.s1 : AppTokens.s4),
+            _SongMetadata(
+              title: current.title,
+              artist: compact ? null : current.artist,
+              album: compact ? null : current.album,
+            ),
+            if (!compact) const SizedBox(height: AppTokens.s4),
+          ],
+        );
+      },
     );
   }
 }
