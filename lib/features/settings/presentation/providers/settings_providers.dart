@@ -200,8 +200,9 @@ final themeModeProvider = Provider<ThemeMode>((ref) {
 /// Walks [dir] classifying files as cached artwork (VoraTube's `_s`/`_l`
 /// thumbnail suffixes) or imported music. Individual failures are tolerated
 /// so a single unreadable or concurrently-deleted file cannot blank the whole
-/// card.
-Future<(int artBytes, int musicBytes)> _measureTree(Directory dir) async {
+/// card. Public (no leading underscore) so the aggregation layer is unit
+/// testable without touching native storage.
+Future<(int artBytes, int musicBytes)> measureStorageTree(Directory dir) async {
   var artBytes = 0;
   var musicBytes = 0;
   try {
@@ -256,7 +257,7 @@ final storageInfoProvider = FutureProvider.autoDispose<StorageInfo>((
     root = null;
   }
   if (root != null && await root.exists()) {
-    final measured = await _measureTree(root);
+    final measured = await measureStorageTree(root);
     artSize += measured.$1;
     impSize += measured.$2;
   }
@@ -268,7 +269,7 @@ final storageInfoProvider = FutureProvider.autoDispose<StorageInfo>((
       final support = await getApplicationSupportDirectory();
       final artDir = Directory('${support.path}${Platform.pathSeparator}art');
       if (await artDir.exists()) {
-        final measured = await _measureTree(artDir);
+        final measured = await measureStorageTree(artDir);
         artSize += measured.$1;
       }
     } catch (_) {}
