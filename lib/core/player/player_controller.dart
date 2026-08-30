@@ -62,6 +62,7 @@ final class PlayerSnapshot {
     required this.queueLength,
     required this.currentIndex,
     required this.durationMs,
+    this.queueRevision = 0,
     this.current,
   });
 
@@ -82,6 +83,12 @@ final class PlayerSnapshot {
   final int queueLength;
   final int currentIndex;
   final int durationMs;
+
+  /// Monotonic counter bumped on every queue mutation (insert, remove, move,
+  /// replace). A pure reorder leaves every other field equal, so this is what
+  /// lets the engine broadcast a reordered queue past snapshot deduplication.
+  final int queueRevision;
+
   final SongRef? current;
 
   bool get hasTrack => current != null;
@@ -94,6 +101,7 @@ final class PlayerSnapshot {
     int? queueLength,
     int? currentIndex,
     int? durationMs,
+    int? queueRevision,
     SongRef? current,
     bool clearCurrent = false,
   }) {
@@ -105,6 +113,7 @@ final class PlayerSnapshot {
       queueLength: queueLength ?? this.queueLength,
       currentIndex: currentIndex ?? this.currentIndex,
       durationMs: durationMs ?? this.durationMs,
+      queueRevision: queueRevision ?? this.queueRevision,
       current: clearCurrent ? null : (current ?? this.current),
     );
   }

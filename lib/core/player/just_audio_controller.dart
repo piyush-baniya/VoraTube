@@ -76,6 +76,12 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   ReplayGainMode _replayGainMode = ReplayGainMode.off;
   int _playGeneration = 0;
 
+  /// Monotonic revision of the queue contents. Bumped on every
+  /// insert/remove/move/replace so the UI can render queue changes even when
+  /// every other snapshot field stays equal (a pure reorder changes nothing
+  /// but this counter).
+  int _queueRevision = 0;
+
   /// Whether the user wants playback to continue. Set by the play-oriented
   /// controls and cleared by pause/stop; [`_skipBrokenSource`] leans on it so a
   /// failed first-play keeps going into the next queue item instead of pausing.
@@ -283,6 +289,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     // engine event after setAudioSources always resolves against the queue it
     // belongs to, never the previous one.
     _queueRefs = List.unmodifiable(songs);
+    _queueRevision++;
     try {
       // The stop is a request, not a gate: just_audio's stop()-then-setAudioSources
       // ordering only matters for the engine's internal sequence swap, which
@@ -374,6 +381,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     await _player.addAudioSource(_sourceFor(song));
     _queueRefs = [..._queueRefs, song];
     await _syncQueueMetadata();
+    _broadcastQueueChange();
     _schedulePersist(immediate: true);
   }
 
@@ -386,6 +394,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     updated.insert(insertAt.clamp(0, updated.length), song);
     _queueRefs = List.unmodifiable(updated);
     await _syncQueueMetadata();
+    _broadcastQueueChange();
     _schedulePersist(immediate: true);
   }
 
@@ -401,6 +410,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
         if (i != index) _queueRefs[i],
     ];
     await _syncQueueMetadata();
+    _broadcastQueueChange();
     _schedulePersist(immediate: true);
   }
 
@@ -418,6 +428,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     final moved = updated.removeAt(fromIndex);
     updated.insert(toIndex, moved);
     _queueRefs = List.unmodifiable(updated);
+    _broadcastQueueChange();
     _schedulePersist(immediate: true);
   }
 
@@ -436,6 +447,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     if (currentRef != null) {
       await _player.setAudioSources([_sourceFor(currentRef)], initialIndex: 0);
       _queueRefs = List.unmodifiable([currentRef]);
+      _broadcastQueueChange();
       _schedulePersist(immediate: true);
     }
   }
@@ -450,6 +462,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     _queueRefs = const [];
     // Clear the UI state unconditionally, before touching the engine: the
     // sequence must never linger as an orphan AudioTrack playing with no UI.
+    _queueRevision++;
     _schedulePersist(immediate: true);
     _emit();
     // Stop first: this reliably releases the audio sink. Clearing the sequence
@@ -694,6 +707,16 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     );
   }
 
+  /// Bumps the queue revision and broadcasts a fresh snapshot so widgets that
+  /// render the queue (queue sheet, mini player) reflect insert, remove and
+  /// move immediately. A pure reorder keeps every other snapshot field equal,
+  /// so without the revision [_emit] would deduplicate it and the dragged item
+  /// would appear to snap back.
+  void _broadcastQueueChange() {
+    _queueRevision++;
+    _emit();
+  }
+
   void _emit() {
     if (_disposed || _snapshotController.isClosed) {
       return;
@@ -730,6 +753,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       queueLength: _player.sequence.length,
       currentIndex: seq.currentIndex ?? -1,
       durationMs: _player.duration?.inMilliseconds ?? 0,
+      queueRevision: _queueRevision,
       current: _currentRef(),
     );
 
@@ -754,6 +778,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       a.queueLength == b.queueLength &&
       a.currentIndex == b.currentIndex &&
       a.durationMs == b.durationMs &&
+      a.queueRevision == b.queueRevision &&
       identical(a.current, b.current);
 
   void _broadcastSystemState() {
@@ -893,6 +918,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       if (restoredRef != null) {
         _statLastKey = restoredRef.identityKey;
       }
+      _queueRevision++;
       debugPrint(
         'VoraTube restored queue (${ordered.length} tracks @ '
         '${saved.positionMs}ms)',

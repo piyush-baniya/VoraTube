@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
-import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../providers/player_providers.dart';
 
@@ -175,9 +174,10 @@ class QueueSheet extends ConsumerWidget {
                     bottom: AppTokens.s8,
                   ),
                   itemCount: queue.length,
-                  onReorder: (oldIndex, newIndex) {
+                  onReorderItem: (oldIndex, newIndex) {
+                    // onReorderItem already reports the post-removal index,
+                    // which is exactly the index just_audio's move() expects.
                     final player = ref.read(playerProvider);
-                    if (oldIndex < newIndex) newIndex--;
                     player.moveQueueItem(oldIndex, newIndex);
                   },
                   buildDefaultDragHandles: false,
