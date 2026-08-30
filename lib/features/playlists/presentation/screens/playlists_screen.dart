@@ -12,7 +12,6 @@ import '../providers/playlist_providers.dart';
 import '../widgets/playlist_collage.dart';
 import 'playlist_detail_screen.dart';
 import '../../../../features/library/data/song_ref_mapper.dart';
-import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 
 class PlaylistsScreen extends ConsumerStatefulWidget {
@@ -101,9 +100,8 @@ class _PlaylistList extends StatelessWidget {
 
     return CustomScrollView(
       slivers: [
-        // Smart Mood + recommended mixes, clearly distinct from the
-        // user-created playlists listed below.
-        const SliverToBoxAdapter(child: MoodStrip()),
+        // Recommended Smart Mixes, clearly distinct from the user-created
+        // playlists listed below.
         const SliverToBoxAdapter(child: SmartMixStrip()),
         if (playlists.isEmpty)
           SliverFillRemaining(
