@@ -171,6 +171,132 @@ class GenreEnrichmentService {
     return nonEmpty;
   }
 
+  /// Extracts ALL genre options from an iTunes Search API response body.
+  ///
+  /// Where [parseITunesResponse] picks only the single best guess (used for
+  /// automatic enrichment), this variant exposes every genre the lookup
+  /// generated for the song: every entry of the specific `genres` array, in
+  /// API order, followed by `primaryGenreName` when it is not already present.
+  /// The list is trimmed, de-duplicated (case-insensitively) and contains no
+  /// empty entries — but is NOT capped: whatever the genre engine produced is
+  /// returned in full.
+  static List<String> parseITunesGenres(String body) {
+    final options = <String>[];
+
+    try {
+      final Object? parsed = jsonDecode(body);
+      if (parsed is! Map<String, dynamic>) return options;
+      final int count = parsed['resultCount'] as int? ?? 0;
+      if (count == 0) return options;
+      final results = parsed['results'] as List<dynamic>? ?? [];
+      if (results.isEmpty) return options;
+      final first = results.first;
+      if (first is! Map<String, dynamic>) return options;
+      final genres = first['genres'] as List<dynamic>?;
+      if (genres != null) {
+        for (final g in genres) {
+          final label = g is Map<String, dynamic>
+              ? g['name']?.toString()
+              : g?.toString();
+          addOptionLabel(options, label);
+        }
+      }
+      addOptionLabel(options, first['primaryGenreName']?.toString());
+      return options;
+    } catch (_) {
+      return options;
+    }
+  }
+
+  static void addOptionLabel(List<String> options, String? label) {
+    final trimmed = label?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
+    final exists = options.any((o) => o.toLowerCase() == trimmed.toLowerCase());
+    if (!exists) options.add(trimmed);
+  }
+
+  /// Returns ALL genre options VoraTube's genre engine generated for a song.
+  ///
+  /// Mirrors [enrichIfNeeded]'s local-first resolution:
+  ///   1. a locally cached suggestion list (TTL-gated, shared with the
+  ///      single-genre cache so old entries still work);
+  ///   2. an online iTunes lookup, best-effort with a short timeout, returning
+  ///      every generated genre rather than just the best one.
+  /// Returns an empty list when the genre engine produces nothing — callers
+  /// must show an empty state instead of inventing genres.
+  Future<List<String>> suggestGenres({
+    required int rowId,
+    required String title,
+    required String? artist,
+    required Future<String?> Function(String key) readCache,
+    required Future<void> Function(String key, String value) writeCache,
+  }) async {
+    final cacheKey = cacheKeyForRow(rowId);
+    final cached = await readCache(cacheKey);
+    final now = DateTime.now();
+    if (isCacheFresh(cached, now)) {
+      return decodeCachedGenres(cached);
+    }
+
+    List<String> genres;
+    try {
+      genres = await _lookupITunesGenres(
+        title: title,
+        artist: artist,
+      ).timeout(lookupTimeout);
+    } catch (_) {
+      genres = const [];
+    }
+
+    if (genres.isNotEmpty) {
+      await writeCache(
+        cacheKey,
+        jsonEncode({'gs': genres, 't': now.millisecondsSinceEpoch}),
+      );
+    }
+    return genres;
+  }
+
+  /// Decodes a cached suggestion entry. Supports the list form (`gs`) written
+  /// by [suggestGenres] and falls back to the legacy single-genre form (`g`)
+  /// written by [enrichIfNeeded].
+  static List<String> decodeCachedGenres(String? cached) {
+    if (cached == null || cached.isEmpty) return const [];
+    try {
+      final Map<String, dynamic> json =
+          jsonDecode(cached) as Map<String, dynamic>;
+      final gs = json['gs'];
+      if (gs is List<dynamic>) {
+        return gs
+            .map((g) => g?.toString().trim() ?? '')
+            .where((g) => g.isNotEmpty)
+            .toList(growable: false);
+      }
+      final single = decodeCachedGenre(cached);
+      return single == null ? const [] : [single];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<String>> _lookupITunesGenres({
+    required String title,
+    required String? artist,
+  }) async {
+    final String query = (artist == null || artist.isEmpty)
+        ? title
+        : '$artist $title';
+    final uri = Uri.https('itunes.apple.com', '/search', {
+      'term': query,
+      'entity': 'song',
+      'limit': '5',
+      'country': 'US',
+    });
+    final response = await _http.get(uri);
+    if (response.statusCode != 200) return const [];
+    return parseITunesGenres(response.body);
+  }
+
   Future<String?> _lookupITunes({
     required String title,
     required String? artist,
