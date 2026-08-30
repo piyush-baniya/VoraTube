@@ -261,6 +261,9 @@ class _DashboardBody extends ConsumerWidget {
                     ),
               itemBuilder: (context, index) {
                 return ScrollReveal(
+                  // Same scroll-jank rationale as All Songs: only the initial
+                  // screenful animates in.
+                  enabled: index < scrollRevealInitialItems,
                   child: SongTile(
                     key: ValueKey(tiles[index].song.id),
                     tile: tiles[index],

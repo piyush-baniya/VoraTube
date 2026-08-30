@@ -978,24 +978,31 @@ class _ActionTile extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     return PressableScale(
       onTap: onTap,
-      child: ListTile(
-        leading: Icon(
-          icon,
-          size: 22,
-          color: iconColor ?? colorScheme.onSurfaceVariant,
-        ),
-        title: Text(
-          label,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
+      // ListTile paints its background/ink on the nearest Material; the
+      // actions sheet is a plain DecoratedBox, so provide a transparent
+      // Material here to avoid the "ink splashes may be invisible"
+      // framework assertion.
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListTile(
+          leading: Icon(
+            icon,
+            size: 22,
+            color: iconColor ?? colorScheme.onSurfaceVariant,
           ),
+          title: Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.s5,
+            vertical: AppTokens.s1,
+          ),
+          dense: true,
+          onTap: onTap,
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.s5,
-          vertical: AppTokens.s1,
-        ),
-        dense: true,
-        onTap: onTap,
       ),
     );
   }

@@ -52,3 +52,7 @@ node_modules/
 package.json
 package-lock.json
 analyze_out.txt
+
+# Android release signing
+/android/upload-keystore.jks
+/android/key.properties

@@ -9,6 +9,15 @@ import '../../app/theme/app_tokens.dart';
 /// [AnimationController] per visible item (not a per-frame callback), it adds
 /// no cost while scrolling and cannot cause jank — items simply appear as the
 /// list builder recycles them into the viewport.
+/// Whether reveal animations are still playing for rows as they scroll into
+/// view. Scrolling quickly builds dozens of rows per second, and each row that
+/// starts an animation forces extra compositing/raster work exactly while the
+/// user is flicking — the classic "lists feel heavy" symptom. Reveal polish is
+/// only worth its cost when it frames the *first* impression of a screen, so
+/// lists pass `enabled: index < scrollRevealInitialItems` and rows scrolled in
+/// later simply appear (the builder recycles them at zero animation cost).
+const int scrollRevealInitialItems = 15;
+
 class ScrollReveal extends StatefulWidget {
   const ScrollReveal({super.key, required this.child, this.enabled = true});
 

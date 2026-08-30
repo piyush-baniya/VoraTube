@@ -108,6 +108,9 @@ class _AllSongsScreenState extends ConsumerState<AllSongsScreen> {
                     );
                   }
                   return ScrollReveal(
+                    // Reveal only the first screenful; rows scrolled in later
+                    // appear instantly so fast flicks never pay animation cost.
+                    enabled: index < scrollRevealInitialItems,
                     child: SongTile(
                       key: ValueKey(tiles[index].song.id),
                       tile: tiles[index],

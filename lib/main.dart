@@ -51,6 +51,17 @@ Future<void> main() async {
   // (as its `home`) guarantees every widget that renders a Scaffold or reads
   // Theme/Directionality/MediaQuery has those inherited ancestors, which is
   // required to avoid a "No Directionality widget found" startup crash.
+  // The flutter image cache defaults to 1000 images / 100 MB. A music library
+  // easily has more than 1000 distinct covers, so fast scrolling through All
+  // Songs / Library used to evict live entries and re-decode them on the way
+  // back — visible hitching on every revisited screen. Decode memory per entry
+  // is already bounded by ArtworkFileCache.decodeWidth (small tiles decode at
+  // ~100-150 device px), so raising the entry cap costs a few MB at most and
+  // keeps the whole visible library resident.
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 8192
+    ..maximumSizeBytes = 128 << 20;
+
   runApp(
     UncontrolledProviderScope(container: container, child: const VoraTubeApp()),
   );
