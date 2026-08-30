@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../library/data/library_models.dart';
@@ -122,3 +123,53 @@ final playlistMembershipProvider = FutureProvider.autoDispose
       final repository = ref.watch(playlistRepositoryProvider);
       return repository.memberSongRowIds(playlistId);
     });
+
+/// Shared "New playlist" flow used by Home and the Playlists tab so there is a
+/// single playlist-creation entry point. Shows the name dialog, persists the
+/// playlist, bumps [playlistRefreshTickProvider] (refreshing every surface)
+/// and returns the new playlist id + name, or null when cancelled/rejected.
+Future<({int id, String name})?> promptCreatePlaylist(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final controller = TextEditingController();
+  final result = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('New playlist'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.words,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(hintText: 'Playlist name'),
+        onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+          child: const Text('Create'),
+        ),
+      ],
+    ),
+  );
+  if (result == null || result.isEmpty || !context.mounted) {
+    return null;
+  }
+  try {
+    final repository = ref.read(playlistRepositoryProvider);
+    final id = await repository.createPlaylist(result);
+    ref.read(playlistRefreshTickProvider.notifier).state++;
+    return (id: id, name: result);
+  } on DuplicatePlaylistNameException catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+    return null;
+  }
+}

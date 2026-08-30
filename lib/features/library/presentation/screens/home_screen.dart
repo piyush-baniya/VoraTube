@@ -10,7 +10,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
-import '../../../smart_music/presentation/widgets/mood_strip.dart';
+import '../../../playlists/presentation/widgets/home_playlist_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
 import '../../../library/data/library_models.dart';
@@ -206,7 +206,7 @@ class _DashboardBody extends ConsumerWidget {
 
         SliverToBoxAdapter(child: ListeningInsightsStrip()),
 
-        SliverToBoxAdapter(child: MoodStrip()),
+        SliverToBoxAdapter(child: HomePlaylistStrip()),
 
         SliverToBoxAdapter(
           child: _SectionHeader(

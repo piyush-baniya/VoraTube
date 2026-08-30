@@ -5,7 +5,6 @@ import '../../../../shared/widgets/empty_state.dart'
     show EmptyState, ScreenHeader;
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/playlist_models.dart';
@@ -75,50 +74,14 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
   }
 
   Future<void> _showCreateDialog(BuildContext context, WidgetRef ref) async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New playlist'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(hintText: 'Playlist name'),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+    final created = await promptCreatePlaylist(context, ref);
+    if (created != null && context.mounted) {
+      Navigator.of(context).push(
+        pushSharedAxis<void>(
+          context,
+          PlaylistDetailScreen(playlistId: created.id, name: created.name),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-    if (result != null && result.isNotEmpty && context.mounted) {
-      try {
-        final repository = ref.read(playlistRepositoryProvider);
-        final id = await repository.createPlaylist(result);
-        ref.read(playlistRefreshTickProvider.notifier).state++;
-        if (context.mounted) {
-          Navigator.of(context).push(
-            pushSharedAxis<void>(
-              context,
-              PlaylistDetailScreen(playlistId: id, name: result),
-            ),
-          );
-        }
-      } on DuplicatePlaylistNameException catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(e.toString())));
-        }
-      }
+      );
     }
   }
 }
