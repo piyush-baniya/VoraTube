@@ -334,7 +334,7 @@ class _SongListSection extends ConsumerWidget {
     }
 
     // Loading / error / empty states collapse into a single boxed sliver; the
-    // song rows themselves are emitted lazily below so the up-to-20 rows under
+    // song rows themselves are emitted lazily below so the up-to-5 rows under
     // each heading are only built and artwork-decoded for the rows actually in
     // / near the viewport.
     final tiles = async.valueOrNull;

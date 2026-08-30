@@ -242,6 +242,62 @@ void main() {
       await d1.close();
     });
   });
+
+  group('top / recent song lists', () {
+    test('top songs: max 5, ordered by play count, no duplicates', () async {
+      // Songs 1..5 seeded by setUp. Give each a distinct play count and
+      // ensure song 1 is played many times so ordering is unambiguous.
+      for (var play = 0; play < 5; play++) {
+        await repo.recordPlayback([1], DateTime(2025, 6, 10, 10 + play));
+      }
+      for (var play = 0; play < 3; play++) {
+        await repo.recordPlayback([2], DateTime(2025, 6, 11, 10 + play));
+      }
+      await repo.recordPlayback([3], DateTime(2025, 6, 12, 10));
+      await repo.recordPlayback([4], DateTime(2025, 6, 13, 10));
+      await repo.recordPlayback([5], DateTime(2025, 6, 14, 10));
+      // Replaying the same song must never create a duplicate entry.
+      await repo.recordPlayback([1], DateTime(2025, 6, 15, 10));
+
+      final top = await repo.topPlayedSongs(limit: 5);
+
+      expect(top.length, 5);
+      expect(top.map((t) => t.song.id).toSet().length, 5);
+      // Highest play count first (song 1 has 6 plays, song 2 has 3).
+      expect(top.first.song.id, 1);
+      expect(top[1].song.id, 2);
+    });
+
+    test('top songs: fewer than 5 returns only what exists', () async {
+      await repo.recordPlayback([1], DateTime(2025, 6, 12, 10));
+      final top = await repo.topPlayedSongs(limit: 5);
+      expect(top.length, 1);
+      expect(top.first.song.id, 1);
+    });
+
+    test('recent songs: max 5, newest history timestamp first', () async {
+      // Play songs out of order so insertion order != recency order.
+      await repo.recordPlayback([1], DateTime(2025, 6, 10, 10));
+      await repo.recordPlayback([2], DateTime(2025, 6, 14, 10));
+      await repo.recordPlayback([3], DateTime(2025, 6, 12, 10));
+      await repo.recordPlayback([4], DateTime(2025, 6, 18, 10));
+      await repo.recordPlayback([5], DateTime(2025, 6, 11, 10));
+
+      final recent = await repo.recentlyPlayedSongs(limit: 5);
+
+      expect(recent.length, 5);
+      // Newest first: song 4 (Jun 18) then 2 (Jun 14) then 3, 5, 1.
+      expect(recent.map((t) => t.song.id).toList(), [4, 2, 3, 5, 1]);
+    });
+
+    test('songs never played appear in neither list', () async {
+      await repo.recordPlayback([1], DateTime(2025, 6, 12, 10));
+      final top = await repo.topPlayedSongs(limit: 5);
+      final recent = await repo.recentlyPlayedSongs(limit: 5);
+      expect(top.map((t) => t.song.id), [1]);
+      expect(recent.map((t) => t.song.id), [1]);
+    });
+  });
 }
 
 Future<String> _tempDir() async {
