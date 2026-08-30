@@ -102,11 +102,9 @@ class PlaylistDetailController
     if (tiles.isEmpty) {
       return;
     }
-    if (!state.hasValue) {
-      await Future<void>.delayed(Duration.zero);
-    }
-    final current = state.value ?? const <SongTileData>[];
-    state = AsyncData([...current, ...tiles]);
+    await ref
+        .read(playlistRepositoryProvider)
+        .addSongs(arg, tiles.map((t) => t.song.id).toList());
     // Full authoritative reload keeps positions/pages coherent after bulk adds.
     ref.invalidateSelf();
   }
