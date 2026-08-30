@@ -299,99 +299,36 @@ class SongActions {
     SongTileData tile,
   ) async {
     final song = tile.song;
-    final titleCtrl = TextEditingController(text: song.title);
-    final artistCtrl = TextEditingController(text: song.artist ?? '');
-    final albumCtrl = TextEditingController(text: song.albumName ?? '');
-    final genreCtrl = TextEditingController(text: song.genre ?? '');
-    final yearCtrl = TextEditingController(
-      text: song.year != null && song.year! > 0 ? '${song.year}' : '',
-    );
 
-    final saved = await showDialog<bool>(
+    // Controllers are owned by the dialog state and disposed in its
+    // State.dispose(), which only runs after the dialog route is fully
+    // unmounted. Disposing them eagerly here (while the dialog's exit
+    // transition is still animating its TextFields) used the controllers
+    // after disposal and tripped Flutter's framework lifecycle assertion.
+    final saved = await showDialog<EditTagsResult>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Edit tags'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(labelText: 'Title'),
-                textCapitalization: TextCapitalization.sentences,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: artistCtrl,
-                decoration: const InputDecoration(labelText: 'Artist'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: albumCtrl,
-                decoration: const InputDecoration(labelText: 'Album'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: genreCtrl,
-                decoration: const InputDecoration(labelText: 'Genre'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: yearCtrl,
-                decoration: const InputDecoration(labelText: 'Year'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Edits update the library database only and do not modify the original file.',
-                style: Theme.of(dialogContext).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Save'),
-          ),
-        ],
+      builder: (dialogContext) => EditTagsDialog(
+        initialTitle: song.title,
+        initialArtist: song.artist ?? '',
+        initialAlbum: song.albumName ?? '',
+        initialGenre: song.genre ?? '',
+        initialYear: song.year != null && song.year! > 0 ? '${song.year}' : '',
       ),
     );
 
-    // Capture the field values BEFORE disposing the controllers — reading .text
-    // from a disposed TextEditingController throws a lifecycle assertion, which
-    // was the crash reported when saving from the Edit Tags dialog.
-    final newTitle = titleCtrl.text.trim();
-    final newArtist = artistCtrl.text.trim();
-    final newAlbum = albumCtrl.text.trim();
-    final newGenre = genreCtrl.text.trim();
-    final year = int.tryParse(yearCtrl.text.trim());
-
-    titleCtrl.dispose();
-    artistCtrl.dispose();
-    albumCtrl.dispose();
-    genreCtrl.dispose();
-    yearCtrl.dispose();
-
-    if (saved != true) return;
-    if (newTitle.isEmpty) {
+    if (saved == null || !saved.confirmed) return;
+    if (saved.title.isEmpty) {
       if (context.mounted) _snack(context, 'Title cannot be empty');
       return;
     }
     try {
       await repo.updateSongTags(
         song.id,
-        title: newTitle,
-        artist: newArtist.isEmpty ? null : newArtist,
-        albumName: newAlbum.isEmpty ? null : newAlbum,
-        genre: newGenre.isEmpty ? null : newGenre,
-        year: year,
+        title: saved.title,
+        artist: saved.artist.isEmpty ? null : saved.artist,
+        albumName: saved.album.isEmpty ? null : saved.album,
+        genre: saved.genre.isEmpty ? null : saved.genre,
+        year: saved.year,
       );
       ref.invalidate(pagedSongsProvider);
       _refreshLibrary(ref);
@@ -1224,6 +1161,151 @@ class _MoodPicker extends StatelessWidget {
           SizedBox(height: MediaQuery.paddingOf(context).bottom + AppTokens.s3),
         ],
       ),
+    );
+  }
+}
+
+/// Values captured from the Edit Tags dialog. [confirmed] is true when the
+/// user pressed Save (as opposed to Cancel / dismissing the dialog).
+class EditTagsResult {
+  const EditTagsResult({
+    required this.confirmed,
+    required this.title,
+    required this.artist,
+    required this.album,
+    required this.genre,
+    required this.year,
+  });
+
+  final bool confirmed;
+  final String title;
+  final String artist;
+  final String album;
+  final String genre;
+  final int? year;
+}
+
+/// Edit Tags dialog.
+///
+/// Owns its [TextEditingController]s in [State] so they are disposed exactly
+/// when the dialog's element tree is unmounted — after the exit transition
+/// finishes — never while the TextFields are still alive and referencing them.
+class EditTagsDialog extends StatefulWidget {
+  const EditTagsDialog({
+    super.key,
+    required this.initialTitle,
+    required this.initialArtist,
+    required this.initialAlbum,
+    required this.initialGenre,
+    required this.initialYear,
+  });
+
+  final String initialTitle;
+  final String initialArtist;
+  final String initialAlbum;
+  final String initialGenre;
+  final String initialYear;
+
+  @override
+  State<EditTagsDialog> createState() => _EditTagsDialogState();
+}
+
+class _EditTagsDialogState extends State<EditTagsDialog> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _artistCtrl;
+  late final TextEditingController _albumCtrl;
+  late final TextEditingController _genreCtrl;
+  late final TextEditingController _yearCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtrl = TextEditingController(text: widget.initialTitle);
+    _artistCtrl = TextEditingController(text: widget.initialArtist);
+    _albumCtrl = TextEditingController(text: widget.initialAlbum);
+    _genreCtrl = TextEditingController(text: widget.initialGenre);
+    _yearCtrl = TextEditingController(text: widget.initialYear);
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _artistCtrl.dispose();
+    _albumCtrl.dispose();
+    _genreCtrl.dispose();
+    _yearCtrl.dispose();
+    super.dispose();
+  }
+
+  EditTagsResult _result(bool confirmed) {
+    final year = int.tryParse(_yearCtrl.text.trim());
+    return EditTagsResult(
+      confirmed: confirmed,
+      title: _titleCtrl.text.trim(),
+      artist: _artistCtrl.text.trim(),
+      album: _albumCtrl.text.trim(),
+      genre: _genreCtrl.text.trim(),
+      year: year,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit tags'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleCtrl,
+              decoration: const InputDecoration(labelText: 'Title'),
+              textCapitalization: TextCapitalization.sentences,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _artistCtrl,
+              decoration: const InputDecoration(labelText: 'Artist'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _albumCtrl,
+              decoration: const InputDecoration(labelText: 'Album'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _genreCtrl,
+              decoration: const InputDecoration(labelText: 'Genre'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _yearCtrl,
+              decoration: const InputDecoration(labelText: 'Year'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Edits update the library database only and do not modify the original file.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          // Pop with a confirmed=false result; the controllers are disposed
+          // later by this State's dispose(), once the route has fully left
+          // the tree — never during the pop animation.
+          onPressed: () => Navigator.pop(context, _result(false)),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _result(true)),
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }
