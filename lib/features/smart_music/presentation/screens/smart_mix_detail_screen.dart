@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../app/theme/app_tokens.dart';
 import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
-import '../../../../../core/player/player_controller.dart';
 import '../../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../../../features/library/data/library_models.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
@@ -25,6 +24,14 @@ class SmartMixDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
+  /// Shuffled song order shown when the Shuffle button is active. `null`
+  /// means the list displays the original mix order.
+  List<SongTileData>? _shuffled;
+
+  List<SongTileData> get _viewSongs => _shuffled ?? widget.mix.songs;
+
+  bool get _shuffling => _shuffled != null;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -145,6 +152,12 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
                       label: const Text('Shuffle'),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
+                        backgroundColor: _shuffling
+                            ? colorScheme.primary
+                            : null,
+                        foregroundColor: _shuffling
+                            ? colorScheme.onPrimary
+                            : null,
                       ),
                     ),
                   ),
@@ -194,7 +207,7 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
             )
           else
             SliverList.separated(
-              itemCount: widget.mix.songs.length,
+              itemCount: _viewSongs.length,
               separatorBuilder: (_, __) => Divider(
                 height: 0.5,
                 indent: 80,
@@ -202,7 +215,7 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
                 color: colorScheme.outlineVariant.withValues(alpha: 0.3),
               ),
               itemBuilder: (context, index) {
-                final tile = widget.mix.songs[index];
+                final tile = _viewSongs[index];
                 return _MixSongTile(
                   tile: tile,
                   index: index,
@@ -272,21 +285,22 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
 
   void _playMix({required bool shuffle}) {
     final player = ref.read(playerProvider);
-    final songs = widget.mix.songs.map((t) => songTileToRef(t)).toList();
-
-    if (songs.isEmpty) return;
 
     if (shuffle) {
-      final shuffled = List<SongRef>.from(songs)..shuffle();
-      player.playQueue(shuffled);
+      // Reorder the on-screen list AND play that same order so the visible
+      // playlist matches playback.
+      final shuffled = List<SongTileData>.of(_viewSongs)..shuffle();
+      setState(() => _shuffled = shuffled);
+      player.playQueue(shuffled.map((t) => songTileToRef(t)).toList());
     } else {
-      player.playQueue(songs);
+      setState(() => _shuffled = null);
+      player.playQueue(_viewSongs.map((t) => songTileToRef(t)).toList());
     }
   }
 
   void _playFromIndex(int index) {
     final player = ref.read(playerProvider);
-    final songs = widget.mix.songs.map((t) => songTileToRef(t)).toList();
+    final songs = _viewSongs.map((t) => songTileToRef(t)).toList();
     player.playQueue(songs, startIndex: index);
   }
 

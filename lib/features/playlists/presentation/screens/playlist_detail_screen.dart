@@ -28,6 +28,14 @@ class PlaylistDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
+  /// Shuffled song order shown while the Shuffle button is active. `null`
+  /// means the list displays the playlist's persisted order. The shuffled view
+  /// is intentionally NOT persisted so the playlist order stays user-controlled.
+  List<SongTileData>? _shuffled;
+
+  List<SongTileData>? _viewTiles(List<SongTileData> tiles) =>
+      _shuffled ?? tiles;
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +88,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       onAction: _addSongs,
                     );
                   }
+                  final viewTiles = _viewTiles(tiles)!;
                   return NotificationListener<ScrollNotification>(
                     onNotification: (notification) {
                       _onScroll(notification.metrics);
@@ -100,11 +109,11 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                         }
                         notifier.move(oldIndex, newIndex);
                       },
-                      itemCount: tiles.length + (notifier.hasMore ? 1 : 0),
+                      itemCount: viewTiles.length + (notifier.hasMore ? 1 : 0),
                       proxyDecorator: (child, index, animation) =>
                           Material(color: Colors.transparent, child: child),
                       itemBuilder: (context, index) {
-                        if (index >= tiles.length) {
+                        if (index >= viewTiles.length) {
                           return const Padding(
                             key: ValueKey('footer'),
                             padding: EdgeInsets.symmetric(vertical: 18),
@@ -119,14 +128,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                             ),
                           );
                         }
-                        final tile = tiles[index];
+                        final tile = viewTiles[index];
                         return SongTile(
                           key: ValueKey(tile.song.id),
                           tile: tile,
                           index: index,
-                          onPlay: (_) => _playFrom(tiles, index),
+                          onPlay: (_) => _playFrom(viewTiles, index),
                           removeFromPlaylistId: widget.playlistId,
-                          dragHandle: true,
+                          dragHandle: !_shuffling,
                         );
                       },
                     ),
@@ -139,10 +148,31 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       ),
       floatingActionButton: asyncSongs.whenOrNull(
         data: (tiles) => tiles.isNotEmpty
-            ? _PlayerButtons(playlistId: widget.playlistId, tiles: tiles)
+            ? _PlayerButtons(
+                tiles: _viewTiles(tiles)!,
+                shuffling: _shuffling,
+                onShuffle: () => _shuffle(tiles),
+                onPlay: () => _play(tiles),
+              )
             : null,
       ),
     );
+  }
+
+  bool get _shuffling => _shuffled != null;
+
+  void _shuffle(List<SongTileData> tiles) {
+    // Reorder the on-screen list AND play that same order so the visible
+    // playlist matches playback.
+    final shuffled = List<SongTileData>.of(tiles)..shuffle();
+    setState(() => _shuffled = shuffled);
+    _playFrom(shuffled, 0);
+  }
+
+  void _play(List<SongTileData> tiles) {
+    // Play restores the original persisted order.
+    setState(() => _shuffled = null);
+    _playFrom(tiles, 0);
   }
 
   void _playFrom(List<SongTileData> tiles, int startIndex) {
@@ -377,38 +407,40 @@ class _PlaylistMenuButton extends ConsumerWidget {
 }
 
 class _PlayerButtons extends ConsumerWidget {
-  const _PlayerButtons({required this.playlistId, required this.tiles});
+  const _PlayerButtons({
+    required this.tiles,
+    required this.shuffling,
+    required this.onShuffle,
+    required this.onPlay,
+  });
 
-  final int playlistId;
   final List<SongTileData> tiles;
+
+  /// Whether the shuffled view is currently displayed.
+  final bool shuffling;
+  final VoidCallback onShuffle;
+  final VoidCallback onPlay;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppTokens.s2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           FilledButton.tonalIcon(
-            onPressed: () {
-              final ctx = playContextFromTiles(tiles, 0);
-              ref.read(playerProvider).setShuffle(true);
-              ref
-                  .read(playerProvider)
-                  .playQueue(ctx.refs, startIndex: ctx.startIndex);
-            },
+            onPressed: onShuffle,
             icon: const Icon(Icons.shuffle_rounded, size: 20),
             label: const Text('Shuffle'),
+            style: FilledButton.styleFrom(
+              backgroundColor: shuffling ? colorScheme.primary : null,
+              foregroundColor: shuffling ? colorScheme.onPrimary : null,
+            ),
           ),
           const SizedBox(width: AppTokens.s3),
           FilledButton.icon(
-            onPressed: () {
-              final ctx = playContextFromTiles(tiles, 0);
-              ref.read(playerProvider).setShuffle(false);
-              ref
-                  .read(playerProvider)
-                  .playQueue(ctx.refs, startIndex: ctx.startIndex);
-            },
+            onPressed: onPlay,
             icon: const Icon(Icons.play_arrow_rounded, size: 22),
             label: const Text('Play'),
           ),
