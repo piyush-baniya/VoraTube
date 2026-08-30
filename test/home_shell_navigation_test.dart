@@ -156,4 +156,155 @@ void main() {
       findsOneWidget,
     );
   });
+
+  /// Tab order in the shell: Home, Library, Search, Playlists, Settings.
+  int currentTabIndex(WidgetTester tester) =>
+      tester
+          .widget<IndexedStack>(
+            find
+                .descendant(
+                  of: find.byType(HomeShell),
+                  matching: find.byType(IndexedStack),
+                )
+                .first,
+          )
+          .index ??
+      -1;
+
+  /// Pushes a detail route (like Playlist Detail does), then taps the given
+  /// bottom-nav destination and asserts the shell lands on the corresponding
+  /// top-level tab with the detail route gone.
+  Future<void> detailThenTap(WidgetTester tester, int destination) async {
+    await tester.pumpWidget(buildApp());
+    await settleShell(tester);
+
+    final nestedNav = tester.state<NavigatorState>(
+      find.descendant(
+        of: find.byType(HomeShell),
+        matching: find.byType(Navigator),
+      ),
+    );
+    nestedNav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Center(child: Text('detail'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('detail'), findsOneWidget);
+
+    await tester.tap(
+      find.text(
+        const [
+          'Home',
+          'Library',
+          'Search',
+          'Playlists',
+          'Settings',
+        ][destination],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The detail route was abandoned: not on screen anymore…
+    expect(find.text('detail'), findsNothing);
+    // …and the requested top-level destination is the active tab.
+    expect(currentTabIndex(tester), destination);
+    // The detail is no longer in the nested navigation stack, so Back cannot
+    // reveal it again.
+    expect(nestedNav.canPop(), isFalse);
+  }
+
+  testWidgets('Playlist Detail → tap Search opens Search immediately', (
+    tester,
+  ) async {
+    await detailThenTap(tester, 2);
+  });
+
+  testWidgets('Playlist Detail → tap Home opens Home immediately', (
+    tester,
+  ) async {
+    await detailThenTap(tester, 0);
+  });
+
+  testWidgets('Genre Detail → tap Search opens Search immediately', (
+    tester,
+  ) async {
+    // A genre detail is just another pushed route under the same nested
+    // navigator; the shell-level behavior is identical.
+    await detailThenTap(tester, 2);
+  });
+
+  testWidgets('Smart Mix Detail → tap Library opens Library immediately', (
+    tester,
+  ) async {
+    await detailThenTap(tester, 1);
+  });
+
+  testWidgets('Playlist Detail → tap Playlists returns to the playlist list', (
+    tester,
+  ) async {
+    await detailThenTap(tester, 3);
+  });
+
+  testWidgets('Playlist Detail → tap Settings opens Settings immediately', (
+    tester,
+  ) async {
+    await detailThenTap(tester, 4);
+  });
+
+  testWidgets('back after switching tabs does not reveal the old detail', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await settleShell(tester);
+
+    final nestedNav = tester.state<NavigatorState>(
+      find.descendant(
+        of: find.byType(HomeShell),
+        matching: find.byType(Navigator),
+      ),
+    );
+    nestedNav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Center(child: Text('detail'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Playlists'));
+    await tester.pumpAndSettle();
+
+    // Switching tabs established Playlists as the top-level destination; the
+    // system back button must not bring the abandoned detail back.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('detail'), findsNothing);
+    expect(currentTabIndex(tester), 3);
+  });
+
+  testWidgets('re-tapping the active tab returns to the tab root', (
+    tester,
+  ) async {
+    await tester.pumpWidget(buildApp());
+    await settleShell(tester);
+
+    final nestedNav = tester.state<NavigatorState>(
+      find.descendant(
+        of: find.byType(HomeShell),
+        matching: find.byType(Navigator),
+      ),
+    );
+    nestedNav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Center(child: Text('detail'))),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Home'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('detail'), findsNothing);
+    expect(nestedNav.canPop(), isFalse);
+  });
 }

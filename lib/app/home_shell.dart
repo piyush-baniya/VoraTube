@@ -40,7 +40,21 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _onDestinationSelected(int index) {
-    if (index == _tabIndex.value) return;
+    final navigator = _navigatorKey.currentState;
+    if (index == _tabIndex.value) {
+      // Re-tapping the active tab still returns to the tab root, abandoning
+      // any drilled-down detail route.
+      navigator?.popUntil((route) => route.isFirst);
+      return;
+    }
+    // Detail routes (playlist detail, genre detail, smart mixes, statistics…)
+    // are pushed on top of the tab host inside the nested navigator. They must
+    // not sit in front of the navigation system when the user switches tabs:
+    // pop back to the base route so the newly selected top-level screen is
+    // immediately visible and Back no longer reveals the abandoned detail.
+    if (navigator != null && navigator.canPop()) {
+      navigator.popUntil((route) => route.isFirst);
+    }
     _tabIndex.value = index;
   }
 
