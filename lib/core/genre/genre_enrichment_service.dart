@@ -122,6 +122,24 @@ class GenreEnrichmentService {
 
   /// Resolves the effective genre for a song.
   ///
+  /// Returns `true` only when [cached] is a fresh MULTI-GENRE (`gs`) entry
+  /// written by [suggestGenres]. Legacy single-genre (`g`) entries — including
+  /// fresh ones written by the background enrichment pass — return `false` so
+  /// the suggestion flow always runs its own lookup and never collapses to a
+  /// single option.
+  static bool isFreshGenreListCache(String? cached, DateTime now) {
+    if (cached == null || cached.isEmpty) return false;
+    try {
+      final Map<String, dynamic> json =
+          jsonDecode(cached) as Map<String, dynamic>;
+      if (json['gs'] is! List<dynamic>) return false;
+      return isCacheFresh(cached, now);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Returns `true` when [cached] encodes an entry younger than the relevant
   /// [existingGenre] is the value read straight off the local file/metadata.
   /// When it is present it is returned immediately — enrichment never fights
   /// trusted local data.
@@ -246,7 +264,11 @@ class GenreEnrichmentService {
     final cacheKey = cacheKeyForRow(rowId);
     final cached = await readCache(cacheKey);
     final now = DateTime.now();
-    if (isCacheFresh(cached, now)) {
+    // Only a FRESH MULTI-GENRE (`gs`) entry may short-circuit the lookup.
+    // The background enrichment pass writes fresh SINGLE-genre legacy (`g`)
+    // entries; trusting those here would collapse the suggestion list back
+    // to one option, so they are ignored and a fresh lookup runs instead.
+    if (isFreshGenreListCache(cached, now)) {
       for (final g in decodeCachedGenres(cached)) {
         addOptionLabel(options, g);
       }

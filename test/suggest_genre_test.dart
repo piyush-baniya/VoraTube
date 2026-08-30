@@ -188,10 +188,15 @@ void main() {
     },
   );
 
-  test('suggestGenres decodes legacy single-genre cache entries', () async {
-    final service = GenreEnrichmentService();
-    // Legacy payload written by enrichIfNeeded: a single `g` value with a
-    // fresh timestamp.
+  test('suggestGenres ignores legacy single-genre cache entries', () async {
+    // The background enrichment pass keeps writing fresh legacy (`g`)
+    // entries; trusting them would collapse the suggestion list to one
+    // option. They must be ignored so a full lookup runs instead.
+    final service = GenreEnrichmentService(
+      httpClient: MockClient(
+        (request) async => http.Response(multiGenreJson, 200),
+      ),
+    );
     final legacyJson =
         '{"g":"Classical","t":${DateTime.now().millisecondsSinceEpoch}}';
     final options = await service.suggestGenres(
@@ -201,8 +206,40 @@ void main() {
       readCache: (_) async => legacyJson,
       writeCache: (_, __) async {},
     );
-    expect(options, ['Classical']);
+    expect(options, ['Bollywood', 'Indian Pop', 'Romantic', 'Pop', 'Dance']);
   });
+
+  test(
+    'suggestGenres short-circuits on a fresh multi-genre cache entry',
+    () async {
+      var networkCalls = 0;
+      final service = GenreEnrichmentService(
+        httpClient: MockClient((request) async {
+          networkCalls++;
+          return http.Response(multiGenreJson, 200);
+        }),
+      );
+      final cache = <String, String>{};
+      // Prime the cache with a list-form entry.
+      await service.suggestGenres(
+        rowId: 3,
+        title: 't',
+        artist: null,
+        readCache: (k) async => cache[k],
+        writeCache: (k, v) async => cache[k] = v,
+      );
+      expect(networkCalls, 1);
+      final options = await service.suggestGenres(
+        rowId: 3,
+        title: 't',
+        artist: null,
+        readCache: (k) async => cache[k],
+        writeCache: (_, __) async => fail('should be cached'),
+      );
+      expect(networkCalls, 1);
+      expect(options, ['Bollywood', 'Indian Pop', 'Romantic', 'Pop', 'Dance']);
+    },
+  );
 
   test(
     'applying a suggested genre replaces the previous genre membership',
