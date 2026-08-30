@@ -90,6 +90,9 @@ class VoraTubeIngestBridge(context: Context) {
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
             projection.toTypedArray(),
             "${MediaStore.Audio.Media.IS_MUSIC} != 0 " +
+                "AND ${MediaStore.Audio.Media.IS_RINGTONE} = 0 " +
+                "AND ${MediaStore.Audio.Media.IS_NOTIFICATION} = 0 " +
+                "AND ${MediaStore.Audio.Media.IS_ALARM} = 0 " +
                 "AND ${MediaStore.Audio.Media._ID} > ? " +
                 "AND ${MediaStore.Audio.Media.DURATION} >= $MIN_DURATION_MS",
             arrayOf(afterId.toString()),

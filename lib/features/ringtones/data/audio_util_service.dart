@@ -13,7 +13,7 @@ class AudioCutResult {
   final String path;
 
   /// A `content://` URI when the file was registered with MediaStore (API 29+)
-  /// so it can be offered to the system ringtone picker; empty otherwise.
+  /// so it can be assigned as the device ringtone; empty otherwise.
   final String contentUri;
 
   /// The measured duration of the exported clip, falling back to the requested
@@ -21,18 +21,6 @@ class AudioCutResult {
   final int durationMs;
 
   bool get hasContentUri => contentUri.isNotEmpty;
-}
-
-/// Outcome of launching the system ringtone picker.
-enum RingtonePickerResult {
-  /// The user picked and confirmed [AudioCutResult] as their ringtone.
-  assigned,
-
-  /// The user closed the picker without confirming.
-  cancelled,
-
-  /// The picker could not be opened (e.g. no capable system activity).
-  failed,
 }
 
 /// A general, user-presentable failure during export/set-ringtone. The [code]
@@ -55,13 +43,14 @@ class RingtoneOperationException implements Exception {
         return 'The selected range is outside the track.';
       case 'no_audio_track':
         return 'This file has no audible audio to trim.';
+      case 'missing_content_uri':
+        return 'This device could not register the clip as a ringtone.';
+      case 'write_settings_denied':
+        return 'To set ringtones VoraTube needs the '
+            '"Modify system settings" permission.';
+      case 'set_failed':
       case 'cut_failed':
-        return 'The audio could not be processed. Please try again.';
-      case 'missing_argument':
-      case 'no_activity':
-      case 'picker_unavailable':
-      case 'picker_busy':
-        return 'Ringtone setup is unavailable on this device right now.';
+        return 'The ringtone could not be set. Please try again.';
       case 'unsupported_method':
         return 'This device cannot process ringtones.';
       default:
@@ -88,10 +77,10 @@ abstract interface class AudioUtilService {
     required String songTitle,
   });
 
-  /// Launches the system ringtone picker for an exported [contentUri]. Resolves
-  /// when the user closes the picker. Throws [RingtoneOperationException] if
-  /// the picker cannot be opened.
-  Future<RingtonePickerResult> openRingtonePicker(String contentUri);
+  /// Sets the exported [contentUri] as the device's default ringtone without
+  /// leaving the app (no system picker is launched). Throws a
+  /// [RingtoneOperationException] when the assignment fails.
+  Future<void> setDefaultRingtone(String contentUri);
 }
 
 /// Default implementation backed by the Android method channel.
@@ -167,13 +156,11 @@ class MethodChannelAudioUtilService implements AudioUtilService {
   }
 
   @override
-  Future<RingtonePickerResult> openRingtonePicker(String contentUri) async {
-    dynamic raw;
+  Future<void> setDefaultRingtone(String contentUri) async {
     try {
-      raw = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'openRingtonePicker',
-        <String, Object?>{'contentUri': contentUri},
-      );
+      await _channel.invokeMethod<void>('setDefaultRingtone', <String, Object?>{
+        'contentUri': contentUri,
+      });
     } on PlatformException catch (e) {
       throw RingtoneOperationException(
         e.code,
@@ -185,15 +172,5 @@ class MethodChannelAudioUtilService implements AudioUtilService {
         'This device cannot process ringtones.',
       );
     }
-    if (raw is! Map) {
-      throw const RingtoneOperationException(
-        'picker_unavailable',
-        'Ringtone setup is unavailable on this device right now.',
-      );
-    }
-    final assigned = raw['assigned'] as bool? ?? false;
-    return assigned
-        ? RingtonePickerResult.assigned
-        : RingtonePickerResult.cancelled;
   }
 }

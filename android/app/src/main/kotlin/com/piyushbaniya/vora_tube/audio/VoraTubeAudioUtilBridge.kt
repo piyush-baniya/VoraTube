@@ -1,9 +1,8 @@
 package com.piyushbaniya.vora_tube.audio
 
-import android.app.Activity
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaExtractor
@@ -15,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
@@ -28,9 +28,9 @@ import java.nio.ByteBuffer
  * dependency (the project deliberately favors small, stable dependencies). It
  * uses the platform's own [MediaCodec]/[MediaMuxer] pipeline so it honors the
  * project's "use platform capabilities" rule and stays Play-Store compliant:
- * the ringtone file is written into app-owned external storage and registered
- * with [MediaStore] (API 29+) so it appears in the system picker, and the
- * default assignment is always completed by the user inside the system UI.
+ * the ringtone file is written into app-owned storage and registered
+ * with [MediaStore] (API 29+), then the default assignment is applied directly
+ * through [RingtoneManager] so the user never leaves the app.
  *
  * The heavy cut runs on a daemon worker thread, never on the UI thread.
  */
@@ -39,22 +39,9 @@ class VoraTubeAudioUtilBridge(context: Context) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    @Volatile
-    private var pendingActivity: Activity? = null
-
-    @Volatile
-    private var pendingPickerResult: MethodChannel.Result? = null
-
-    @Volatile
-    private var existingRingtone: Uri? = null
-
-    /** Configures the [Activity] used to launch system intents (from MainActivity). */
-    fun setActivity(activity: Activity?) {
-        pendingActivity = activity
-    }
-
     fun register(messenger: BinaryMessenger) {
-        MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
+        val channel = MethodChannel(messenger, CHANNEL)
+        channel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "cutAudio" -> {
                     val source = call.argument<String>("sourceUri")
@@ -65,18 +52,31 @@ class VoraTubeAudioUtilBridge(context: Context) {
                         try {
                             succeed(result, cutAudio(source, startMs, endMs, songTitle))
                         } catch (e: CutFailed) {
+                            android.util.Log.e("VoraTubeAudio", "cut failed: ${e.code} / ${e.message}")
                             fail(result, e.code, e.message)
                         } catch (e: Exception) {
+                            android.util.Log.e("VoraTubeAudio", "cut audio exception", e)
                             fail(result, "cut_failed", e.message ?: "could not trim audio")
                         }
                     }
                     worker.isDaemon = true
                     worker.start()
                 }
-                "openRingtonePicker" -> {
-                    existingRingtone = call.argument<String>("contentUri")?.takeIf { it.isNotBlank() }
-                        ?.let { Uri.parse(it) }
-                    openRingtonePicker(result)
+                "setDefaultRingtone" -> {
+                    val contentUri = call.argument<String>("contentUri")
+                    val worker = Thread {
+                        try {
+                            succeed(result, setDefaultRingtone(contentUri))
+                        } catch (e: CutFailed) {
+                            android.util.Log.e("VoraTubeAudio", "set ringtone failed: ${e.code} / ${e.message}")
+                            fail(result, e.code, e.message)
+                        } catch (e: Exception) {
+                            android.util.Log.e("VoraTubeAudio", "set ringtone exception", e)
+                            fail(result, "set_failed", e.message ?: "could not set ringtone")
+                        }
+                    }
+                    worker.isDaemon = true
+                    worker.start()
                 }
                 "supportsCutting" -> succeed(result, true)
                 else -> fail(result, "unsupported_method", call.method)
@@ -84,48 +84,37 @@ class VoraTubeAudioUtilBridge(context: Context) {
         }
     }
 
-    /** Routes the system picker result back to the waiting Dart Future. */
-    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != RINGTONE_PICKER_REQUEST) return
-        val pending = pendingPickerResult
-        pendingPickerResult = null
-        if (pending == null) return
-        val chosen = data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-        if (resultCode == Activity.RESULT_OK) {
-            succeed(pending, mapOf("assigned" to true, "pickedUri" to (chosen?.toString() ?: "")))
-        } else {
-            succeed(pending, mapOf("assigned" to false, "pickedUri" to null))
+    /**
+     * Sets [contentUri] as the device's default ringtone without leaving the app.
+     *
+     * The system picker is deliberately not used: assignment is performed
+     * directly through [RingtoneManager.setActualDefaultRingtoneUri], which
+     * requires the caller to hold the WRITE_SETTINGS special permission.
+     */
+    @Throws(CutFailed::class)
+    private fun setDefaultRingtone(contentUri: String?): Map<String, Any?> {
+        if (contentUri.isNullOrBlank()) {
+            throw CutFailed("missing_content_uri", "no exported ringtone uri")
         }
-    }
-
-    private fun openRingtonePicker(result: MethodChannel.Result) {
-        val activity = pendingActivity
-        if (activity == null) {
-            fail(result, "no_activity", "ringtone picker requires an activity")
-            return
+        if (!Settings.System.canWrite(appContext)) {
+            throw CutFailed(
+                "write_settings_denied",
+                "ringtone assignment needs the modify-system-settings permission",
+            )
         }
-        if (pendingPickerResult != null) {
-            fail(result, "picker_busy", "a ringtone picker is already open")
-            return
-        }
-        val existing = existingRingtone
-        existingRingtone = null
-        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Set ringtone")
-            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, false)
-            if (existing != null) {
-                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existing)
-            }
-        }
-        pendingPickerResult = result
+        val uri = Uri.parse(contentUri)
         try {
-            activity.startActivityForResult(intent, RINGTONE_PICKER_REQUEST)
+            RingtoneManager.setActualDefaultRingtoneUri(
+                appContext,
+                RingtoneManager.TYPE_RINGTONE,
+                uri,
+            )
         } catch (e: Exception) {
-            pendingPickerResult = null
-            fail(result, "picker_unavailable", e.message ?: "no ringtone picker is available")
+            android.util.Log.e("VoraTubeAudio", "setActualDefaultRingtoneUri failed", e)
+            throw CutFailed("set_failed", e.message ?: "could not set ringtone")
         }
+        android.util.Log.d("VoraTubeAudio", "Default ringtone set to $uri")
+        return mapOf("assigned" to true)
     }
 
     private class CutFailed(val code: String, msg: String?) : Exception(msg)
@@ -345,33 +334,42 @@ class VoraTubeAudioUtilBridge(context: Context) {
                             }
 
                             if (pcm != null && !isConfig && decInfo.size > 0 && srcPts in startUs until endUs) {
-                                var queued = false
-                                var attempts = 0
-                                while (!queued && attempts < 100) {
-                                    val encIn = encoder.dequeueInputBuffer(3000L)
-                                    if (encIn >= 0) {
-                                        val encBuf = encoder.getInputBuffer(encIn)
-                                        encBuf?.clear()
-                                        pcm.position(decInfo.offset)
-                                        pcm.limit(decInfo.offset + decInfo.size)
-                                        encBuf?.put(pcm)
-                                        val encPts = (srcPts - startUs).coerceAtLeast(0L)
-                                        encoder.queueInputBuffer(
-                                            encIn,
-                                            0,
-                                            decInfo.size,
-                                            encPts,
-                                            0,
-                                        )
-                                        totalPcmBytesQueued += decInfo.size
-                                        queued = true
-                                    } else {
+                                val encPtsBase = (srcPts - startUs).coerceAtLeast(0L)
+                                val bytesPerUs =
+                                    if (sampleRate > 0) (sampleRate * channelCount * 2L).toDouble() / 1_000_000.0
+                                    else 0.0
+                                var written = 0
+                                while (written < decInfo.size) {
+                                    var encIn = encoder.dequeueInputBuffer(3000L)
+                                    var attempts = 0
+                                    while (encIn < 0 && attempts < 100) {
                                         drainEncoder()
+                                        encIn = encoder.dequeueInputBuffer(3000L)
                                         attempts++
                                     }
-                                }
-                                if (!queued) {
-                                    throw IllegalStateException("Audio encoder stalled during trim")
+                                    if (encIn < 0) {
+                                        throw IllegalStateException("Audio encoder stalled during trim")
+                                    }
+                                    val encBuf = encoder.getInputBuffer(encIn)
+                                    if (encBuf == null) {
+                                        encoder.queueInputBuffer(encIn, 0, 0, encPtsBase, 0)
+                                        continue
+                                    }
+                                    encBuf.clear()
+                                    val room = encBuf.remaining()
+                                    val take = minOf(room, decInfo.size - written)
+                                    if (take <= 0) {
+                                        throw IllegalStateException("Audio encoder input buffer too small")
+                                    }
+                                    pcm.position(decInfo.offset + written)
+                                    pcm.limit(decInfo.offset + written + take)
+                                    encBuf.put(pcm)
+                                    val encPts =
+                                        if (bytesPerUs <= 0) encPtsBase
+                                        else encPtsBase + (written / bytesPerUs).toLong()
+                                    encoder.queueInputBuffer(encIn, 0, take, encPts, 0)
+                                    written += take
+                                    totalPcmBytesQueued += take
                                 }
                             }
                             decoder.releaseOutputBuffer(outIdx, false)
@@ -415,11 +413,9 @@ class VoraTubeAudioUtilBridge(context: Context) {
             }
             closeQuietly(decoder)
             closeQuietly(encoder)
-            if (muxerStarted) {
-                try {
-                    muxer?.stop()
-                } catch (_: Exception) {
-                }
+            try {
+                muxer?.stop()
+            } catch (_: Exception) {
             }
             try {
                 muxer?.release()
@@ -459,7 +455,7 @@ class VoraTubeAudioUtilBridge(context: Context) {
             val values = ContentValues().apply {
                 put(MediaStore.Audio.Media.DISPLAY_NAME, file.name)
                 put(MediaStore.Audio.Media.MIME_TYPE, "audio/mp4")
-                put(MediaStore.Audio.Media.RELATIVE_PATH, "Music/VoraTube")
+                put(MediaStore.Audio.Media.RELATIVE_PATH, "Ringtones/VoraTube")
                 put(MediaStore.Audio.Media.IS_RINGTONE, 1)
                 put(MediaStore.Audio.Media.IS_PENDING, 1)
                 put(MediaStore.Audio.Media.TITLE, songTitle)
@@ -467,13 +463,73 @@ class VoraTubeAudioUtilBridge(context: Context) {
             val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
             val uri = appContext.contentResolver.insert(collection, values)
             if (uri == null) return null
+            android.util.Log.d("VoraTubeAudio", "Inserted pending row: $uri")
             appContext.contentResolver.openOutputStream(uri)?.use { out ->
                 file.inputStream().use { it.copyTo(out) }
             }
-            val done = ContentValues().apply { put(MediaStore.Audio.Media.IS_PENDING, 0) }
-            appContext.contentResolver.update(uri, done, null, null)
-            uri
-        } catch (_: Exception) {
+            // Publishing the item makes the provider re-scan the file and
+            // re-derive its flags, which can reset is_ringtone (and, on some
+            // builds, replace the pending row with a new _id). Resolve the live
+            // row by display name and re-assert the ringtone flag afterwards so
+            // the system picker actually lists the tone.
+            val publish = ContentValues().apply {
+                put(MediaStore.Audio.Media.IS_PENDING, 0)
+            }
+            val publishCount = appContext.contentResolver.update(uri, publish, null, null)
+            android.util.Log.d("VoraTubeAudio", "Published pending row, updated=$publishCount")
+
+            fun findCurrentRow(): Uri? {
+                var found: Uri? = null
+                appContext.contentResolver.query(
+                    collection,
+                    arrayOf(MediaStore.Audio.Media._ID),
+                    "${MediaStore.Audio.Media.DISPLAY_NAME}=?",
+                    arrayOf(file.name),
+                    null,
+                )?.use { c ->
+                    if (c.moveToFirst()) {
+                        val id = c.getLong(0)
+                        found = ContentUris.withAppendedId(collection, id)
+                        android.util.Log.d(
+                            "VoraTubeAudio",
+                            "Live ringtone row: id=$id (inserted=${uri.lastPathSegment})",
+                        )
+                    }
+                }
+                return found
+            }
+
+            fun assertRingtone(row: Uri?, label: String) {
+                if (row == null) {
+                    android.util.Log.w("VoraTubeAudio", "$label: no live row to update")
+                    return
+                }
+                try {
+                    val flag = ContentValues().apply {
+                        put(MediaStore.Audio.Media.IS_RINGTONE, 1)
+                    }
+                    val n = appContext.contentResolver.update(row, flag, null, null)
+                    android.util.Log.d("VoraTubeAudio", "$label: update($row)=$n")
+                } catch (e: Exception) {
+                    android.util.Log.e("VoraTubeAudio", "$label update failed", e)
+                }
+            }
+
+            val live = findCurrentRow()
+            assertRingtone(live, "Immediate re-assert")
+            mainHandler.postDelayed(
+                {
+                    val now = findCurrentRow()
+                    assertRingtone(now, "Delayed re-assert")
+                },
+                1800L,
+            )
+            // Keep the caller waiting until the re-asserted flag has settled, so
+            // the system picker never opens before the tone is listed.
+            Thread.sleep(1900L)
+            live ?: uri
+        } catch (e: Exception) {
+            android.util.Log.e("VoraTubeAudio", "registerWithMediaStore failed", e)
             null
         }
     }
@@ -499,7 +555,6 @@ class VoraTubeAudioUtilBridge(context: Context) {
 
     companion object {
         const val CHANNEL = "voratube/audio_util_v1"
-        const val RINGTONE_PICKER_REQUEST = 41731
         const val M4A_MIME = "audio/mp4a-latm"
     }
 }

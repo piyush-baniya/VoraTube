@@ -78,9 +78,7 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
     if (!mounted) return;
     switch (outcome) {
       case SetRingtoneOutcome.assigned:
-        _snack('Ringtone assigned.');
-      case SetRingtoneOutcome.cancelled:
-        _snack('Ringtone not changed.');
+        _snack('Ringtone set successfully.');
       case SetRingtoneOutcome.failed:
         _snack(_controller.lastError ?? 'Ringtone could not be set.');
     }

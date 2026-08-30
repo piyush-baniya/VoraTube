@@ -5,7 +5,7 @@ import '../domain/ringtone_selection.dart';
 
 /// Result of a completed "set as ringtone" invocation, distilled so the UI can
 /// show the right feedback without reaching into platform-specific details.
-enum SetRingtoneOutcome { assigned, cancelled, failed }
+enum SetRingtoneOutcome { assigned, failed }
 
 /// Owns the trimming state machine for the [RingtoneCutterScreen]: selection
 /// state, export execution and the set-as-ringtone flow.
@@ -148,10 +148,11 @@ class RingtoneCutterController extends ChangeNotifier {
     }
   }
 
-  /// Exports the selection and, when it produced a MediaStore-visible clip,
-  /// hands it to the system ringtone picker. Resolves with the published
-  /// outcome; never falsely reports success — if the clip cannot be offered to
-  /// the picker the outcome is [SetRingtoneOutcome.failed].
+  /// Exports the selection and, when it produced a MediaStore-registered clip,
+  /// sets it as the device's default ringtone directly (no system picker is
+  /// launched). Resolves with the published outcome; never falsely reports
+  /// success — if the clip cannot be registered or assigned the outcome is
+  /// [SetRingtoneOutcome.failed].
   Future<SetRingtoneOutcome> setAsRingtone() async {
     final AudioCutResult result;
     try {
@@ -162,17 +163,13 @@ class RingtoneCutterController extends ChangeNotifier {
     }
     if (!result.hasContentUri) {
       _lastSetRingtoneOutcome = SetRingtoneOutcome.failed;
-      _lastError =
-          'This device cannot offer the clip to the system ringtone picker, '
-          'but the file was exported.';
+      _lastError = 'This device could not register the clip as a ringtone.';
       notifyListeners();
       return SetRingtoneOutcome.failed;
     }
     try {
-      final outcome = await _service.openRingtonePicker(result.contentUri);
-      _lastSetRingtoneOutcome = outcome == RingtonePickerResult.assigned
-          ? SetRingtoneOutcome.assigned
-          : SetRingtoneOutcome.cancelled;
+      await _service.setDefaultRingtone(result.contentUri);
+      _lastSetRingtoneOutcome = SetRingtoneOutcome.assigned;
       notifyListeners();
       return _lastSetRingtoneOutcome!;
     } on RingtoneOperationException catch (e) {

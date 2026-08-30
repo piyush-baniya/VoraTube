@@ -21,9 +21,10 @@ typedef CutRequest = ({int startMs, int endMs});
 class _FakeAudioUtilService implements AudioUtilService {
   String? failWith;
   Completer<void>? gate;
-  int pickerResult = 1; // 0 cancel, 1 assign
-  bool throwOnPicker = false;
+  bool noContentUri = false;
+  bool failSetDefault = false;
   final List<CutRequest> cutRequests = [];
+  final List<String> setRingtoneCalls = [];
 
   @override
   Future<bool> supportsCutting() async => true;
@@ -42,19 +43,17 @@ class _FakeAudioUtilService implements AudioUtilService {
     }
     return AudioCutResult(
       path: '/data/ringtones/$songTitle - Ringtone.m4a',
-      contentUri: 'content://media/external/audio/media/9',
+      contentUri: noContentUri ? '' : 'content://media/external/audio/media/9',
       durationMs: endMs - startMs,
     );
   }
 
   @override
-  Future<RingtonePickerResult> openRingtonePicker(String contentUri) async {
-    if (throwOnPicker) {
-      throw const RingtoneOperationException('picker_unavailable', 'no picker');
+  Future<void> setDefaultRingtone(String contentUri) async {
+    setRingtoneCalls.add(contentUri);
+    if (failSetDefault) {
+      throw const RingtoneOperationException('write_settings_denied', 'denied');
     }
-    return pickerResult == 1
-        ? RingtonePickerResult.assigned
-        : RingtonePickerResult.cancelled;
   }
 }
 
@@ -291,37 +290,49 @@ void main() {
   });
 
   group('RingtoneCutterController set-as-ringtone', () {
-    test('assigned outcome when the picker is confirmed', () async {
-      final service = _FakeAudioUtilService()..pickerResult = 1;
-      final c = RingtoneCutterController(service: service, durationMs: 120000)
-        ..attachTrack(sourceUri: _song().uri, title: _song().title);
-      final outcome = await c.setAsRingtone();
-      expect(outcome, SetRingtoneOutcome.assigned);
-      expect(c.lastSetRingtoneOutcome, SetRingtoneOutcome.assigned);
-    });
+    test(
+      'assigned outcome when the clip is set directly as the device ringtone',
+      () async {
+        final service = _FakeAudioUtilService();
+        final c = RingtoneCutterController(service: service, durationMs: 120000)
+          ..attachTrack(sourceUri: _song().uri, title: _song().title);
+        final outcome = await c.setAsRingtone();
+        expect(outcome, SetRingtoneOutcome.assigned);
+        expect(c.lastSetRingtoneOutcome, SetRingtoneOutcome.assigned);
+        expect(service.setRingtoneCalls, hasLength(1));
+      },
+    );
 
-    test('cancelled outcome when the user closes the picker', () async {
-      final service = _FakeAudioUtilService()..pickerResult = 0;
-      final c = RingtoneCutterController(service: service, durationMs: 120000)
-        ..attachTrack(sourceUri: _song().uri, title: _song().title);
-      final outcome = await c.setAsRingtone();
-      expect(outcome, SetRingtoneOutcome.cancelled);
-    });
-
-    test('failed outcome on export failure (no picker launched)', () async {
+    test('failed outcome on export failure (no set attempted)', () async {
       final service = _FakeAudioUtilService()..failWith = 'cut_failed';
       final c = RingtoneCutterController(service: service, durationMs: 120000)
         ..attachTrack(sourceUri: _song().uri, title: _song().title);
       final outcome = await c.setAsRingtone();
       expect(outcome, SetRingtoneOutcome.failed);
+      expect(service.setRingtoneCalls, isEmpty);
     });
 
-    test('failed outcome when the picker cannot be opened', () async {
-      final service = _FakeAudioUtilService()..throwOnPicker = true;
+    test(
+      'failed outcome when the clip was not registered with MediaStore',
+      () async {
+        final service = _FakeAudioUtilService()..noContentUri = true;
+        final c = RingtoneCutterController(service: service, durationMs: 120000)
+          ..attachTrack(sourceUri: _song().uri, title: _song().title);
+        final outcome = await c.setAsRingtone();
+        expect(outcome, SetRingtoneOutcome.failed);
+        expect(c.lastError, isNotNull);
+        expect(service.setRingtoneCalls, isEmpty);
+      },
+    );
+
+    test('failed outcome when the ringtone cannot be set', () async {
+      final service = _FakeAudioUtilService()..failSetDefault = true;
       final c = RingtoneCutterController(service: service, durationMs: 120000)
         ..attachTrack(sourceUri: _song().uri, title: _song().title);
       final outcome = await c.setAsRingtone();
       expect(outcome, SetRingtoneOutcome.failed);
+      expect(c.lastError, isNotNull);
+      expect(service.setRingtoneCalls, hasLength(1));
     });
   });
 
