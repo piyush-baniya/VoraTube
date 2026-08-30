@@ -95,22 +95,29 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
                       isDark: isDark,
                     ),
                   ),
-                  // Player content
+                  // Player content (middle region swaps; the playback
+                  // controls below it stay in a fixed visual position).
                   Expanded(
                     child: _showLyrics
-                        ? _buildLyricsMode(
-                            context,
-                            current,
-                            snapshot,
-                            bottomPadding,
-                          )
-                        : _buildPlayerMode(
-                            context,
-                            current,
-                            snapshot,
-                            bottomPadding,
-                          ),
+                        ? _buildLyricsMode(context, current, snapshot)
+                        : _buildPlayerMode(context, current, snapshot),
                   ),
+                  // Fixed playback control region — present identically in
+                  // both modes so toggling lyrics never moves the controls.
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.s6,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _PositionConsumer(),
+                        const SizedBox(height: AppTokens.s3),
+                        _ControlsConsumer(),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: bottomPadding + AppTokens.s5),
                 ],
               ),
             ),
@@ -136,13 +143,14 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
     BuildContext context,
     SongRef current,
     PlayerSnapshot snapshot,
-    double bottomPadding,
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxArtSize = constraints.maxWidth * 0.75;
         final artSize = maxArtSize.clamp(220.0, AppTokens.artworkHeroMax);
 
+        // Progress and controls live in the fixed bottom region of the parent
+        // Column; this scrollable area only contains the artwork and metadata.
         return SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
@@ -170,13 +178,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
               const SizedBox(height: AppTokens.s2),
               // Volume booster
               _BoostButton(),
-              const SizedBox(height: AppTokens.s5),
-              // Progress
-              _PositionConsumer(),
-              const SizedBox(height: AppTokens.s3),
-              // Controls
-              _ControlsConsumer(),
-              SizedBox(height: bottomPadding + AppTokens.s6),
             ],
           ),
         );
@@ -188,24 +189,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
     BuildContext context,
     SongRef current,
     PlayerSnapshot snapshot,
-    double bottomPadding,
   ) {
+    // Lyrics may grow/scroll freely here; the playback controls sit below in
+    // the fixed region of the parent Column and are never pushed around.
     return Column(
       children: [
         const SizedBox(height: AppTokens.s3),
         // Compact lyrics panel
-        CompactLyricsPanel(height: 240),
-        const SizedBox(height: AppTokens.s3),
+        Expanded(child: Center(child: CompactLyricsPanel(height: 280))),
+        const SizedBox(height: AppTokens.s4),
         _SongMetadata(
           title: current.title,
           artist: current.artist,
           album: current.album,
         ),
         const SizedBox(height: AppTokens.s4),
-        _PositionConsumer(),
-        const SizedBox(height: AppTokens.s2),
-        _ControlsConsumer(),
-        SizedBox(height: bottomPadding + AppTokens.s4),
       ],
     );
   }
