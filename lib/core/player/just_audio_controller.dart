@@ -60,6 +60,16 @@ class JustAudioController extends BaseAudioHandler
   final _snapshotController = StreamController<PlayerSnapshot>.broadcast();
   final _positionController = StreamController<Duration>.broadcast();
 
+  /// Platform channel to the native loudness enhancer. This is what actually
+  /// applies gain above 100% — ExoPlayer/just_audio clamp setVolume to 0..1,
+  /// so a >1.0 multiplier alone can never raise the output. The enhancer is
+  /// attached to just_audio's Android audio session and raises real gain in
+  /// millibels up to its native ceiling. Best-effort: failures are swallowed
+  /// (audio still plays at normal volume) and non-Android hosts no-op.
+  static const MethodChannel _volumeBoosterChannel = MethodChannel(
+    'voratube/volume_booster_v1',
+  );
+
   List<SongRef> _queueRefs = const [];
   PlayerSnapshot _last = PlayerSnapshot.initial;
   StreamSubscription<Duration>? _positionSub;
@@ -77,6 +87,7 @@ class JustAudioController extends BaseAudioHandler
   double _userVolume = 1.0;
   double _boostMultiplier = 1.0;
   double _preampDb = 0.0;
+  bool _boostSessionListening = false;
   ReplayGainMode _replayGainMode = ReplayGainMode.off;
   int _playGeneration = 0;
 
@@ -598,6 +609,9 @@ class JustAudioController extends BaseAudioHandler
   Future<void> setVolumeBoost(double multiplier) async {
     _boostMultiplier = multiplier.clamp(1.0, 2.0);
     await _applyVolume();
+    // Real gain above 100% cannot go through just_audio/ExoPlayer (volume is
+    // clamped to 0..1), so drive it through the native loudness enhancer.
+    await _applyBoostGain();
   }
 
   @override
@@ -713,13 +727,14 @@ class JustAudioController extends BaseAudioHandler
 
   /// Recomputes and applies the engine output volume.
   ///
-  /// Effective volume = user multiplier × volume boost × gain multiplier
-  /// × duck factor. The gain multiplier is the preamp when ReplayGain is off,
-  /// or the current track's stored ReplayGain info (preamp-inclusive,
-  /// peak-protected) when on. just_audio/ExoPlayer clamps engine volume to
-  /// 0..1, so the result is clamped defensively; the boost lets playback reach
-  /// native maximum faster but cannot exceed the engine ceiling, so it is
-  /// distortion-safe.
+  /// Effective volume = user multiplier × gain multiplier × duck factor. The
+  /// gain multiplier is the preamp when ReplayGain is off, or the current
+  /// track's stored ReplayGain info (preamp-inclusive, peak-protected) when
+  /// on. just_audio/ExoPlayer clamps engine volume to 0..1, so the result is
+  /// clamped defensively. The Volume Booster does NOT appear here: gain above
+  /// 100% is applied separately by the native loudness enhancer
+  /// ([_applyBoostGain]), so the two layers compose additively without ever
+  /// being double-counted or fighting over the 0..1 clamp.
   Future<void> _applyVolume() async {
     if (_disposed) {
       return;
@@ -738,16 +753,68 @@ class JustAudioController extends BaseAudioHandler
             preampLinear,
     };
     final duckFactor = _ducked ? 0.33 : 1.0;
-    final effective =
-        (_userVolume * _boostMultiplier * gainMultiplier * duckFactor).clamp(
-          0.0,
-          1.0,
-        );
+    final effective = (_userVolume * gainMultiplier * duckFactor).clamp(
+      0.0,
+      1.0,
+    );
     try {
       await _player.setVolume(effective);
     } catch (e) {
       debugPrint('VoraTube setVolume failed: $e');
     }
+  }
+
+  /// Applies the current Volume Booster as real gain on the native loudness
+  /// enhancer attached to just_audio's Android audio session.
+  ///
+  /// This is the layer that actually raises playback above 100%. It is
+  /// best-effort and evergreen: it subscribes once to the audio-session stream
+  /// so the enhancer is (re)attached whenever ExoPlayer assigns a session, and
+  /// it always mirrors the latest multiplier — so session changes, track
+  /// transitions, pause/resume and a live 100→150→200→100 sweep all keep the
+  /// gain correct. On non-Android hosts or when the platform channel is
+  /// missing, it silently no-ops and playback continues at normal volume.
+  Future<void> _applyBoostGain() async {
+    if (_disposed || !Platform.isAndroid) {
+      return;
+    }
+    _ensureBoostSessionListener();
+    final sessionId = _player.androidAudioSessionId;
+    if (sessionId == null) {
+      // No session yet (e.g. boosted before anything plays); the listener
+      // above will apply the gain as soon as ExoPlayer exposes a session.
+      return;
+    }
+    final millibel = volumeBoostMillibel(_boostMultiplier);
+    try {
+      await _volumeBoosterChannel.invokeMethod<void>(
+        'attach',
+        <String, dynamic>{'sessionId': sessionId},
+      );
+      await _volumeBoosterChannel.invokeMethod<void>(
+        'setGain',
+        <String, dynamic>{'millibel': millibel},
+      );
+    } catch (e) {
+      debugPrint('VoraTube volume booster failed: $e');
+    }
+  }
+
+  /// Subscribes (once) to just_audio's audio-session stream so the loudness
+  /// enhancer is attached as soon as ExoPlayer publishes a session, and is
+  /// re-attached if that session ever changes (e.g. fresh playback start).
+  void _ensureBoostSessionListener() {
+    if (_boostSessionListening) {
+      return;
+    }
+    _boostSessionListening = true;
+    _sessionSubs.add(
+      _player.androidAudioSessionIdStream.distinct().listen((_) {
+        if (_boostMultiplier > 1.0) {
+          unawaited(_applyBoostGain());
+        }
+      }),
+    );
   }
 
   Future<void> _syncCurrentMediaItem() async {

@@ -25,6 +25,26 @@ Duration clampSeekBy(Duration position, Duration offset, Duration? duration) {
   return target;
 }
 
+/// Maps a Volume Booster multiplier (1.0..2.0) to a millibel gain value for the
+/// platform's loudness enhancer.
+///
+/// This is the authoritative gain command sent to the native audio backend.
+/// It scales linearly from 0 mB at 100% (no change) to +6 dB at 200% (2×
+/// linear), and is strictly monotonic so 150% always sits between 100% and
+/// 200%. Returning the *engine* gain (not the multiplier) keeps this the real
+/// integration boundary: it is the exact number handed to the audio FX chain.
+///
+/// Equalizer/loudness enhancers cannot represent negative gain, so values
+/// below 100% (already not reachable from the UI which is clamped 100–200%)
+/// collapse to 0 mB.
+int volumeBoostMillibel(double multiplier) {
+  final m = multiplier.clamp(1.0, 2.0);
+  if (m <= 1.0) return 0;
+  final percent = (m - 1.0) * 100.0; // 0..100
+  // 6 mB per 1% ⇒ 0 dB @ 100%, +3 dB @ 150%, +6 dB @ 200%.
+  return (percent * 6.0).round();
+}
+
 /// Minimal track reference handed to the player.
 ///
 /// Deliberately free of database and platform-engine types so feature code
