@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ (API 31) launch splash. On these versions the system draws
+         the launch screen from the SplashScreen API, ignoring windowBackground,
+         so the branded near-black backdrop must be set via
+         windowSplashScreenBackground to match the Flutter splash's first frame
+         (Scaffold background #FF09090B) and prevent a visible tone jump. The
+         centered system icon defaults to the VoraTube launcher icon, matching
+         the animated logo that follows in Flutter. -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">#FF09090B</item>
+    </style>
+</resources>

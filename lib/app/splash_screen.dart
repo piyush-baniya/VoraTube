@@ -19,7 +19,9 @@ class SplashGate extends StatefulWidget {
 
   final Widget child;
 
-  /// How long the splash stays on screen. Defaults to 800ms.
+  /// How long the splash stays on screen. Defaults to 950ms — the full
+  /// choreography (~800ms) plus a short hold of the final branded frame
+  /// before the crossfade into the app begins.
   final Duration? duration;
 
   @override
@@ -33,7 +35,7 @@ class _SplashGateState extends State<SplashGate> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer(widget.duration ?? const Duration(milliseconds: 800), () {
+    _timer = Timer(widget.duration ?? const Duration(milliseconds: 950), () {
       if (mounted) {
         setState(() => _showSplash = false);
       }
@@ -66,6 +68,9 @@ class _SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<_SplashScreen>
     with SingleTickerProviderStateMixin {
+  /// Total choreography length (~800ms): logo entrance → settle → branding.
+  static const _animationDuration = Duration(milliseconds: 800);
+
   late final AnimationController _controller;
   late final Animation<double> _fade;
   late final Animation<double> _scale;
@@ -79,31 +84,43 @@ class _SplashScreenState extends State<_SplashScreen>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: AppTokens.xslow);
+    _controller = AnimationController(vsync: this, duration: _animationDuration);
     // Logo entrance: from fully transparent and slightly smaller (0.85) up to
     // full opacity + natural size, using a premium exponential ease for a
     // weighty settle rather than a flat crossfade.
     _fade = CurvedAnimation(
       parent: _controller,
-      curve: const Interval(0, 0.55, curve: Curves.easeOut),
+      curve: const Interval(0, 0.55, curve: Curves.easeOutCubic),
     );
-    _scale = Tween<double>(begin: 0.85, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0, 0.55, curve: Curves.easeOutExpo),
+    // Scale choreography as a sequence: entrance 0.85 → 0.98 (easeOutExpo),
+    // then an extremely subtle 0.98 → 1.0 "settle" so the logo visibly lands
+    // into position without bouncing, then holds at 1.0 for the branding.
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.85, end: 0.98).chain(
+          CurveTween(curve: Curves.easeOutExpo),
+        ),
+        weight: 55,
       ),
-    );
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.98, end: 1.0).chain(
+          CurveTween(curve: Curves.easeOut),
+        ),
+        weight: 20,
+      ),
+      TweenSequenceItem(tween: ConstantTween<double>(1.0), weight: 25),
+    ]).animate(_controller);
     _glow = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
     // Wordmark fades + slides up subtly after the logo has mostly settled.
     _brandFade = CurvedAnimation(
       parent: _controller,
-      curve: const Interval(0.45, 1, curve: Curves.easeOut),
+      curve: const Interval(0.45, 0.9, curve: Curves.easeOut),
     );
     _brandSlide = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
         .animate(
           CurvedAnimation(
             parent: _controller,
-            curve: const Interval(0.45, 1, curve: Curves.easeOut),
+            curve: const Interval(0.45, 0.9, curve: Curves.easeOut),
           ),
         );
     _controller.forward();
