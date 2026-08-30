@@ -49,6 +49,76 @@ void main() {
     expect(options, ['Bollywood', 'Indian Pop', 'Romantic', 'Pop', 'Dance']);
   });
 
+  test('parseITunesGenres collects genres from ALL search results, not just the first', () {
+    // Real iTunes responses typically return several results, each with its
+    // own genre data. Only reading the first result is what made Suggest
+    // Genre show a single option.
+    const body = '''
+    {
+      "resultCount": 3,
+      "results": [
+        {"primaryGenreName": "Pop", "genres": ["Pop"]},
+        {"primaryGenreName": "Bollywood", "genres": ["Bollywood", "Indian Pop"]},
+        {"primaryGenreName": "Worldwide", "genres": ["Romantic"]}
+      ]
+    }
+    ''';
+    expect(GenreEnrichmentService.parseITunesGenres(body), [
+      'Pop',
+      'Bollywood',
+      'Indian Pop',
+      'Romantic',
+      'Worldwide',
+    ]);
+  });
+
+  test(
+    'suggestGenres seeds the option list with the song\'s current genre',
+    () async {
+      final client = MockClient(
+        (request) async => http.Response(multiGenreJson, 200),
+      );
+      final service = GenreEnrichmentService(httpClient: client);
+      final options = await service.suggestGenres(
+        rowId: 42,
+        title: 'Some Song',
+        artist: 'Some Artist',
+        existingGenre: 'Rock',
+        readCache: (_) async => null,
+        writeCache: (_, __) async {},
+      );
+      // Current genre first, then every generated option — deduped if equal.
+      expect(options.first, 'Rock');
+      expect(options, [
+        'Rock',
+        'Bollywood',
+        'Indian Pop',
+        'Romantic',
+        'Pop',
+        'Dance',
+      ]);
+    },
+  );
+
+  test(
+    'suggestGenres keeps the current genre even when lookup is empty',
+    () async {
+      final client = MockClient(
+        (request) async => http.Response('{"resultCount":0}', 200),
+      );
+      final service = GenreEnrichmentService(httpClient: client);
+      final options = await service.suggestGenres(
+        rowId: 7,
+        title: 'Unknown Song',
+        artist: null,
+        existingGenre: 'Folk',
+        readCache: (_) async => null,
+        writeCache: (_, __) async {},
+      );
+      expect(options, ['Folk']);
+    },
+  );
+
   test('parseITunesGenres appends primaryGenreName when not duplicated', () {
     const body = '''
     {"resultCount":1,"results":[{"primaryGenreName":"Rock","genres":["Alternative Rock"]}]}

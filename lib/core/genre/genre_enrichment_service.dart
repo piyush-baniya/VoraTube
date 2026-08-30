@@ -190,18 +190,23 @@ class GenreEnrichmentService {
       if (count == 0) return options;
       final results = parsed['results'] as List<dynamic>? ?? [];
       if (results.isEmpty) return options;
-      final first = results.first;
-      if (first is! Map<String, dynamic>) return options;
-      final genres = first['genres'] as List<dynamic>?;
-      if (genres != null) {
-        for (final g in genres) {
-          final label = g is Map<String, dynamic>
-              ? g['name']?.toString()
-              : g?.toString();
-          addOptionLabel(options, label);
+      // Every search result carries its own genre data. Collect the genres of
+      // ALL results — usually several distinct genres across the matches —
+      // not just the first one, which is what made Suggest Genre show a
+      // single option.
+      for (final result in results) {
+        if (result is! Map<String, dynamic>) continue;
+        final genres = result['genres'] as List<dynamic>?;
+        if (genres != null) {
+          for (final g in genres) {
+            final label = g is Map<String, dynamic>
+                ? g['name']?.toString()
+                : g?.toString();
+            addOptionLabel(options, label);
+          }
         }
+        addOptionLabel(options, result['primaryGenreName']?.toString());
       }
-      addOptionLabel(options, first['primaryGenreName']?.toString());
       return options;
     } catch (_) {
       return options;
@@ -228,14 +233,24 @@ class GenreEnrichmentService {
     required int rowId,
     required String title,
     required String? artist,
+    String? existingGenre,
     required Future<String?> Function(String key) readCache,
     required Future<void> Function(String key, String value) writeCache,
   }) async {
+    // The song's current genre is always a valid choice: seed the option list
+    // with it so the user sees what the song is currently tagged as, even
+    // when the lookup produces nothing new.
+    final options = <String>[];
+    addOptionLabel(options, existingGenre);
+
     final cacheKey = cacheKeyForRow(rowId);
     final cached = await readCache(cacheKey);
     final now = DateTime.now();
     if (isCacheFresh(cached, now)) {
-      return decodeCachedGenres(cached);
+      for (final g in decodeCachedGenres(cached)) {
+        addOptionLabel(options, g);
+      }
+      return List.unmodifiable(options);
     }
 
     List<String> genres;
@@ -248,13 +263,17 @@ class GenreEnrichmentService {
       genres = const [];
     }
 
+    for (final g in genres) {
+      addOptionLabel(options, g);
+    }
+
     if (genres.isNotEmpty) {
       await writeCache(
         cacheKey,
         jsonEncode({'gs': genres, 't': now.millisecondsSinceEpoch}),
       );
     }
-    return genres;
+    return List.unmodifiable(options);
   }
 
   /// Decodes a cached suggestion entry. Supports the list form (`gs`) written
