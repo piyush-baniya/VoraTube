@@ -12,6 +12,21 @@ import '../../data/playlist_repository.dart';
 import '../providers/playlist_providers.dart';
 import '../widgets/add_songs_sheet.dart';
 
+/// Maps a [ReorderableListView.onReorderItem] pair to a playlist move target.
+///
+/// [newIndex] is already in the post-removal index space (the framework
+/// adjusts it), so no extra shift is needed here. Drops that land on/past the
+/// loading footer (which is rendered outside the reorderable items) simply
+/// mean "move to the very end", so [length] clamps to the last index instead
+/// of being rejected (which used to make the row snap back).
+int playlistDropTarget(int oldIndex, int newIndex, int length) {
+  if (length < 2) return -1;
+  if (oldIndex < 0 || oldIndex >= length) return -1;
+  if (newIndex < 0) return -1;
+  if (newIndex > length - 1) newIndex = length - 1;
+  return newIndex == oldIndex ? -1 : newIndex;
+}
+
 class PlaylistDetailScreen extends ConsumerStatefulWidget {
   const PlaylistDetailScreen({
     super.key,
@@ -33,6 +48,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   /// is intentionally NOT persisted so the playlist order stays user-controlled.
   List<SongTileData>? _shuffled;
 
+  /// True while a reorder drag is in flight so pagination does not reload the
+  /// list mid-drag (which would cancel the drag and snap the row back).
+  bool _dragging = false;
+
   List<SongTileData>? _viewTiles(List<SongTileData> tiles) =>
       _shuffled ?? tiles;
 
@@ -42,7 +61,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   }
 
   void _onScroll(ScrollMetrics metrics) {
-    if (metrics.extentAfter < 600) {
+    if (!_dragging && metrics.extentAfter < 600) {
       ref.read(playlistDetailProvider(widget.playlistId).notifier).loadMore();
     }
   }
@@ -97,37 +116,40 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                     child: ReorderableListView.builder(
                       padding: const EdgeInsets.only(bottom: 120),
                       buildDefaultDragHandles: false,
-                      onReorder: (oldIndex, newIndex) {
-                        final notifier = ref.read(
-                          playlistDetailProvider(widget.playlistId).notifier,
+                      onReorderStart: (_) => _dragging = true,
+                      onReorderEnd: (_) => _dragging = false,
+                      onReorderItem: (oldIndex, newIndex) {
+                        final target = playlistDropTarget(
+                          oldIndex,
+                          newIndex,
+                          tiles.length,
                         );
-                        if (newIndex > oldIndex) newIndex--;
-                        if (oldIndex >= tiles.length ||
-                            newIndex >= tiles.length ||
-                            oldIndex == newIndex) {
-                          return;
-                        }
-                        notifier.move(oldIndex, newIndex);
+                        if (target < 0) return;
+                        ref
+                            .read(
+                              playlistDetailProvider(widget.playlistId)
+                                  .notifier,
+                            )
+                            .move(oldIndex, target);
                       },
-                      itemCount: viewTiles.length + (notifier.hasMore ? 1 : 0),
+                      itemCount: viewTiles.length,
+                      footer: notifier.hasMore
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 18),
+                              child: Center(
+                                child: SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : null,
                       proxyDecorator: (child, index, animation) =>
                           Material(color: Colors.transparent, child: child),
                       itemBuilder: (context, index) {
-                        if (index >= viewTiles.length) {
-                          return const Padding(
-                            key: ValueKey('footer'),
-                            padding: EdgeInsets.symmetric(vertical: 18),
-                            child: Center(
-                              child: SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.2,
-                                ),
-                              ),
-                            ),
-                          );
-                        }
                         final tile = viewTiles[index];
                         return SongTile(
                           key: ValueKey(tile.song.id),
