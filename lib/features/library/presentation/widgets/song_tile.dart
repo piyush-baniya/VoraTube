@@ -67,165 +67,186 @@ class _SongTileState extends ConsumerState<SongTile> {
       favoriteIdsProvider.select((ids) => ids.contains(song.id)),
     );
 
+    // Gesture split:
+    //  - Inside a reorderable list (dragHandle), long-press on the card body
+    //    starts the existing ReorderableListView drag via a delayed drag
+    //    listener — it must NOT open the actions menu (the explicit three-dot
+    //    button remains the only way to open it).
+    //  - Outside reorderable lists, keep the previous long-press-to-open-menu
+    //    behavior.
+    final cardBody = AnimatedContainer(
+      duration: AppTokens.fast,
+      curve: AppTokens.easeOut,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s4,
+        vertical: AppTokens.s1,
+      ),
+      decoration: isCurrentSong
+          ? BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.06),
+              border: Border(
+                left: BorderSide(color: colorScheme.primary, width: 3),
+              ),
+            )
+          : null,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
+        child: Row(
+          children: [
+            // Artwork with playing animation overlay
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                ArtworkView(
+                  path: widget.tile.artPath,
+                  size: AppTokens.artworkLg,
+                  radius: AppTokens.rSm,
+                  showShadow: isCurrentSong,
+                ),
+                if (isCurrentSong && isPlaying)
+                  _PlayingIndicator(size: AppTokens.artworkLg),
+              ],
+            ),
+            const SizedBox(width: AppTokens.s3),
+            // Metadata
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: widget.highlightQuery == null
+                            ? Text(
+                                song.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: isCurrentSong
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isCurrentSong
+                                      ? colorScheme.primary
+                                      : colorScheme.onSurface,
+                                ),
+                              )
+                            : _HighlightedTitle(
+                                title: song.title,
+                                query: widget.highlightQuery!,
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: isCurrentSong
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isCurrentSong
+                                      ? colorScheme.primary
+                                      : colorScheme.onSurface,
+                                ),
+                              ),
+                      ),
+                      if (isCurrentSong && isPlaying) ...[
+                        const SizedBox(width: AppTokens.s2),
+                        _EqualizerAnimation(color: colorScheme.primary),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    song.artist ?? song.albumName ?? '\u2014',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: isCurrentSong
+                          ? FontWeight.w500
+                          : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppTokens.s2),
+            // Duration
+            if (song.durationMs > 0)
+              Text(
+                _formatDuration(song.durationMs),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: isCurrentSong
+                      ? colorScheme.primary.withValues(alpha: 0.8)
+                      : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            const SizedBox(width: AppTokens.s1),
+            // Overflow menu
+            PressableScale(
+              onTap: () => _showMenu(context),
+              child: SizedBox(
+                width: AppTokens.touchTarget,
+                height: AppTokens.touchTarget,
+                child: IconButton(
+                  tooltip: 'More options',
+                  onPressed: () => _showMenu(context),
+                  icon: Icon(
+                    Icons.more_vert_rounded,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppTokens.s1),
+            // Favorite button
+            _FavoriteButton(
+              isFavorite: isFavorite,
+              isCurrent: isCurrentSong,
+              onTap: () =>
+                  ref.read(favoriteIdsProvider.notifier).toggle(song.id),
+            ),
+            if (widget.dragHandle) ...[
+              const SizedBox(width: AppTokens.s1),
+              ReorderableDragStartListener(
+                index: widget.index,
+                child: SizedBox(
+                  width: AppTokens.touchTarget,
+                  height: AppTokens.touchTarget,
+                  child: Icon(
+                    Icons.drag_handle_rounded,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+    // Reorderable list: the whole card body is a delayed drag start listener
+    // (long-press-and-hold starts the reorder). Long press does not open the
+    // actions menu here — the three-dot button does that.
+    if (widget.dragHandle) {
+      return ReorderableDelayedDragStartListener(
+        index: widget.index,
+        child: PressableScale(
+          onTap: () => widget.onPlay(
+            PlayContext(refs: [songTileToRef(widget.tile)], startIndex: 0),
+          ),
+          child: cardBody,
+        ),
+      );
+    }
+
+    // Non-reorderable lists: keep the previous long-press-to-open-menu
+    // behavior.
     return PressableScale(
       onTap: () => widget.onPlay(
         PlayContext(refs: [songTileToRef(widget.tile)], startIndex: 0),
       ),
       onLongPress: () => _showMenu(context),
-      child: AnimatedContainer(
-        duration: AppTokens.fast,
-        curve: AppTokens.easeOut,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.s4,
-          vertical: AppTokens.s1,
-        ),
-        decoration: isCurrentSong
-            ? BoxDecoration(
-                color: colorScheme.primary.withValues(alpha: 0.06),
-                border: Border(
-                  left: BorderSide(color: colorScheme.primary, width: 3),
-                ),
-              )
-            : null,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 64),
-          child: Row(
-            children: [
-              // Artwork with playing animation overlay
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  ArtworkView(
-                    path: widget.tile.artPath,
-                    size: AppTokens.artworkLg,
-                    radius: AppTokens.rSm,
-                    showShadow: isCurrentSong,
-                  ),
-                  if (isCurrentSong && isPlaying)
-                    _PlayingIndicator(size: AppTokens.artworkLg),
-                ],
-              ),
-              const SizedBox(width: AppTokens.s3),
-              // Metadata
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: widget.highlightQuery == null
-                              ? Text(
-                                  song.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: isCurrentSong
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: isCurrentSong
-                                        ? colorScheme.primary
-                                        : colorScheme.onSurface,
-                                  ),
-                                )
-                              : _HighlightedTitle(
-                                  title: song.title,
-                                  query: widget.highlightQuery!,
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: isCurrentSong
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: isCurrentSong
-                                        ? colorScheme.primary
-                                        : colorScheme.onSurface,
-                                  ),
-                                ),
-                        ),
-                        if (isCurrentSong && isPlaying) ...[
-                          const SizedBox(width: AppTokens.s2),
-                          _EqualizerAnimation(color: colorScheme.primary),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      song.artist ?? song.albumName ?? '\u2014',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        fontWeight: isCurrentSong
-                            ? FontWeight.w500
-                            : FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: AppTokens.s2),
-              // Duration
-              if (song.durationMs > 0)
-                Text(
-                  _formatDuration(song.durationMs),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: isCurrentSong
-                        ? colorScheme.primary.withValues(alpha: 0.8)
-                        : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              const SizedBox(width: AppTokens.s1),
-              // Overflow menu
-              PressableScale(
-                onTap: () => _showMenu(context),
-                child: SizedBox(
-                  width: AppTokens.touchTarget,
-                  height: AppTokens.touchTarget,
-                  child: IconButton(
-                    tooltip: 'More options',
-                    onPressed: () => _showMenu(context),
-                    icon: Icon(
-                      Icons.more_vert_rounded,
-                      size: 20,
-                      color: colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.5,
-                      ),
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppTokens.s1),
-              // Favorite button
-              _FavoriteButton(
-                isFavorite: isFavorite,
-                isCurrent: isCurrentSong,
-                onTap: () =>
-                    ref.read(favoriteIdsProvider.notifier).toggle(song.id),
-              ),
-              if (widget.dragHandle) ...[
-                const SizedBox(width: AppTokens.s1),
-                ReorderableDragStartListener(
-                  index: widget.index,
-                  child: SizedBox(
-                    width: AppTokens.touchTarget,
-                    height: AppTokens.touchTarget,
-                    child: Icon(
-                      Icons.drag_handle_rounded,
-                      size: 20,
-                      color: colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.5,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+      child: cardBody,
     );
   }
 
