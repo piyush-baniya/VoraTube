@@ -14,6 +14,7 @@ import '../../../smart_music/presentation/widgets/mood_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
 import '../../../library/data/library_models.dart';
+import '../../../library/data/library_repository.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
@@ -275,13 +276,33 @@ class _DashboardBody extends ConsumerWidget {
     );
   }
 
-  void _playFrom(
+  Future<void> _playFrom(
     BuildContext context,
     WidgetRef ref,
     List<SongTileData> tiles,
     int startIndex,
-  ) {
-    final ctx = playContextFromTiles(tiles, startIndex);
+  ) async {
+    // Home's "All Songs" preview is only a bounded peek (see [homeSongsLimit]).
+    // Playback must use the whole library, not just the visible rows, so the
+    // tapped song stays current while every library song follows it.
+    final tappedId = tiles[startIndex].song.id;
+    final repository = ref.read(libraryRepositoryProvider);
+    final counts = await repository.currentCounts();
+    final page = await repository.songsPage(
+      limit: counts.songs,
+      offset: 0,
+      sort: SongSort.recentlyAdded,
+      favoritesOnly: false,
+    );
+    final full = page.songs;
+    if (full.isEmpty) {
+      return;
+    }
+    var start = full.indexWhere((t) => t.song.id == tappedId);
+    if (start < 0) {
+      start = 0;
+    }
+    final ctx = playContextFromTiles(full, start);
     ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
   }
 }
