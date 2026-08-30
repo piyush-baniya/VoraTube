@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'player_controller.dart';
@@ -106,9 +108,30 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
   /// coherent snapshot emitted by the winning generation after it finishes.
   bool _queueTransition = false;
 
-  // -------------------------------------------------------------------------
-  // Lifecycle
-  // -------------------------------------------------------------------------
+  /// Resolves a system-readable content URI for the artwork at [artPath]
+  /// by invoking the ingest bridge's [publishSystemArtwork] method.
+  /// Returns the [Uri] if successful, otherwise null.
+  /// This is best-effort; if it fails the original [file://] URI is kept.
+  Future<Uri?> _resolveSystemArtUri(String artPath) async {
+    if (artPath.isEmpty) return null;
+    // Derive a stable key from the filename stem (e.g. ms_5214426321079491600)
+    final name = artPath.split(Platform.pathSeparator).last;
+    var stem = name.replaceFirst('.webp', '');
+    if (stem.endsWith('_l')) stem = stem.substring(0, stem.length - 2);
+    if (stem.endsWith('_s')) stem = stem.substring(0, stem.length - 2);
+    final key = stem;
+    try {
+      final result = await MethodChannel('voratube/ingest_v1')
+          .invokeMethod<String>('publishSystemArtwork', {
+            'artPath': artPath,
+            'key': key,
+          });
+      if (result == null || result.isEmpty) return null;
+      return Uri.tryParse(result);
+    } catch (e) {
+      return null;
+    }
+  }
 
   Future<void> _init() async {
     final session = await AudioSession.instance;
@@ -343,6 +366,36 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       unawaited(_player.play());
     }
   }
+
+  /// System media-session / notification **Play**.
+  ///
+  /// audio_service dispatches transport actions from the Android lock screen,
+  /// the media notification, Bluetooth and wired-headset buttons through the
+  /// [BaseAudioHandler] callbacks. Their default implementations are empty
+  /// stubs, so before this override the play button on the lock screen /
+  /// notification silently did nothing even though in-app controls worked.
+  /// Route it onto the same engine the in-app controls use. Mirror
+  /// [togglePlay]'s dispatch-only pattern to dodge the just_audio pick hang.
+  @override
+  Future<void> play() async {
+    _wantPlayback = true;
+    unawaited(_player.play());
+  }
+
+  /// Lock screen / notification **Next**.
+  ///
+  /// Routes the system `skipToNext` callback onto the same engine the in-app
+  /// next button uses (fixes the empty-stub no-op for media buttons).
+  @override
+  Future<void> skipToNext() => next();
+
+  /// Lock screen / notification **Previous**.
+  ///
+  /// Routes the system `skipToPrevious` callback onto the same engine the
+  /// in-app previous button uses (fixes the empty-stub no-op for media
+  /// buttons).
+  @override
+  Future<void> skipToPrevious() => previous();
 
   @override
   Future<void> pause() {
@@ -678,7 +731,27 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
 
   Future<void> _syncCurrentMediaItem() async {
     final ref = _currentRef();
+    // Add provisional media item (with file URI – works in‑process for notification)
     mediaItem.add(ref == null ? null : _mediaItemFor(ref));
+
+    // Attempt to resolve a system-readable artUri for the lock-screen/media-card.
+    // This is best-effort; if it succeeds the media item is refreshed with the
+    // content-URI so that SystemUI (MediaDataManager) can load the artwork.
+    final artPath = ref?.artPath;
+    if (artPath != null && artPath.isNotEmpty) {
+      try {
+        final sysUri = await _resolveSystemArtUri(artPath);
+        if (sysUri != null && !_disposed) {
+          // Refresh the media item only if the same track is still current
+          final r = _currentRef();
+          if (r != null && r.artPath == artPath) {
+            mediaItem.add(_mediaItemFor(r, artUri: sysUri));
+          }
+        }
+      } catch (e) {
+        // ignore; provisional item already added
+      }
+    }
   }
 
   SongRef? _currentRef() {
@@ -692,7 +765,7 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
     return _queueRefs[index];
   }
 
-  MediaItem _mediaItemFor(SongRef song) {
+  MediaItem _mediaItemFor(SongRef song, {Uri? artUri}) {
     return MediaItem(
       id: song.identityKey,
       title: song.title,
@@ -701,9 +774,11 @@ class JustAudioController extends BaseAudioHandler implements PlayerController {
       duration: song.durationMs > 0
           ? Duration(milliseconds: song.durationMs)
           : null,
-      artUri: song.artPath == null || song.artPath!.isEmpty
-          ? null
-          : Uri.file(song.artPath!),
+      artUri:
+          artUri ??
+          (song.artPath == null || song.artPath!.isEmpty
+              ? null
+              : Uri.file(song.artPath!)),
     );
   }
 
