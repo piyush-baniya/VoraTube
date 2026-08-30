@@ -71,16 +71,41 @@ class _SplashScreenState extends State<_SplashScreen>
   late final Animation<double> _scale;
   late final Animation<double> _glow;
 
+  /// Branding ("VoraTube") fades in slightly after the logo settles, so the
+  /// entrance reads as logo-first → wordmark, not one flat crossfade.
+  late final Animation<double> _brandFade;
+  late final Animation<Offset> _brandSlide;
+
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: AppTokens.xslow);
-    _fade = CurvedAnimation(parent: _controller, curve: AppTokens.easeOut);
-    _scale = Tween<double>(
-      begin: 0.9,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _controller, curve: AppTokens.easeOut));
-    _glow = CurvedAnimation(parent: _controller, curve: AppTokens.easeIn);
+    // Logo entrance: from fully transparent and slightly smaller (0.85) up to
+    // full opacity + natural size, using a premium exponential ease for a
+    // weighty settle rather than a flat crossfade.
+    _fade = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0, 0.55, curve: Curves.easeOut),
+    );
+    _scale = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0, 0.55, curve: Curves.easeOutExpo),
+      ),
+    );
+    _glow = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    // Wordmark fades + slides up subtly after the logo has mostly settled.
+    _brandFade = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.45, 1, curve: Curves.easeOut),
+    );
+    _brandSlide = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _controller,
+            curve: const Interval(0.45, 1, curve: Curves.easeOut),
+          ),
+        );
     _controller.forward();
   }
 
@@ -139,19 +164,31 @@ class _SplashScreenState extends State<_SplashScreen>
           ),
           SafeArea(
             child: Center(
-              child: FadeTransition(
-                opacity: _fade,
-                child: ScaleTransition(
-                  scale: _scale,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // The logo is a full-colour brand asset; it must never be
-                      // tinted into a monochrome silhouette. Render it as-is so
-                      // the brand mark keeps its real colours in both themes.
-                      Image.asset('assets/voratube_logo.png', height: 96),
-                      const SizedBox(height: AppTokens.s6),
-                      Text(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // The logo is a full-colour brand asset; it must never be
+                  // tinted into a monochrome silhouette. Render it as-is so
+                  // the brand mark keeps its real colours in both themes.
+                  FadeTransition(
+                    opacity: _fade,
+                    child: ScaleTransition(
+                      scale: _scale,
+                      child: Image.asset(
+                        'assets/voratube_logo.png',
+                        height: 96,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppTokens.s6),
+                  // Branding enters just after the logo settles, so the
+                  // sequence reads logo → wordmark rather than one flat
+                  // crossfade.
+                  FadeTransition(
+                    opacity: _brandFade,
+                    child: SlideTransition(
+                      position: _brandSlide,
+                      child: Text(
                         'VoraTube',
                         style: theme.textTheme.titleLarge?.copyWith(
                           letterSpacing: 0.5,
@@ -160,9 +197,9 @@ class _SplashScreenState extends State<_SplashScreen>
                               : _brandTint(accent),
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
