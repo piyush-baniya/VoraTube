@@ -427,7 +427,7 @@ class _PlaylistCard extends ConsumerWidget {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (sheetContext) => Container(
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: const BorderRadius.vertical(
@@ -493,7 +493,7 @@ class _PlaylistCard extends ConsumerWidget {
                   icon: Icons.play_arrow_rounded,
                   label: 'Play',
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _playPlaylist(context, ref);
                   },
                 ),
@@ -501,7 +501,7 @@ class _PlaylistCard extends ConsumerWidget {
                   icon: Icons.shuffle_rounded,
                   label: 'Shuffle play',
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _playPlaylist(context, ref);
                   },
                 ),
@@ -513,9 +513,9 @@ class _PlaylistCard extends ConsumerWidget {
                   iconColor: playlist.pinned
                       ? colorScheme.onSurfaceVariant
                       : colorScheme.primary,
-                  onTap: () {
-                    Navigator.pop(context);
-                    ref
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    await ref
                         .read(playlistRepositoryProvider)
                         .setPinned(playlist.id, !playlist.pinned);
                     ref.read(playlistRefreshTickProvider.notifier).state++;
@@ -525,7 +525,7 @@ class _PlaylistCard extends ConsumerWidget {
                   icon: Icons.edit_rounded,
                   label: 'Rename',
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _showRenameDialog(context, ref);
                   },
                 ),
@@ -533,7 +533,7 @@ class _PlaylistCard extends ConsumerWidget {
                   icon: Icons.content_copy_rounded,
                   label: 'Duplicate',
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _duplicatePlaylist(context, ref);
                   },
                 ),
@@ -543,12 +543,13 @@ class _PlaylistCard extends ConsumerWidget {
                   iconColor: colorScheme.error,
                   labelColor: colorScheme.error,
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _confirmDelete(context, ref);
                   },
                 ),
                 SizedBox(
-                  height: MediaQuery.paddingOf(context).bottom + AppTokens.s4,
+                  height:
+                      MediaQuery.paddingOf(sheetContext).bottom + AppTokens.s4,
                 ),
               ],
             ),
@@ -630,8 +631,9 @@ class _PlaylistCard extends ConsumerWidget {
             .read(playlistRepositoryProvider)
             .renamePlaylist(playlist.id, newName)
             .then((_) {
-              // Refresh on the next frame so the overview provider is already
-              // updated before the UI rebuilds.
+              // Refresh only after the write commits so the overview provider
+              // refetches the updated name.
+              ref.read(playlistRefreshTickProvider.notifier).state++;
             })
             .catchError((_) {
               if (context.mounted) {
@@ -642,7 +644,6 @@ class _PlaylistCard extends ConsumerWidget {
                 );
               }
             });
-        ref.read(playlistRefreshTickProvider.notifier).state++;
       }
     });
   }
