@@ -2,6 +2,7 @@ package com.piyushbaniya.vora_tube.ingest
 
 import android.content.Context
 import android.content.ContentUris
+import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
@@ -49,6 +50,11 @@ class VoraTubeIngestBridge(context: Context) {
                                 ?: emptyList()
                             succeed(result, resolveArtwork(targets))
                         }
+                        "publishSystemArtwork" -> {
+                            val artPath = call.argument<String>("artPath") ?: ""
+                            val key = call.argument<String>("key") ?: ""
+                            succeed(result, publishSystemArtwork(artPath, key))
+                        }
                         else -> fail(result, "unsupported_method", call.method)
                     }
                 } catch (e: Exception) {
@@ -57,6 +63,50 @@ class VoraTubeIngestBridge(context: Context) {
             }
         }
     }
+
+    /** Publishes the artwork at [artPath] to MediaStore.Downloads and returns the
+     *  content URI string. The caller must ensure the file exists and is a valid WebP.
+     *  On Android < 29 the method returns null (relative path not supported). */
+    private fun publishSystemArtwork(artPath: String, key: String): String? {
+        val file = File(artPath)
+        if (!file.isFile || file.length() == 0L) return null
+        val displayName = "voratu_${sanitizeKey(key)}.webp"
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        // Try to reuse an existing row with the same display name
+        try {
+            val proj = arrayOf(MediaStore.Downloads._ID, MediaStore.Downloads.DISPLAY_NAME)
+            resolver.query(collection, proj,
+                "${MediaStore.Downloads.DISPLAY_NAME}=?", arrayOf(displayName), null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    return ContentUris.withAppendedId(collection, cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Downloads._ID))).toString()
+                }
+            }
+        } catch (e: Exception) {
+            // query failed (e.g. permission), fall through to insert
+        }
+        // Insert a new row
+        try {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                put(MediaStore.Downloads.MIME_TYPE, "image/webp")
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download/VoraTube")
+                put(MediaStore.Downloads.IS_PENDING, 0)
+                put(MediaStore.Downloads.SIZE, file.length())
+            }
+            val uri = resolver.insert(collection, values)
+            if (uri == null) return null
+            // Write the file bytes into the newly-created entry
+            resolver.openOutputStream(uri)?.use { out ->
+                file.inputStream().use { input ->
+                    input.copyTo(out)
+                }
+            }
+            return uri.toString()
+        } catch (e: Exception) {
+            return null
+        }
+    }
+
 
     private fun getAudioBatch(afterId: Long, limit: Int): List<Map<String, Any?>> {
         val projection = mutableListOf(
@@ -547,5 +597,7 @@ class VoraTubeIngestBridge(context: Context) {
 
         /** Sentinel for "no artwork could be resolved", sent back verbatim. */
         val NO_ART: Map<String, String?> = mapOf(SMALL to null, LARGE to null)
+
+
     }
 }
