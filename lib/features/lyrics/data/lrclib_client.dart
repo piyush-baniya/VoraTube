@@ -133,6 +133,46 @@ class LrclibClient {
     }
   }
 
+  /// Returns ALL results the `/search` endpoint offers for the track, so the
+  /// user can choose which one to use instead of the app silently picking
+  /// one. Empty list when nothing matched.
+  Future<List<LrclibResult>> searchResultsByTrack({
+    required String trackName,
+    required String artistName,
+    String? albumName,
+  }) async {
+    final params = <String, String>{
+      'track_name': trackName,
+      'artist_name': artistName,
+    };
+    if (albumName != null && albumName.isNotEmpty) {
+      params['album_name'] = albumName;
+    }
+
+    final uri = Uri.parse('$_baseUrl/search').replace(queryParameters: params);
+
+    try {
+      final response = await _get(uri);
+
+      if (response.statusCode == 200) {
+        final jsonList = jsonDecode(response.body) as List<dynamic>;
+        return [
+          for (final item in jsonList)
+            if (item is Map<String, dynamic>) LrclibResult.fromJson(item),
+        ];
+      }
+      return const [];
+    } on SocketException {
+      throw const LyricsNetworkException();
+    } on TimeoutException {
+      throw const LyricsNetworkException();
+    } on http.ClientException {
+      throw const LyricsNetworkException();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> dispose() async {
     _client.close();
   }

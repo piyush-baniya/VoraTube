@@ -19,6 +19,36 @@ final lyricsServiceProvider = Provider<LyricsService>((ref) {
   );
 });
 
+/// Lyrics the user chose explicitly for the current song — from an online
+/// result they picked or an uploaded .lrc file. Shown in place of the
+/// provider-driven result and reset when the track changes.
+final manualLyricsProvider = StateProvider.autoDispose<LyricsData?>((ref) {
+  // Watching the identity means a track transition rebuilds this provider,
+  // clearing any lyrics chosen for the previous song.
+  ref.watch(currentTrackIdentityProvider);
+  return null;
+});
+
+/// The lyrics currently in effect: the user's explicit choice wins, otherwise
+/// whatever the standard pipeline resolved.
+final activeLyricsProvider = Provider<LyricsData?>((ref) {
+  final manual = ref.watch(manualLyricsProvider);
+  if (manual != null) return manual;
+  return ref.watch(currentLyricsProvider).valueOrNull?.data;
+});
+
+/// The user's stored .lrc payload for the current song, or null. Used both to
+/// show the "Show lyrics from uploaded LRC file" action and to let the lyrics
+/// pipeline prefer the upload automatically.
+final uploadedLrcProvider = FutureProvider.autoDispose<String?>((ref) async {
+  final song = ref.watch(currentTrackProvider);
+  if (song == null) return null;
+  final service = ref.watch(lyricsServiceProvider);
+  final stored = await service.userLrc.load(song.identityKey);
+  ref.keepAlive();
+  return stored?.lrc;
+});
+
 /// Loads lyrics for the current track.
 ///
 /// This provider deliberately owns only immutable lyric data. In particular,
@@ -45,7 +75,7 @@ final currentLyricsProvider = FutureProvider.autoDispose<LyricsResult>((
 /// widget-owned state, and prevents widgets from retaining disposed provider
 /// objects.
 final currentLyricLineIndexProvider = StreamProvider.autoDispose<int>((ref) {
-  final lyrics = ref.watch(currentLyricsProvider).valueOrNull?.data;
+  final lyrics = ref.watch(activeLyricsProvider);
   if (lyrics == null || !lyrics.hasSyncedLines) {
     return Stream.value(-1);
   }

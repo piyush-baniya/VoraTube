@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum LyricsSource { embedded, cache, lrclib, none }
+enum LyricsSource { embedded, userLrc, cache, lrclib, none }
 
 enum LyricsStatus { loading, loaded, notFound, error, offline }
 

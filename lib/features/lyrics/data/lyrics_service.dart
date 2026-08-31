@@ -8,14 +8,19 @@ import '../../../core/db/app_database.dart';
 import '../../../core/models/lyrics.dart';
 import '../../../core/player/player_controller.dart';
 import 'lrclib_client.dart';
+import 'user_lrc_store.dart';
 
 class LyricsService {
   LyricsService({required AppDatabase db, required LrclibClient lrclib})
     : _db = db,
-      _lrclib = lrclib;
+      _lrclib = lrclib,
+      userLrc = UserLrcStore(db);
 
   final AppDatabase _db;
   final LrclibClient _lrclib;
+
+  /// Persistent storage for user-uploaded .lrc files, keyed by song identity.
+  final UserLrcStore userLrc;
 
   /// Computes a content-addressable hash for lyrics caching.
   ///
@@ -37,6 +42,14 @@ class LyricsService {
       return LyricsResult.loaded(embedded, LyricsSource.embedded);
     }
 
+    // A user-uploaded .lrc outranks everything the app could fetch: the user
+    // chose it for THIS song, so it should not be shadowed by an online
+    // result that may match less well.
+    final userLrc = await _tryUserLrc(song);
+    if (userLrc != null) {
+      return LyricsResult.loaded(userLrc, LyricsSource.userLrc);
+    }
+
     final cached = await _tryCache(song);
     if (cached != null) {
       return LyricsResult.loaded(cached, LyricsSource.cache);
@@ -52,6 +65,64 @@ class LyricsService {
       _OnlineKind.error => const LyricsResult.error(),
       _OnlineKind.notFound => const LyricsResult.notFound(),
     };
+  }
+
+  /// Builds displayable lyrics from a stored user LRC. Returns null when the
+  /// text is blank or parses to nothing — a corrupted/empty stored entry is
+  /// reported as "no uploaded lyrics" rather than an empty screen.
+  Future<LyricsData?> _tryUserLrc(SongRef song) async {
+    final stored = await userLrc.load(song.identityKey);
+    if (stored == null) return null;
+    return lyricsFromUserLrc(stored.lrc);
+  }
+
+  /// Parses an uploaded LRC payload. Accepts synced LRC and plain-text files;
+  /// null when the payload contains nothing displayable.
+  LyricsData? lyricsFromUserLrc(String lrc) {
+    final trimmed = lrc.trim();
+    if (trimmed.isEmpty) return null;
+    final lines = parseLrc(trimmed);
+    if (lines.isEmpty) return null;
+    if (lines.any((l) => l.isTimestamped)) {
+      return LyricsData(
+        lines: lines,
+        plainText: plainTextFromLines(lines),
+        syncedLrc: trimmed,
+      );
+    }
+    return _buildFromPlainText(trimmed);
+  }
+
+  /// Lists every online result the lyrics provider offers for [song], so the
+  /// user can pick one. Network failures surface as [LyricsNetworkException]
+  /// so the UI can distinguish offline from "nothing found".
+  Future<List<LrclibResult>> searchOnlineResults(SongRef song) {
+    return _lrclib.searchResultsByTrack(
+      trackName: song.title,
+      artistName: song.artist ?? '',
+      albumName: song.album,
+    );
+  }
+
+  /// Converts one online result into displayable lyrics (never null for a
+  /// result that carries lyrics).
+  LyricsData lyricsFromResult(LrclibResult result) => _buildFromLrclib(result);
+
+  /// Persists an uploaded LRC for the song and returns the parsed lyrics.
+  /// Returns null when the payload is not usable; [saveUserLrc] controls
+  /// persistence independently.
+  LyricsData? importUserLrc(SongRef song, String lrc) => lyricsFromUserLrc(lrc);
+
+  /// Web-search URL for the current song, e.g.
+  /// `https://www.example-search.../search?q=<artist> <title> lyrics`.
+  /// URL-encoding is handled by [Uri] query parameters.
+  Uri webSearchUri(SongRef song) {
+    final query = [
+      song.artist,
+      song.title,
+      'lyrics',
+    ].whereType<String>().where((s) => s.trim().isNotEmpty).join(' ');
+    return Uri.https('www.google.com', '/search', {'q': query});
   }
 
   Future<LyricsData?> _tryEmbedded(SongRef song) async {

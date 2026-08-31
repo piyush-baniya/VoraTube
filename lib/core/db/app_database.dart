@@ -87,6 +87,22 @@ CREATE TABLE IF NOT EXISTS album_extras (
 )
 ''';
 
+/// One row per song the user has uploaded an .lrc file for.
+///
+/// Keyed by the song's stable [SongRef.identityKey] ('ms:<mediaStoreId>' or
+/// 'h:<contentHash>'), so the association survives restarts, rescans and
+/// queue reshuffles. The LRC text is copied into the database itself rather
+/// than referenced by path: a picked file URI can be revoked or moved by the
+/// system at any time, but a row in VoraTube's own database cannot.
+const userLrcDdl = '''
+CREATE TABLE IF NOT EXISTS user_lrc (
+  identity_key TEXT PRIMARY KEY,
+  lrc TEXT NOT NULL,
+  file_name TEXT,
+  saved_at INTEGER NOT NULL
+)
+''';
+
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
@@ -102,6 +118,7 @@ class AppDatabase extends _$AppDatabase {
       await customStatement(songExtrasDdl);
       await customStatement(albumExtrasDdl);
       await customStatement(_playHistoryDdl);
+      await customStatement(userLrcDdl);
       for (final statement in _songExtrasIndexes) {
         await customStatement(statement);
       }
