@@ -11,8 +11,11 @@ import '../../core/ingest/artwork/artwork_file_cache.dart';
 ///
 /// Performance: existence is resolved through [ArtworkFileCache] rather than a
 /// `stat` per build, [ArtworkFileCache.decodeWidth] bounds decode memory, and
-/// [gaplessPlayback] avoids a blank frame when the path changes underneath a
-/// reused element.
+/// `gaplessPlayback` is deliberately OFF: it exists to keep the *old* image
+/// visible when the image provider changes, which here means one song's
+/// artwork lingering under another song's row — exactly the contamination
+/// this widget must never produce. Rebuilds with the same path reuse the
+/// same cached [FileImage] anyway, so nothing flickers without it.
 class ArtworkView extends StatelessWidget {
   const ArtworkView({
     super.key,
@@ -86,7 +89,7 @@ class ArtworkView extends StatelessWidget {
                 file,
                 fit: fit,
                 cacheWidth: decodeWidth,
-                gaplessPlayback: true,
+                gaplessPlayback: false,
                 frameBuilder: (context, child, frame, wasLoaded) {
                   if (!enableFadeIn || wasLoaded) return child;
                   return AnimatedOpacity(
@@ -188,7 +191,7 @@ class CompactArtwork extends StatelessWidget {
                   size,
                   MediaQuery.devicePixelRatioOf(context),
                 ),
-                gaplessPlayback: true,
+                gaplessPlayback: false,
                 // The MiniPlayer is on screen for most of a session, so an
                 // undecodable file here previously meant a persistent red error
                 // box rather than a fallback.

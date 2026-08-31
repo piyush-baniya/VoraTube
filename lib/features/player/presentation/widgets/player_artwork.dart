@@ -109,7 +109,7 @@ class _ArtworkImage extends StatelessWidget {
             size,
             MediaQuery.devicePixelRatioOf(context),
           ),
-          gaplessPlayback: true,
+          gaplessPlayback: false,
           frameBuilder: (context, child, frame, wasLoaded) {
             if (wasLoaded) return child;
             return AnimatedOpacity(

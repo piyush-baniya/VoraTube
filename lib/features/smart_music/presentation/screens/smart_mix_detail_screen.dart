@@ -55,7 +55,7 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
                     Image.file(
                       ArtworkFileCache.resolve(widget.mix.artworkPaths.first)!,
                       fit: BoxFit.cover,
-                      gaplessPlayback: true,
+                      gaplessPlayback: false,
                       cacheWidth: ArtworkFileCache.decodeWidth(
                         320,
                         MediaQuery.devicePixelRatioOf(context),
@@ -363,7 +363,7 @@ class _MixSongTile extends ConsumerWidget {
                     width: 48,
                     height: 48,
                     fit: BoxFit.cover,
-                    gaplessPlayback: true,
+                    gaplessPlayback: false,
                     cacheWidth: ArtworkFileCache.decodeWidth(
                       48,
                       MediaQuery.devicePixelRatioOf(context),

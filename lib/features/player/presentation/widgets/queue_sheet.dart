@@ -360,7 +360,7 @@ class _QueueTile extends ConsumerWidget {
                             File(song.artPath!),
                             fit: BoxFit.cover,
                             cacheWidth: 88,
-                            gaplessPlayback: true,
+                            gaplessPlayback: false,
                             errorBuilder: (_, _, _) => _fallback(theme),
                           )
                         : _fallback(theme),

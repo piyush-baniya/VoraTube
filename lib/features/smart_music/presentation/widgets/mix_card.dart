@@ -90,7 +90,7 @@ class MixCard extends ConsumerWidget {
                                 width: _artworkHeight,
                                 height: _artworkHeight,
                                 fit: BoxFit.cover,
-                                gaplessPlayback: true,
+                                gaplessPlayback: false,
                                 cacheWidth: ArtworkFileCache.decodeWidth(
                                   _artworkHeight,
                                   MediaQuery.devicePixelRatioOf(context),
