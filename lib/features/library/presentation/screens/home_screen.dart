@@ -9,6 +9,7 @@ import '../../../../shared/widgets/scroll_reveal.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/player/player_controller.dart';
+import '../../../ads/banner_ad_widget.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
 import '../../../playlists/presentation/widgets/home_playlist_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
@@ -39,6 +40,13 @@ class HomeScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _HomeHeader(),
+          // A single, small, unobtrusive banner that never overlaps playback
+          // controls. It sits under the Home header and collapses to nothing
+          // when Premium is active or the ad fails to load.
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+            child: VoraTubeBannerAd(),
+          ),
           Expanded(child: _DashboardBody(onSeeAllSongs: onSeeAllSongs)),
         ],
       ),

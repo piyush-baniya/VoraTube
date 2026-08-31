@@ -49,6 +49,7 @@ dependencies:
   share_plus: ^13.3.0
   webview_flutter: ^4.13.0
   package_info_plus: ^10.2.1
+  google_mobile_ads: ^9.1.0
 
 dev_dependencies:
   flutter_test:

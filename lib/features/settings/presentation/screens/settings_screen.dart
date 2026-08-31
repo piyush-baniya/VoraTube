@@ -7,6 +7,9 @@ import '../../../../features/player/presentation/providers/player_providers.dart
 import '../../../../features/player/presentation/providers/sleep_timer_provider.dart';
 import '../../../../features/player/presentation/widgets/sleep_timer_sheet.dart';
 import '../../../../core/player/player_controller.dart';
+import '../../../ads/premium_models.dart';
+import '../../../ads/premium_providers.dart';
+import '../../../ads/premium_sheets.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
 import 'hidden_songs_screen.dart';
 import 'privacy_screen.dart';
@@ -46,6 +49,8 @@ class SettingsScreen extends ConsumerWidget {
           SliverToBoxAdapter(child: _StorageSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _AboutSection()),
+          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
+          SliverToBoxAdapter(child: _PremiumSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s8)),
         ],
       ),
@@ -491,4 +496,83 @@ class _AboutSection extends ConsumerWidget {
 extension _StringCapitalize on String {
   String capitalize() =>
       isEmpty ? this : '${this[0].toUpperCase()}${substring(1)}';
+}
+
+/// Premium section: activates or disables VoraTube's ad-free entitlement.
+class _PremiumSection extends ConsumerWidget {
+  const _PremiumSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final premium = ref.watch(premiumProvider);
+    final isActive = premium == PremiumEntitlement.active;
+
+    return SettingsSection(
+      title: 'Premium',
+      children: [
+        if (isActive)
+          SettingsTile(
+            title: 'Premium',
+            subtitle: 'Ads disabled',
+            leading: _PremiumLeading(color: colorScheme.primary),
+            trailing: Icon(
+              Icons.check_circle_rounded,
+              size: 18,
+              color: colorScheme.tertiary,
+            ),
+          ),
+        SettingsTile(
+          title: isActive ? 'Disable Premium' : 'Activate Premium',
+          subtitle: isActive
+              ? 'Turn ads back on and remove the ad-free entitlement'
+              : 'Unlock ad-free listening',
+          leading: _PremiumLeading(color: colorScheme.primary),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () => _onTap(context, ref, isActive),
+          isLastInSection: true,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _onTap(
+    BuildContext context,
+    WidgetRef ref,
+    bool isActive,
+  ) async {
+    if (isActive) {
+      final confirmed = await showPremiumDisableDialog(context);
+      if (confirmed) {
+        await ref.read(premiumProvider.notifier).deactivate();
+      }
+    } else {
+      await showPremiumActivationSheet(context);
+    }
+  }
+}
+
+/// Small premium icon tile used by the Settings premium section.
+class _PremiumLeading extends StatelessWidget {
+  const _PremiumLeading({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(AppTokens.rMd),
+      ),
+      child: Icon(Icons.workspace_premium_rounded, size: 20, color: color),
+    );
+  }
 }

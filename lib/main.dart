@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/app.dart';
 import 'core/db/app_database.dart';
 import 'core/player/just_audio_controller.dart';
+import 'features/ads/ads_initializer.dart';
+import 'features/ads/premium_models.dart';
 import 'features/library/data/library_repository.dart';
 import 'features/library/presentation/providers/library_providers.dart';
 import 'features/library/presentation/providers/library_view_providers.dart';
@@ -45,6 +49,20 @@ Future<void> main() async {
   notifyStatsChanged = () {
     container.read(statsRefreshTickProvider.notifier).state++;
   };
+
+  // Initialize the Mobile Ads SDK without blocking startup. If Premium is
+  // already active, the persisted entitlement is read first so no ad request
+  // is made unnecessarily. Failures here are non-fatal.
+  unawaited(() async {
+    var premiumActive = false;
+    try {
+      premiumActive =
+          (await repository.kvGet(PremiumKeys.activated)) == 'true';
+    } catch (_) {
+      premiumActive = false;
+    }
+    await AdsInitializer.initialize(premiumActive: premiumActive);
+  }());
 
   // ProviderScope → VoraTubeApp → MaterialApp → splash → permission gate →
   // HomeShell. Keeping the SplashGate/PermissionGate inside the MaterialApp
