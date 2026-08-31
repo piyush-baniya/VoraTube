@@ -31,11 +31,10 @@ class MiniPlayer extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
-    final hasPrevious =
-        snapshot.currentIndex > 0 || snapshot.repeatMode == RepeatMode.all;
-    final hasNext =
-        snapshot.currentIndex < snapshot.queueLength - 1 ||
-        snapshot.repeatMode == RepeatMode.all;
+    final canStep =
+        snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
+    final hasPrevious = canStep && snapshot.currentIndex >= 0;
+    final hasNext = canStep && snapshot.currentIndex >= 0;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,

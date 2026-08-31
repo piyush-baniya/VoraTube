@@ -174,10 +174,22 @@ void main() {
     },
   );
 
-  testWidgets('previous disabled at queue start dispatches nothing', (
+  testWidgets('previous disabled for a single song dispatches nothing', (
     tester,
   ) async {
-    final player = _playerWithTrack(atStart: true);
+    final player = _RecordingPlayer(
+      initial: PlayerSnapshot(
+        status: PlayerStatus.ready,
+        isPlaying: false,
+        repeatMode: RepeatMode.off,
+        shuffleEnabled: false,
+        queueLength: 1,
+        currentIndex: 0,
+        durationMs: 200000,
+        current: _song(),
+      ),
+      queue: [_song(id: 1)],
+    );
     await tester.pumpWidget(_wrap(player));
     await tester.pumpAndSettle();
 

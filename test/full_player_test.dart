@@ -284,7 +284,7 @@ void main() {
       expect(called, isTrue);
     });
 
-    testWidgets('next is disabled at queue end without repeat-all', (
+    testWidgets('next is disabled for a single song without repeat-all', (
       tester,
     ) async {
       bool nextCalled = false;
@@ -297,8 +297,8 @@ void main() {
                 isPlaying: true,
                 repeatMode: RepeatMode.off,
                 shuffleEnabled: false,
-                queueLength: 3,
-                currentIndex: 2,
+                queueLength: 1,
+                currentIndex: 0,
                 durationMs: 200000,
                 current: null,
               ),
@@ -319,7 +319,7 @@ void main() {
       expect(nextCalled, isFalse);
     });
 
-    testWidgets('previous is disabled at index 0 without repeat-all', (
+    testWidgets('previous is disabled for a single song without repeat-all', (
       tester,
     ) async {
       bool prevCalled = false;
@@ -332,7 +332,7 @@ void main() {
                 isPlaying: true,
                 repeatMode: RepeatMode.off,
                 shuffleEnabled: false,
-                queueLength: 3,
+                queueLength: 1,
                 currentIndex: 0,
                 durationMs: 200000,
                 current: null,

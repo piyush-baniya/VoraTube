@@ -32,12 +32,12 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback onToggleShuffle;
   final VoidCallback onToggleRepeat;
 
-  bool get _canPrevious =>
-      snapshot.currentIndex > 0 || snapshot.repeatMode == RepeatMode.all;
+  bool get _canStep =>
+      snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
 
-  bool get _canNext =>
-      snapshot.currentIndex < snapshot.queueLength - 1 ||
-      snapshot.repeatMode == RepeatMode.all;
+  bool get _canPrevious => _canStep && snapshot.currentIndex >= 0;
+
+  bool get _canNext => _canStep && snapshot.currentIndex >= 0;
 
   @override
   Widget build(BuildContext context) {

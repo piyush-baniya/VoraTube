@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart' hide RepeatMode;
 import 'package:just_audio/just_audio.dart';
 
 import 'player_controller.dart';
+import 'queue_order.dart';
 
 const String _kSnapshotKey = 'playback.snapshot.v1';
 
@@ -79,7 +80,25 @@ class JustAudioController extends BaseAudioHandler
     'voratube/volume_booster_v1',
   );
 
+  /// Authoritative current-first queue: `_queueRefs[0]` is ALWAYS the
+  /// currently-playing (or selected) song. The engine loads exactly one source
+  /// at a time from this list, so the displayed queue, the Dart state and the
+  /// actual playback order are the same single list — there is never a hidden
+  /// engine ordering to drift away from. Repeat All/Off and rotation are
+  /// implemented here; just_audio is used purely as a one-track engine.
   List<SongRef> _queueRefs = const [];
+
+  /// Authoritative repeat mode. Mirrored to the engine only for the one-track
+  /// behaviour (LoopMode.one for Repeat One, else off), but reported to the UI
+  /// from here so Repeat All reports `all` even though the engine never loops
+  /// natively.
+  RepeatMode _repeatMode = RepeatMode.off;
+
+  /// Authoritative shuffle flag. Shuffle reorders [_queueRefs] (current kept at
+  /// front); just_audio's own shuffle is never engaged, so only this ordering
+  /// matters.
+  bool _shuffleEnabled = false;
+
   PlayerSnapshot _last = PlayerSnapshot.initial;
   StreamSubscription<Duration>? _positionSub;
   final List<StreamSubscription<dynamic>> _sessionSubs = [];
@@ -120,14 +139,16 @@ class JustAudioController extends BaseAudioHandler
   /// cleanly rather than spinning.
   int _consecutiveFailures = 0;
 
-  /// True between the start and end of a [playQueue] transition.
+  /// True between the start and end of a queue transition (playQueue, advance,
+  /// jump, remove-current, restore).
   ///
-  /// The stop→setAudioSources→play sequence is multi-await, and just_audio
-  /// flushes intermediate engine events (idle, cleared index, loading) along
-  /// the way. Those transient snapshots would otherwise be broadcast to the UI
-  /// as a flash of "no track" (stale or null current) while rapidly switching
-  /// songs A→B→C. Gating [emit] here collapses the whole transition into one
-  /// coherent snapshot emitted by the winning generation after it finishes.
+  /// The single-source engine's setAudioSource→play sequence is multi-await,
+  /// and just_audio flushes intermediate engine events (idle, loading, no
+  /// current) along the way. Those transient snapshots would otherwise be
+  /// broadcast to the UI as a flash of "no track" or wrong ordering while
+  /// switching songs A→B→C. Gating [emit] here collapses the whole transition
+  /// into one coherent snapshot emitted by the winning generation after it
+  /// finishes.
   bool _queueTransition = false;
 
   Future<void> _init() async {
@@ -226,21 +247,35 @@ class JustAudioController extends BaseAudioHandler
 
   /// Reacts to source-lifecycle changes.
   ///
-  /// A source that fails to prepare lands the engine in `idle` with nothing
-  /// loadable: just_audio will not advance on its own, so without this the
-  /// player would sit on the broken track forever (stale `current`, duration
-  /// 0, media-session state NONE — exactly the AutoBackup defect seen in
-  /// Phase 3 device verification). Auto-skip instead. Transient idle events
-  /// inside a [playQueue] transition are gated by [_queueTransition] so the
-  /// coherent snapshot the winning generation emits is never touched.
+  /// The engine always holds exactly one source (the current-first song), so:
+  /// - `idle` means the current source could not be loaded → auto-skip to keep
+  ///   the play intent alive (a broken file falls through to the next track).
+  /// - `completed` means the current song finished naturally → apply the repeat
+  ///   policy (Repeat Off removes it, Repeat All moves it to the end, Repeat One
+  ///   repeats in place via the engine's loop mode). Transient events inside a
+  ///   [playQueue] transition are gated by [_queueTransition] so the coherent
+  ///   snapshot the winning generation emits is never touched.
   void _handleProcessingState(ProcessingState state) {
     if (_disposed) {
       return;
     }
-    if (!_queueTransition &&
-        state == ProcessingState.idle &&
-        _queueRefs.isNotEmpty) {
+    if (_queueTransition) {
+      return;
+    }
+    if (_queueRefs.isEmpty) {
+      return;
+    }
+    if (state == ProcessingState.idle) {
       unawaited(_skipBrokenSource());
+      return;
+    }
+    if (state == ProcessingState.completed) {
+      // Repeat One never advances: just_audio's LoopMode.one loops the same
+      // source in place, so the current song stays #1 and plays again. Only
+      // Repeat Off / All rotate or remove on a natural finish.
+      if (_repeatMode != RepeatMode.one) {
+        unawaited(_onTrackFinished());
+      }
       return;
     }
     if (state == ProcessingState.ready) {
@@ -249,12 +284,45 @@ class JustAudioController extends BaseAudioHandler
     _emit();
   }
 
+  /// Applies the repeat policy after the current song finished naturally.
+  ///
+  /// Current-first invariant: [_queueRefs][0] was the finished song.
+  /// - Repeat Off: drop it. If that empties the queue, stop cleanly.
+  /// - Repeat All: move it to the END so the next song becomes #1 and plays,
+  ///   and the finished one plays again only after the whole queue turns over.
+  Future<void> _onTrackFinished() async {
+    if (_queueRefs.isEmpty || _queueTransition || _disposed) {
+      return;
+    }
+    _queueTransition = true;
+    try {
+      _queueRefs = List.unmodifiable(
+        applyRepeatFinish(_queueRefs, _repeatMode),
+      );
+      _queueRevision++;
+      if (_queueRefs.isEmpty) {
+        final gen = ++_playGeneration;
+        _wantPlayback = false;
+        await _clearEngine();
+        if (gen == _playGeneration) {
+          _emit();
+        }
+        return;
+      }
+      await _loadCurrent();
+    } finally {
+      if (!_disposed) {
+        _queueTransition = false;
+        _emit();
+      }
+    }
+  }
+
   /// Moves past a source the engine could not load.
   ///
-  /// [playQueue] already collapses its own transition into one snapshot, so
-  /// only idle events outside a transition reach here. The skip keeps the
-  /// user's play intent: when a tap started playback, hitting a broken track
-  /// falls through to the next item and playback continues.
+  /// With a single-source engine an unloadable current track lands in `idle`;
+  /// treat it like a natural advance but drop the broken song so playback keeps
+  /// going. If every item fails, release cleanly instead of spinning forever.
   Future<void> _skipBrokenSource() async {
     if (_disposed || _skipInFlight) {
       return;
@@ -262,58 +330,53 @@ class JustAudioController extends BaseAudioHandler
     _skipInFlight = true;
     try {
       _consecutiveFailures++;
-      final total = _player.sequence.length;
-      final wasPlaying = _wantPlayback;
-      if (total == 0 || _consecutiveFailures > total) {
-        // Nothing to play (single-track stop, or every item failed):
-        // release cleanly instead of looping forever.
+      if (_queueRefs.isEmpty || _consecutiveFailures > _queueRefs.length) {
+        // Nothing playable: release cleanly instead of looping forever.
         _consecutiveFailures = 0;
         _wantPlayback = false;
-        try {
-          await _player
-              .setAudioSources(const [])
-              .timeout(const Duration(seconds: 3));
-        } catch (_) {
-          // Best-effort release; the next playQueue rebuilds from scratch.
-        }
         _queueRefs = const [];
+        await _clearEngine();
+        _queueRevision++;
         _schedulePersist(immediate: true);
         _emit();
         return;
       }
-      if (_player.hasNext) {
-        await _player.seekToNext();
-        // play() is dispatched: awaiting it here has the same hang hazard as
-        // playQueue, and a stalled skip would leave [_skipInFlight] set so no
-        // later broken source could ever be skipped again.
-        if (wasPlaying) {
-          unawaited(_player.play());
-        }
-        return;
-      }
-      // The last queue item is unplayable. More than one item: wrap to the top
-      // so a repeat-enabled queue self-heals. A single broken track has nowhere
-      // to go: stop cleanly.
-      if (total > 1) {
-        await _player.seek(Duration.zero, index: 0);
-        if (wasPlaying) {
-          unawaited(_player.play());
-        }
-      } else {
-        _wantPlayback = false;
-        try {
-          await _player
-              .setAudioSources(const [])
-              .timeout(const Duration(seconds: 3));
-        } catch (_) {
-          // Best-effort release; the next playQueue rebuilds from scratch.
-        }
-        _queueRefs = const [];
-        _schedulePersist(immediate: true);
-        _emit();
+      // Drop the broken track and advance to the next current-first item.
+      _queueRefs = List.unmodifiable(_queueRefs.sublist(1));
+      _queueRevision++;
+      final wasPlaying = _wantPlayback;
+      await _loadCurrent();
+      if (wasPlaying && _queueRefs.isNotEmpty) {
+        unawaited(_player.play());
       }
     } finally {
       _skipInFlight = false;
+    }
+  }
+
+  /// Loads the current-first song ([_queueRefs][0]) as the engine's single
+  /// source and seeks it ready without necessarily starting playback.
+  Future<void> _loadCurrent() async {
+    if (_queueRefs.isEmpty) {
+      return;
+    }
+    await _player.setAudioSource(_sourceFor(_queueRefs.first), preload: true);
+    await _syncCurrentMediaItem();
+  }
+
+  /// Stops the engine and empties its sequence, best-effort.
+  Future<void> _clearEngine() async {
+    try {
+      await _player.stop().timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // Best-effort; the queue snapshot is authoritative.
+    }
+    try {
+      await _player
+          .setAudioSources(const [])
+          .timeout(const Duration(seconds: 3));
+    } catch (_) {
+      // Best-effort.
     }
   }
 
@@ -339,44 +402,39 @@ class JustAudioController extends BaseAudioHandler
     final safeIndex = startIndex.clamp(0, songs.length - 1);
     _queueTransition = true;
     _wantPlayback = true;
-    // Bind the refs before touching the engine so the index reported by any
-    // engine event after setAudioSources always resolves against the queue it
-    // belongs to, never the previous one.
-    _queueRefs = List.unmodifiable(songs);
+    // Rotate so the selected song is at the front (it becomes the current
+    // song at #1). If shuffle is on, keep the current first and shuffle the
+    // rest — the display, the Dart state and the engine all share this one
+    // ordering, so playback always follows the shown queue.
+    final ordered = currentFirst(songs, safeIndex) ?? List.of(songs);
+    final currentFirstList = List.of(ordered);
+    if (_shuffleEnabled && currentFirstList.length > 1) {
+      final first = currentFirstList.first;
+      final rest = (currentFirstList.sublist(1).toList()..shuffle());
+      _queueRefs = List.unmodifiable([first, ...rest]);
+    } else {
+      _queueRefs = List.unmodifiable(currentFirstList);
+    }
     _queueRevision++;
     try {
-      // The stop is a request, not a gate: just_audio's stop()-then-setAudioSources
-      // ordering only matters for the engine's internal sequence swap, which
-      // setAudioSources performs anyway. Stopping is dispatched (never awaited)
-      // because awaiting a just_audio engine call here can hang the whole
-      // transition, stranding the player in [_queueTransition] with emissions
-      // suppressed — the same hazard class as the play() hang.
-      unawaited(_player.stop());
-      await _player.setAudioSources([
-        for (final s in songs) _sourceFor(s),
-      ], initialIndex: safeIndex);
+      // Bind the refs before touching the engine so the index reported by any
+      // engine event always resolves against the queue it belongs to.
+      await _player.setAudioSource(_sourceFor(_queueRefs.first));
       if (gen != _playGeneration) {
         return;
       }
       await _syncQueueMetadata();
       // just_audio's [play] future can hang even though the engine starts and
       // runs normally (position stream keeps advancing). Awaiting it would
-      // strand the transition in [_queueTransition] and freeze every later
-      // [emit]. Dispatch instead; the engine's own event streams drive the
-      // snapshots.
+      // strand the transition and freeze every later [emit]. Dispatch instead;
+      // the engine's own event streams drive the snapshots.
       unawaited(_player.play());
       _schedulePersist(immediate: true);
     } finally {
-      // Only the winning generation clears the transition flag and emits the
-      // final coherent snapshot; a superseded call (gen) leaves the flag set so
-      // the newer transition keeps suppressing transient emissions.
+      // Only the winning generation clears the transition flag and emits.
       if (gen == _playGeneration) {
         _queueTransition = false;
         _emit();
-        // Record the first-play AFTER the transition lifts: called inside the
-        // transition it would be gated out, so the first track of a tap-to-play
-        // never incremented stats. Skip when the loaded item could not be
-        // prepared (engine idle) so broken files are never counted as plays.
         if (_player.processingState != ProcessingState.idle) {
           _maybeRecordStat(_currentRef());
         }
@@ -444,26 +502,104 @@ class JustAudioController extends BaseAudioHandler
   }
 
   @override
-  Future<void> next() => _player.seekToNext();
+  Future<void> next() => _advance(manual: true, backward: false);
 
   @override
-  Future<void> previous() => _player.seekToPrevious();
+  Future<void> previous() async {
+    // If we're more than ~3s into the current song, restart it rather than
+    // jumping songs (standard transport behaviour). A single-source engine has
+    // no "previous sequence index", so the only way back is to restart the
+    // current song or replay from this first-position view.
+    if (_player.position > const Duration(seconds: 3)) {
+      await _player.seek(Duration.zero);
+      return;
+    }
+    await _advance(manual: true, backward: true);
+  }
+
+  /// Moves forward/back one logical track in the current-first queue and plays
+  /// the new #1. A manual skip never removes a song (only a natural Repeat-Off
+  /// finish removes); the departed song simply wraps to the end so the queue
+  /// stays a rotation and current stays at #1.
+  Future<void> _advance({required bool manual, required bool backward}) async {
+    _wantPlayback = true;
+    if (_queueRefs.isEmpty) {
+      return;
+    }
+    if (_queueRefs.length == 1) {
+      // Only one song: going "next" restarts it (a single-track Repeat All
+      // behaves like a self-loop); there is nothing else to advance to.
+      await _player.seek(Duration.zero);
+      unawaited(_player.play());
+      return;
+    }
+    _queueTransition = true;
+    try {
+      // Rotate the current song (index 0) coherently: forward moves it to the
+      // end, backward brings the last song to the front. Either way a new song
+      // lands at index 0 and becomes current. A manual skip never removes a
+      // song (only a natural Repeat-Off finish removes), so the queue stays a
+      // rotation and current stays at #1.
+      _queueRefs = List.unmodifiable(
+        backward ? rotateBackward(_queueRefs) : rotateForward(_queueRefs),
+      );
+      _queueRevision++;
+      _schedulePersist(immediate: true);
+      await _loadCurrent();
+      unawaited(_player.play());
+    } finally {
+      _queueTransition = false;
+      _emit();
+      _maybeRecordStat(_currentRef());
+    }
+  }
 
   @override
   Future<void> jumpTo(int index) async {
-    final length = _player.sequence.length;
-    if (index < 0 || index >= length) {
+    if (index < 0 || index >= _queueRefs.length) {
       return;
     }
     _wantPlayback = true;
-    await _player.seek(Duration.zero, index: index);
-    unawaited(_player.play());
+    if (index == 0) {
+      // Already current; just make sure it keeps playing.
+      unawaited(_player.play());
+      return;
+    }
+    _queueTransition = true;
+    try {
+      _queueRefs = List.unmodifiable(currentFirst(_queueRefs, index)!);
+      _queueRevision++;
+      _schedulePersist(immediate: true);
+      await _loadCurrent();
+      unawaited(_player.play());
+    } finally {
+      _queueTransition = false;
+      _emit();
+      _maybeRecordStat(_currentRef());
+    }
   }
 
   @override
   Future<void> enqueue(SongRef song) async {
-    await _player.addAudioSource(_sourceFor(song));
-    _queueRefs = [..._queueRefs, song];
+    if (_queueRefs.isEmpty) {
+      // First song: load it as the current.
+      _queueRefs = List.unmodifiable([song]);
+      _queueRevision++;
+      _wantPlayback = true;
+      _queueTransition = true;
+      try {
+        await _loadCurrent();
+        unawaited(_player.play());
+      } finally {
+        _queueTransition = false;
+        _emit();
+      }
+      await _syncQueueMetadata();
+      _broadcastQueueChange();
+      _schedulePersist(immediate: true);
+      return;
+    }
+    _queueRefs = List.unmodifiable([..._queueRefs, song]);
     await _syncQueueMetadata();
     _broadcastQueueChange();
     _schedulePersist(immediate: true);
@@ -471,12 +607,11 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> playNext(SongRef song) async {
-    final index = _player.sequenceState.currentIndex ?? -1;
-    final insertAt = (index + 1).clamp(0, _player.sequence.length);
-    await _player.insertAudioSource(insertAt, _sourceFor(song));
-    final updated = [..._queueRefs];
-    updated.insert(insertAt.clamp(0, updated.length), song);
-    _queueRefs = List.unmodifiable(updated);
+    if (_queueRefs.isEmpty) {
+      return enqueue(song);
+    }
+    // Insert immediately after the current-first track (index 0 → insert at 1).
+    _queueRefs = List.unmodifiable(insertNext(_queueRefs, song));
     await _syncQueueMetadata();
     _broadcastQueueChange();
     _schedulePersist(immediate: true);
@@ -484,36 +619,80 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> removeAt(int index) async {
-    final length = _player.sequence.length;
-    if (index < 0 || index >= length) {
+    if (index < 0 || index >= _queueRefs.length) {
       return;
     }
-    await _player.removeAudioSourceAt(index);
-    _queueRefs = [
+    final removedCurrent = index == 0;
+    _queueRefs = List.unmodifiable([
       for (var i = 0; i < _queueRefs.length; i++)
         if (i != index) _queueRefs[i],
-    ];
+    ]);
+    _queueRevision++;
+    _schedulePersist(immediate: true);
+    if (removedCurrent) {
+      // The next item becomes current. If the queue emptied, stop.
+      if (_queueRefs.isEmpty) {
+        _wantPlayback = false;
+        _queueTransition = true;
+        try {
+          await _clearEngine();
+        } finally {
+          _queueTransition = false;
+          _emit();
+        }
+      } else {
+        _queueTransition = true;
+        try {
+          await _loadCurrent();
+          if (_wantPlayback) {
+            unawaited(_player.play());
+          }
+        } finally {
+          _queueTransition = false;
+          _emit();
+        }
+      }
+    }
     await _syncQueueMetadata();
     _broadcastQueueChange();
-    _schedulePersist(immediate: true);
   }
 
   @override
   Future<void> move(int fromIndex, int toIndex) async {
-    final length = _player.sequence.length;
+    final length = _queueRefs.length;
     if (fromIndex < 0 ||
         toIndex < 0 ||
         fromIndex >= length ||
         toIndex >= length) {
       return;
     }
-    await _player.moveAudioSource(fromIndex, toIndex);
-    final updated = [..._queueRefs];
-    final moved = updated.removeAt(fromIndex);
-    updated.insert(toIndex, moved);
+    if (fromIndex == toIndex) {
+      return;
+    }
+    final currentKey = _queueRefs.first.identityKey;
+    final updated = moveCurrentFirst(_queueRefs, fromIndex, toIndex);
+    if (updated == null) {
+      return;
+    }
     _queueRefs = List.unmodifiable(updated);
-    _broadcastQueueChange();
+    _queueRevision++;
     _schedulePersist(immediate: true);
+    _broadcastQueueChange();
+
+    // If a different song became current, load and play it.
+    final newCurrent = _queueRefs.first.identityKey;
+    if (newCurrent != currentKey) {
+      _wantPlayback = true;
+      _queueTransition = true;
+      try {
+        await _loadCurrent();
+        unawaited(_player.play());
+      } finally {
+        _queueTransition = false;
+        _emit();
+        _maybeRecordStat(_currentRef());
+      }
+    }
   }
 
   @override
@@ -523,17 +702,15 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> clearQueue() async {
-    final currentIndex = _player.sequenceState.currentIndex ?? 0;
-    final currentRef = currentIndex < _queueRefs.length
-        ? _queueRefs[currentIndex]
-        : null;
-
-    if (currentRef != null) {
-      await _player.setAudioSources([_sourceFor(currentRef)], initialIndex: 0);
-      _queueRefs = List.unmodifiable([currentRef]);
-      _broadcastQueueChange();
-      _schedulePersist(immediate: true);
+    if (_queueRefs.isEmpty) {
+      return;
     }
+    // Keep only the current-first song.
+    _queueRefs = List.unmodifiable([_queueRefs.first]);
+    _queueRevision++;
+    await _syncQueueMetadata();
+    _broadcastQueueChange();
+    _schedulePersist(immediate: true);
   }
 
   @override
@@ -547,42 +724,43 @@ class JustAudioController extends BaseAudioHandler
     // Clear the UI state unconditionally, before touching the engine: the
     // sequence must never linger as an orphan AudioTrack playing with no UI.
     _queueRevision++;
+    ++_playGeneration;
     _schedulePersist(immediate: true);
     _emit();
-    // Stop first: this reliably releases the audio sink. Clearing the sequence
-    // while playback is active is what wedges the platform thread on some
-    // devices (ExoPlayer eagerly loads the first item to preload), leaving the
-    // old queue decoding in the background with no UI — the observed raster
-    // lockup / orphan-track class. Correct order is stop, then empty swap.
-    try {
-      await _player.stop().timeout(const Duration(seconds: 3));
-    } catch (_) {
-      // The engine settles on its own; never let a stalled stop block the UI.
-    }
-    try {
-      await _player
-          .setAudioSources(const [])
-          .timeout(const Duration(seconds: 3));
-    } catch (_) {
-      // Best-effort: the queue snapshot is already empty, so the next playQueue
-      // rebuilds the engine state from scratch regardless.
-    }
+    await _clearEngine();
   }
 
   @override
   Future<void> setShuffle(bool enabled) async {
-    await _player.setShuffleModeEnabled(enabled);
+    _shuffleEnabled = enabled;
+    // Never engage just_audio's own shuffle: it would create a second, hidden
+    // ordering. Shuffling happens solely on [_queueRefs]; the engine's
+    // shuffle flag is left off.
+    await _player.setShuffleModeEnabled(false);
+    // Re-order the queue: current stays at #1, the rest shuffle. When toggling
+    // off, restore a simple current-first order (drop the previous shuffle
+    // permutation: current + the rest in their remaining order).
+    if (_shuffleEnabled && _queueRefs.length > 1) {
+      final first = _queueRefs.first;
+      final rest = (_queueRefs.sublist(1).toList()..shuffle());
+      _queueRefs = List.unmodifiable([first, ...rest]);
+    }
+    _queueRevision++;
+    _broadcastQueueChange();
     _schedulePersist(immediate: true);
   }
 
   @override
   Future<void> setRepeat(RepeatMode mode) async {
-    await _player.setLoopMode(switch (mode) {
-      RepeatMode.off => LoopMode.off,
-      RepeatMode.all => LoopMode.all,
-      RepeatMode.one => LoopMode.one,
-    });
+    _repeatMode = mode;
+    // Engine loop only matters for Repeat One (repeat the single loaded source
+    // in place). Repeat All is implemented by rotating [_queueRefs] on finish,
+    // so the engine is left off.
+    await _player.setLoopMode(
+      mode == RepeatMode.one ? LoopMode.one : LoopMode.off,
+    );
     _schedulePersist(immediate: true);
+    _emit();
   }
 
   @override
@@ -838,14 +1016,10 @@ class JustAudioController extends BaseAudioHandler
   }
 
   SongRef? _currentRef() {
-    final index = _player.sequenceState.currentIndex;
-    if (index == null || index < 0) {
+    if (_queueRefs.isEmpty) {
       return null;
     }
-    if (index >= _queueRefs.length) {
-      return null;
-    }
-    return _queueRefs[index];
+    return _queueRefs.first;
   }
 
   MediaItem _mediaItemFor(SongRef song) {
@@ -884,10 +1058,9 @@ class JustAudioController extends BaseAudioHandler
       return;
     }
     final state = _player.processingState;
-    // During a preload:false restore the engine is idle while a known queue is
-    // loaded — report READY so the UI and media session never claim NONE for a
-    // track that exists. Only a genuinely empty engine is truly idle.
-    final hasKnownQueue = _player.sequence.isNotEmpty;
+    // A known queue (even while the single source is being prepared) is never
+    // reported as idle: only a genuinely empty queue is truly idle.
+    final hasKnownQueue = _queueRefs.isNotEmpty;
     final status = switch (state) {
       ProcessingState.idle when hasKnownQueue => PlayerStatus.ready,
       ProcessingState.idle => PlayerStatus.idle,
@@ -896,18 +1069,14 @@ class JustAudioController extends BaseAudioHandler
       ProcessingState.ready => PlayerStatus.ready,
       ProcessingState.completed => PlayerStatus.ready,
     };
-    final seq = _player.sequenceState;
     final next = PlayerSnapshot(
       status: status,
       isPlaying: _player.playing,
-      repeatMode: switch (_player.loopMode) {
-        LoopMode.off => RepeatMode.off,
-        LoopMode.all => RepeatMode.all,
-        LoopMode.one => RepeatMode.one,
-      },
-      shuffleEnabled: _player.shuffleModeEnabled,
-      queueLength: _player.sequence.length,
-      currentIndex: seq.currentIndex ?? -1,
+      repeatMode: _repeatMode,
+      shuffleEnabled: _shuffleEnabled,
+      // Current-first: the playing song is always at index 0.
+      queueLength: _queueRefs.length,
+      currentIndex: _queueRefs.isEmpty ? -1 : 0,
       durationMs: _player.duration?.inMilliseconds ?? 0,
       queueRevision: _queueRevision,
       current: _currentRef(),
@@ -939,9 +1108,9 @@ class JustAudioController extends BaseAudioHandler
 
   void _broadcastSystemState() {
     final state = _player.processingState;
-    // Mirror _emit: a restored-but-unloaded queue is READY, not idle, so the
-    // system media session never reports NONE for an existing track.
-    final hasKnownQueue = _player.sequence.isNotEmpty;
+    // Mirror _emit: a known queue (even while the single source is being
+    // prepared) is never reported idle.
+    final hasKnownQueue = _queueRefs.isNotEmpty;
     final processing = switch (state) {
       ProcessingState.idle when hasKnownQueue => AudioProcessingState.ready,
       ProcessingState.idle => AudioProcessingState.idle,
@@ -950,12 +1119,15 @@ class JustAudioController extends BaseAudioHandler
       ProcessingState.ready => AudioProcessingState.ready,
       ProcessingState.completed => AudioProcessingState.completed,
     };
+    // Prev/next on the system transport reflect the current-first queue: a skip
+    // is possible whenever there is more than one song (or Repeat All loops).
+    final canStep = _queueRefs.length > 1 || _repeatMode == RepeatMode.all;
     playbackState.add(
       playbackState.value.copyWith(
         controls: [
-          if (_player.hasPrevious) MediaControl.skipToPrevious,
+          if (canStep) MediaControl.skipToPrevious,
           if (_player.playing) MediaControl.pause else MediaControl.play,
-          if (_player.hasNext) MediaControl.skipToNext,
+          if (canStep) MediaControl.skipToNext,
         ],
         systemActions: const {MediaAction.seek},
         processingState: processing,
@@ -963,7 +1135,7 @@ class JustAudioController extends BaseAudioHandler
         updatePosition: _player.position,
         bufferedPosition: _player.bufferedPosition,
         speed: _player.speed,
-        queueIndex: _player.sequenceState.currentIndex,
+        queueIndex: _queueRefs.isEmpty ? -1 : 0,
       ),
     );
   }
@@ -1005,14 +1177,10 @@ class JustAudioController extends BaseAudioHandler
           for (final r in _queueRefs)
             if (r.identityKey.isNotEmpty) r.identityKey,
         ],
-        index: _player.sequenceState.currentIndex ?? 0,
+        index: 0,
         positionMs: _player.position.inMilliseconds,
-        shuffleEnabled: _player.shuffleModeEnabled,
-        repeatMode: switch (_player.loopMode) {
-          LoopMode.all => RepeatMode.all,
-          LoopMode.one => RepeatMode.one,
-          LoopMode.off => RepeatMode.off,
-        },
+        shuffleEnabled: _shuffleEnabled,
+        repeatMode: _repeatMode,
       );
       await _persistence.write(_kSnapshotKey, snapshot.toJson());
     } catch (e) {
@@ -1038,7 +1206,9 @@ class JustAudioController extends BaseAudioHandler
       if (songs.isEmpty) {
         return;
       }
-      // Preserve saved ordering where possible.
+      // Preserve saved ordering where possible, rotating so the saved current
+      // index lands at the front (current-first invariant). Newer snapshots
+      // persist index 0 already; older ones may point elsewhere.
       final byKey = {for (final s in songs) s.identityKey: s};
       final ordered = [
         for (final k in saved.identityKeys)
@@ -1048,35 +1218,35 @@ class JustAudioController extends BaseAudioHandler
         return;
       }
       final index = saved.index.clamp(0, ordered.length - 1);
-      _queueRefs = List.unmodifiable(ordered);
-      await _player.setAudioSources(
-        [for (final s in ordered) _sourceFor(s)],
+      final rotated = [
+        for (var i = 0; i < ordered.length; i++)
+          ordered[(index + i) % ordered.length],
+      ];
+      _queueRefs = List.unmodifiable(rotated);
+      _shuffleEnabled = saved.shuffleEnabled;
+      _repeatMode = saved.repeatMode;
+      await _player.setAudioSource(
+        _sourceFor(_queueRefs.first),
         preload: false,
-        initialIndex: index,
         initialPosition: Duration(milliseconds: saved.positionMs),
       );
-      // A preload:false restore leaves the engine idle: no item is loaded, the
-      // saved position is never applied, and (because processingState stays
-      // idle) the media session broadcasts NONE with position 0 while the
-      // restored queue hides a real current track — the "Continue Listening
-      // shows NONE" defect. Seek to the saved index to load that item headfully
-      // (without starting playback), which applies the saved position and puts
-      // the engine in READY/PAUSED so lock-screen/notification controls and the
-      // player UI agree with the restored queue.
-      await _player.seek(
-        Duration(milliseconds: saved.positionMs),
-        index: index,
+      // A preload:false restore leaves the engine idle with the position not
+      // applied. Seek to load the current track headfully (without starting
+      // playback) so the media session and player UI agree with the queue.
+      await _player.seek(Duration(milliseconds: saved.positionMs));
+      // Engine never uses native shuffle; reflect the restored state only.
+      await _player.setShuffleModeEnabled(false);
+      await _player.setLoopMode(
+        _repeatMode == RepeatMode.one ? LoopMode.one : LoopMode.off,
       );
-      await _player.setShuffleModeEnabled(saved.shuffleEnabled);
-      await setRepeat(saved.repeatMode);
       await _syncQueueMetadata();
-      final restoredRef = index < ordered.length ? ordered[index] : null;
+      final restoredRef = _queueRefs.isEmpty ? null : _queueRefs.first;
       if (restoredRef != null) {
         _statLastKey = restoredRef.identityKey;
       }
       _queueRevision++;
       debugPrint(
-        'VoraTube restored queue (${ordered.length} tracks @ '
+        'VoraTube restored queue (${_queueRefs.length} tracks @ '
         '${saved.positionMs}ms)',
       );
     } catch (e) {
