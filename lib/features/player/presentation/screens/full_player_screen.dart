@@ -536,15 +536,25 @@ class _TopBar extends ConsumerWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // When inactive the pill is a plain 48px circular button
+                  // centred on the icon; when active it becomes a pill showing
+                  // the icon and the live countdown side by side with explicit
+                  // spacing so neither ever overlaps the other.
                   SizedBox(
-                    width: timerActive ? 0 : 48,
-                    child: Icon(
-                      Icons.bedtime_rounded,
-                      size: 22,
-                      color: timerActive
-                          ? colorScheme.primary
-                          : colorScheme.onSurfaceVariant,
-                    ),
+                    width: timerActive ? null : 48,
+                    child: timerActive
+                        ? Icon(
+                            Icons.bedtime_rounded,
+                            size: 22,
+                            color: colorScheme.primary,
+                          )
+                        : Center(
+                            child: Icon(
+                              Icons.bedtime_rounded,
+                              size: 22,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                   ),
                   if (timerActive) ...[
                     const SizedBox(width: AppTokens.s2),
@@ -555,7 +565,7 @@ class _TopBar extends ConsumerWidget {
                         color: colorScheme.primary,
                       ),
                     ),
-                    const SizedBox(width: AppTokens.s2),
+                    const SizedBox(width: AppTokens.s1),
                   ],
                 ],
               ),

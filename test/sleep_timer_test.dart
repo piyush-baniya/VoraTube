@@ -456,6 +456,53 @@ void main() {
       expect(controller.state.isInactive, isTrue);
     });
 
+    testWidgets(
+      'custom option lets the user set a sub-minute duration and start it',
+      (tester) async {
+        final player = FakePlayerController();
+        final controller = SleepTimerController(
+          player: player,
+          persistence: _MemoryPersistence(),
+        );
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              playerProvider.overrideWithValue(player),
+              sleepTimerProvider.overrideWith((ref) => controller),
+            ],
+            child: const MaterialApp(home: Scaffold(body: SizedBox())),
+          ),
+        );
+        showSleepTimerSheet(tester.element(find.byType(Scaffold)));
+        await tester.pumpAndSettle();
+
+        // The Custom chip exposes minute and second fields.
+        await tester.tap(find.text('Custom'));
+        await tester.pumpAndSettle();
+        expect(find.text('Minutes'), findsOneWidget);
+        expect(find.text('Seconds'), findsOneWidget);
+
+        // Enter 1 minute 30 seconds and confirm the preview updates.
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Minutes'),
+          '1',
+        );
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Seconds'),
+          '30',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Custom: 01:30'), findsOneWidget);
+
+        await tester.tap(find.text('Start timer'));
+        await tester.pumpAndSettle();
+
+        expect(controller.state.isActive, isTrue);
+        expect(controller.state.remaining, const Duration(minutes: 1, seconds: 30));
+      },
+    );
+
     testWidgets('sheet shows a countdown and turn-off button when active', (
       tester,
     ) async {

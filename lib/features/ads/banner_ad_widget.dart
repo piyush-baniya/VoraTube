@@ -40,9 +40,6 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
   @override
   void initState() {
     super.initState();
-    ref.listen(isPremiumProvider, (previous, next) {
-      _handlePremiumChange(next);
-    });
     if (!_premiumActive) {
       _loadAd();
     }
@@ -118,6 +115,9 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
   @override
   Widget build(BuildContext context) {
     final premium = ref.watch(isPremiumProvider);
+    ref.listen<bool>(isPremiumProvider, (previous, next) {
+      _handlePremiumChange(next);
+    });
     if (premium || _loadFailed) {
       // Premium active, or the ad failed to load: collapse to nothing so we
       // neither show ads nor reserve a blank area.

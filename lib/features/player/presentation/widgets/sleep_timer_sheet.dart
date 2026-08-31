@@ -39,6 +39,34 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   /// The user's currently selected preset while the timer is inactive.
   Duration _selected = kSleepTimerPresets[1];
 
+  /// Whether the user chose "Custom" (and is entering a manual duration).
+  bool _isCustom = false;
+
+  final TextEditingController _customMinutes = TextEditingController();
+  final TextEditingController _customSeconds = TextEditingController();
+
+  /// The parsed custom duration, or null when the input is invalid/empty.
+  Duration? get _customDuration {
+    final minutes = int.tryParse(_customMinutes.text.trim()) ?? 0;
+    final seconds = int.tryParse(_customSeconds.text.trim()) ?? 0;
+    if (minutes < 0 || seconds < 0) return null;
+    final total = Duration(minutes: minutes, seconds: seconds);
+    if (total <= Duration.zero) return null;
+    return total > SleepTimerController.maxDuration
+        ? SleepTimerController.maxDuration
+        : total;
+  }
+
+  /// The duration the Start/Restart button will use.
+  Duration get _chosen => _isCustom ? (_customDuration ?? _selected) : _selected;
+
+  @override
+  void dispose() {
+    _customMinutes.dispose();
+    _customSeconds.dispose();
+    super.dispose();
+  }
+
   Future<void> _start(Duration d) async {
     await ref.read(sleepTimerProvider.notifier).start(d);
     if (mounted) Navigator.of(context).pop();
@@ -106,6 +134,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
     ColorScheme colorScheme,
     SleepTimerState state,
   ) {
+    final custom = _customDuration;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -132,19 +161,76 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
                 avatar: Icon(
                   Icons.bedtime_rounded,
                   size: 16,
-                  color: d == _selected
+                  color: d == _chosen
                       ? colorScheme.onSecondaryContainer
                       : colorScheme.onSurfaceVariant,
                 ),
                 label: Text(_presetLabel(d)),
-                onSelected: (_) => setState(() => _selected = d),
-                selected: d == _selected,
+                onSelected: (_) => setState(() {
+                  _selected = d;
+                  _isCustom = false;
+                }),
+                selected: !_isCustom && d == _selected,
               ),
+            ChoiceChip(
+              avatar: const Icon(Icons.tune_rounded, size: 16),
+              label: const Text('Custom'),
+              onSelected: (_) => setState(() => _isCustom = true),
+              selected: _isCustom,
+            ),
           ],
         ),
+        if (_isCustom) ...[
+          const SizedBox(height: AppTokens.s5),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _customMinutes,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Minutes',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Expanded(
+                child: TextField(
+                  controller: _customSeconds,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Seconds',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTokens.s2),
+          Text(
+            custom == null
+                ? 'Enter a duration greater than zero.'
+                : 'Custom: ${formatSleepTimer(custom)}'
+                      '${custom >= SleepTimerController.maxDuration ? ' (max 6 h)' : ''}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: custom == null
+                  ? colorScheme.error
+                  : colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         const SizedBox(height: AppTokens.s6),
         FilledButton.icon(
-          onPressed: () => _start(_selected),
+          onPressed: () {
+            if (_isCustom && custom == null) return;
+            _start(_chosen);
+          },
           icon: const Icon(Icons.refresh_rounded),
           label: const Text('Restart'),
         ),
@@ -162,6 +248,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   }
 
   Widget _buildInactive(ThemeData theme, ColorScheme colorScheme) {
+    final custom = _customDuration;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -180,12 +267,65 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
             for (final d in kSleepTimerPresets)
               ChoiceChip(
                 label: Text(_presetLabel(d)),
-                onSelected: (_) => setState(() => _selected = d),
-                selected: d == _selected,
+                onSelected: (_) => setState(() {
+                  _selected = d;
+                  _isCustom = false;
+                }),
+                selected: !_isCustom && d == _selected,
               ),
+            ChoiceChip(
+              avatar: const Icon(Icons.tune_rounded, size: 16),
+              label: const Text('Custom'),
+              onSelected: (_) => setState(() => _isCustom = true),
+              selected: _isCustom,
+            ),
           ],
         ),
-        if (_selected > kSleepTimerPresets.last) ...[
+        if (_isCustom) ...[
+          const SizedBox(height: AppTokens.s5),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _customMinutes,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Minutes',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Expanded(
+                child: TextField(
+                  controller: _customSeconds,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Seconds',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTokens.s2),
+          Text(
+            custom == null
+                ? 'Enter a duration greater than zero.'
+                : 'Custom: ${formatSleepTimer(custom)}'
+                      '${custom >= SleepTimerController.maxDuration ? ' (max 6 h)' : ''}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: custom == null
+                  ? colorScheme.error
+                  : colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ] else if (_selected > kSleepTimerPresets.last) ...[
           const SizedBox(height: AppTokens.s2),
           Text(
             'Custom: ${formatSleepTimer(_selected)}',
@@ -196,7 +336,10 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
         ],
         const SizedBox(height: AppTokens.s6),
         FilledButton.icon(
-          onPressed: () => _start(_selected),
+          onPressed: () {
+            if (_isCustom && custom == null) return;
+            _start(_chosen);
+          },
           icon: const Icon(Icons.bedtime_rounded),
           label: const Text('Start timer'),
         ),
