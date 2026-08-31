@@ -35,10 +35,19 @@ class RotatingArtwork extends ConsumerStatefulWidget {
   final double borderRadius;
 
   @override
-  ConsumerState<RotatingArtwork> createState() => _RotatingArtworkState();
+  ConsumerState<RotatingArtwork> createState() => RotatingArtworkState();
 }
 
-class _RotatingArtworkState extends ConsumerState<RotatingArtwork>
+/// Test-only observation of the rotation controller, so widget tests can
+/// assert the disc keeps spinning across a song change without reaching into
+/// private state.
+abstract final class RotatingArtworkDebug {
+  static bool isRotating(GlobalKey<RotatingArtworkState> key) =>
+      key.currentState != null &&
+      key.currentState!._rotationController.isAnimating;
+}
+
+class RotatingArtworkState extends ConsumerState<RotatingArtwork>
     with TickerProviderStateMixin {
   late final AnimationController _rotationController;
   late final AnimationController _glowController;
@@ -65,7 +74,17 @@ class _RotatingArtworkState extends ConsumerState<RotatingArtwork>
   void didUpdateWidget(RotatingArtwork oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.path != widget.path) {
+      // reset() sets the value back to the lower bound, which internally
+      // STOPS a repeating controller. Restarting only on a play/pause flip
+      // (the old behaviour) meant a track change while playing froze the
+      // disc until the user paused and resumed. Restart here whenever the
+      // disc was spinning before the song changed.
+      final wasSpinning = _rotationController.isAnimating;
       _rotationController.reset();
+      if (wasSpinning && rotatingArtworkEnabled) {
+        _rotationController.repeat();
+        _glowController.repeat(reverse: true);
+      }
     }
     _syncRotationState();
   }
@@ -220,7 +239,7 @@ class _RotatingArtworkImageState extends State<_RotatingArtworkImage>
               widget.size,
               MediaQuery.devicePixelRatioOf(context),
             ),
-            gaplessPlayback: true,
+            gaplessPlayback: false,
             frameBuilder: (context, child, frame, wasLoaded) {
               if (wasLoaded) return child;
               return AnimatedOpacity(
