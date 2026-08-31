@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +20,12 @@ class _FakePermissionService extends PermissionService {
   int requests = 0;
   int settingsOpens = 0;
 
+  /// When set, [requestAudio] completes only after this many pump cycles,
+  /// letting tests observe the in-flight "requesting" state before the result
+  /// lands. Simulates devices where the permission dialog takes time to appear
+  /// and resolve (e.g. Redmi / MIUI / HyperOS).
+  Completer<void>? requestGate;
+
   @override
   Future<MediaPermissionStatus> audioStatus() async {
     statusChecks++;
@@ -27,6 +35,10 @@ class _FakePermissionService extends PermissionService {
   @override
   Future<MediaPermissionStatus> requestAudio() async {
     requests++;
+    final gate = requestGate;
+    if (gate != null) {
+      await gate.future;
+    }
     return status;
   }
 
@@ -242,4 +254,61 @@ void main() {
     expect(find.byKey(_mainAppProbe), findsNothing);
     _resetPlatform();
   });
+
+  testWidgets(
+    '11. slow permission response shows requesting state, does not scan prematurely',
+    (tester) async {
+      final service = _FakePermissionService(
+        status: MediaPermissionStatus.denied,
+      );
+      final gate = Completer<void>();
+      service.requestGate = gate;
+      await _pumpGate(tester, service);
+
+      expect(find.text('Allow access to music'), findsOneWidget);
+
+      // Pending request: button is disabled and shows a progress indicator, but
+      // the app must NOT enter the main app (pending != denied != granted).
+      await tester.tap(find.text('Allow access to music'));
+      await tester.pump();
+
+      expect(service.requests, 1);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Allow access to music'), findsNothing);
+      // Still not granted while the request is pending.
+      expect(find.byKey(_mainAppProbe), findsNothing);
+
+      // Tapping again while pending must not enqueue a duplicate request.
+      await tester.tap(
+        find.byType(CircularProgressIndicator),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      expect(service.requests, 1);
+
+      // Resolve the pending request -> granted -> main app appears.
+      service.status = MediaPermissionStatus.granted;
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(_mainAppProbe), findsOneWidget);
+      expect(service.requests, 1);
+
+      service.requestGate = null;
+      _resetPlatform();
+    },
+  );
+
+  testWidgets(
+    '12. permanent denial does not show requesting during settings flow',
+    (tester) async {
+      final service = _FakePermissionService(
+        status: MediaPermissionStatus.permanentlyDenied,
+      );
+      await _pumpGate(tester, service);
+
+      expect(find.text('Open settings'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      _resetPlatform();
+    },
+  );
 }

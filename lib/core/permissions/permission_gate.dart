@@ -39,6 +39,14 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
   /// returns to the foreground with permission still granted.
   bool _initialScanTriggered = false;
 
+  /// True while a permission request dialog is in flight.
+  ///
+  /// Prevents duplicate taps and avoids _refresh() racing with an in-progress
+  /// request (which could momentarily reset the gate back to "denied" on
+  /// devices where the system dialog takes longer to appear, e.g. Redmi /
+  /// MIUI / HyperOS).
+  bool _requesting = false;
+
   @override
   void initState() {
     super.initState();
@@ -58,7 +66,13 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
     // foreground. This covers returning from the system Settings after the
     // user toggles audio access, and externally revoked permissions. We
     // deliberately do not cache/go off a stored boolean.
-    if (state == AppLifecycleState.resumed) {
+    //
+    // Skip the re-check while a permission request dialog is still in flight:
+    // _request() will handle the result when the dialog completes, and a
+    // mid-request refresh could momentarily reset the gate to "denied" on
+    // devices where the system dialog takes longer to appear (e.g. Redmi /
+    // MIUI / HyperOS).
+    if (state == AppLifecycleState.resumed && !_requesting) {
       _refresh();
     }
   }
@@ -85,14 +99,18 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
   }
 
   Future<void> _request() async {
+    if (_requesting) return;
+    setState(() => _requesting = true);
     final service = ref.read(permissionServiceProvider);
     final MediaPermissionStatus status;
     try {
       status = await service.requestAudio();
     } catch (_) {
+      if (mounted) setState(() => _requesting = false);
       return;
     }
     if (!mounted) return;
+    setState(() => _requesting = false);
     _apply(status);
   }
 
@@ -143,10 +161,12 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
       _GateStatus.granted => widget.child,
       _GateStatus.denied => _PermissionRequiredScreen(
         permanentlyDenied: false,
+        requesting: _requesting,
         onAllow: _request,
       ),
       _GateStatus.permanentlyDenied => _PermissionRequiredScreen(
         permanentlyDenied: true,
+        requesting: _requesting,
         onAllow: _request,
         onOpenSettings: _openSettings,
       ),
@@ -178,11 +198,13 @@ class _PermissionSplash extends StatelessWidget {
 class _PermissionRequiredScreen extends StatelessWidget {
   const _PermissionRequiredScreen({
     required this.permanentlyDenied,
+    required this.requesting,
     required this.onAllow,
     this.onOpenSettings,
   });
 
   final bool permanentlyDenied;
+  final bool requesting;
   final VoidCallback onAllow;
   final VoidCallback? onOpenSettings;
 
@@ -253,7 +275,9 @@ class _PermissionRequiredScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 32),
                     PressableScale(
-                      onTap: permanentlyDenied ? onOpenSettings : onAllow,
+                      onTap: requesting
+                          ? null
+                          : (permanentlyDenied ? onOpenSettings : onAllow),
                       child: Container(
                         constraints: const BoxConstraints(minWidth: 240),
                         padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -270,30 +294,40 @@ class _PermissionRequiredScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(26),
                         ),
                         alignment: Alignment.center,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              permanentlyDenied
-                                  ? Icons.settings_rounded
-                                  : Icons.lock_open_rounded,
-                              size: 20,
-                              color: colorScheme.onPrimary,
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                permanentlyDenied
-                                    ? 'Open settings'
-                                    : 'Allow access to music',
-                                style: theme.textTheme.labelLarge?.copyWith(
+                        child: requesting
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
                                   color: colorScheme.onPrimary,
-                                  fontWeight: FontWeight.w700,
                                 ),
+                              )
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    permanentlyDenied
+                                        ? Icons.settings_rounded
+                                        : Icons.lock_open_rounded,
+                                    size: 20,
+                                    color: colorScheme.onPrimary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text(
+                                      permanentlyDenied
+                                          ? 'Open settings'
+                                          : 'Allow access to music',
+                                      style: theme.textTheme.labelLarge
+                                          ?.copyWith(
+                                            color: colorScheme.onPrimary,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                   ],
