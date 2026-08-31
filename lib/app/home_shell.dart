@@ -9,6 +9,8 @@ import '../features/playlists/presentation/screens/playlists_screen.dart';
 import '../features/player/presentation/widgets/mini_player.dart';
 import '../features/search/presentation/screens/search_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
+import '../features/player/presentation/providers/sleep_timer_provider.dart';
+import '../features/player/presentation/widgets/sleep_timer_sheet.dart';
 import 'widgets/glass_nav_bar.dart';
 
 /// The app shell: a tabbed scaffold with a persistent [MiniPlayer].
@@ -28,7 +30,8 @@ class HomeShell extends ConsumerStatefulWidget {
   ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends ConsumerState<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell>
+    with WidgetsBindingObserver {
   static const int _libraryIndex = 1;
 
   /// The nested navigator hosting tab content and every pushed detail route.
@@ -40,9 +43,15 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// without rebuilding either subtree on unrelated shell changes.
   final ValueNotifier<int> _tabIndex = ValueNotifier<int>(0);
 
+  /// Guards against showing the sleep-timer-finished popup more than once for
+  /// the same finished episode (e.g. if the provider flips back to finished
+  /// during a foreground transition).
+  bool _handlingTimerFinished = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // Fire the throttled check once, well after the main UI is on screen.
@@ -53,6 +62,43 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ref.listenManual<UpdatePrompt?>(updateCheckerProvider, (previous, next) {
       if (next == null) return;
       _presentUpdate(next);
+    });
+    // Surface the sleep-timer-finished popup the moment the timer expires
+    // while the app is in the foreground.
+    ref.listenManual<SleepTimerState>(sleepTimerProvider, (previous, next) {
+      if (next.isFinished) _maybeShowSleepTimerFinished();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // If the timer expired while the app was backgrounded or the screen was
+    // off, surface the popup when the user returns to the foreground.
+    if (state == AppLifecycleState.resumed) {
+      _maybeShowSleepTimerFinished();
+    }
+  }
+
+  /// Shows the "Sleep Timer Finished" popup exactly once per finished episode,
+  /// only while the app is actually visible. Dismissing clears the state so it
+  /// never reappears by itself.
+  void _maybeShowSleepTimerFinished() {
+    if (_handlingTimerFinished) return;
+    if (!mounted) return;
+    // Only surface while the app is on screen. If the timer expired while the
+    // app was backgrounded or the screen was off, the lifecycle-resume handler
+    // picks it up on the way back to the foreground — never show into a hidden
+    // UI.
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    if (!ref.read(sleepTimerProvider).isFinished) return;
+    _handlingTimerFinished = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await showSleepTimerFinishedDialog(context);
+      ref.read(sleepTimerProvider.notifier).dismissFinished();
+      _handlingTimerFinished = false;
     });
   }
 
@@ -71,6 +117,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabIndex.dispose();
     super.dispose();
   }

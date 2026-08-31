@@ -18,6 +18,7 @@ import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/ringtone_cutter_screen.dart';
+import '../../../player/presentation/widgets/sleep_timer_sheet.dart';
 import '../../../playlists/presentation/providers/playlist_providers.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../../../smart_music/data/mood_engine.dart';
@@ -43,6 +44,7 @@ enum SongAction {
   shareSong,
   suggestMood,
   setAsRingtone,
+  sleepTimer,
   removeFromPlaylist,
 }
 
@@ -197,6 +199,9 @@ class SongActions {
         break;
       case SongAction.setAsRingtone:
         await _openRingtoneCutter(context, songRef);
+        break;
+      case SongAction.sleepTimer:
+        await showSleepTimerSheet(context);
         break;
       case SongAction.removeFromPlaylist:
         await _removeFromPlaylist(context, ref, song, removeFromPlaylistId);
@@ -942,6 +947,11 @@ class _SongActionSheet extends StatelessWidget {
                     icon: Icons.music_note_rounded,
                     label: 'Set as ringtone',
                     onTap: () => onAction(SongAction.setAsRingtone),
+                  ),
+                  _ActionTile(
+                    icon: Icons.bedtime_rounded,
+                    label: 'Sleep timer',
+                    onTap: () => onAction(SongAction.sleepTimer),
                   ),
                   _ActionTile(
                     icon: Icons.info_outline_rounded,

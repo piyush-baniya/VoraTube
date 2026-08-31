@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../features/player/presentation/providers/player_providers.dart';
+import '../../../../features/player/presentation/providers/sleep_timer_provider.dart';
+import '../../../../features/player/presentation/widgets/sleep_timer_sheet.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
 import 'hidden_songs_screen.dart';
@@ -58,6 +60,7 @@ class _PlaybackSection extends ConsumerWidget {
     return SettingsSection(
       title: 'Playback',
       children: [
+        _SleepTimerTile(),
         SettingsSwitchTile(
           title: 'Shuffle',
           subtitle: 'Play songs in random order',
@@ -93,6 +96,44 @@ class _PlaybackSection extends ConsumerWidget {
           isLastInSection: true,
         ),
       ],
+    );
+  }
+}
+
+/// Sleep Timer tile in the Playback section. Shows a live remaining-time
+/// subtitle while a timer runs and opens the shared Sleep Timer sheet.
+class _SleepTimerTile extends ConsumerWidget {
+  const _SleepTimerTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final active = ref.watch(sleepTimerIsActiveProvider);
+    final remaining = ref.watch(sleepTimerRemainingProvider);
+    return SettingsTile(
+      title: 'Sleep Timer',
+      subtitle: active
+          ? 'Counting down — ${formatSleepTimer(remaining)} remaining'
+          : 'Pause playback automatically after a set time',
+      leading: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: colorScheme.primary.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(AppTokens.rMd),
+        ),
+        child: Icon(
+          Icons.bedtime_rounded,
+          size: 20,
+          color: colorScheme.primary,
+        ),
+      ),
+      trailing: Icon(
+        Icons.chevron_right_rounded,
+        size: 18,
+        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+      ),
+      onTap: () => showSleepTimerSheet(context),
     );
   }
 }

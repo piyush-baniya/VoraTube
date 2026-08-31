@@ -11,9 +11,11 @@ import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../../../player/presentation/widgets/compact_lyrics_panel.dart';
 import '../../../player/presentation/widgets/rotating_artwork.dart';
 import '../providers/player_providers.dart';
+import '../providers/sleep_timer_provider.dart';
 import '../widgets/player_controls.dart';
 import '../widgets/player_progress.dart';
 import '../widgets/queue_sheet.dart';
+import '../widgets/sleep_timer_sheet.dart';
 
 /// Full-screen immersive music player.
 ///
@@ -91,6 +93,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
                           _openPlaylistPicker(current.identityKey),
                       onLyricsTap: () =>
                           setState(() => _showLyrics = !_showLyrics),
+                      onSleepTimerTap: () => showSleepTimerSheet(context),
                       showLyricsActive: _showLyrics,
                       isDark: isDark,
                     ),
@@ -367,7 +370,10 @@ class _ImmersiveBackgroundState extends ConsumerState<_ImmersiveBackground>
                         height: MediaQuery.sizeOf(context).width * 1.2,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          border: Border.all(color: colorScheme.primary, width: 1),
+                          border: Border.all(
+                            color: colorScheme.primary,
+                            width: 1,
+                          ),
                         ),
                       ),
                     ),
@@ -445,12 +451,13 @@ class _BackgroundPulseState extends State<_BackgroundPulse>
   }
 }
 
-class _TopBar extends StatelessWidget {
+class _TopBar extends ConsumerWidget {
   const _TopBar({
     required this.identityKey,
     required this.onQueueTap,
     required this.onPlaylistTap,
     required this.onLyricsTap,
+    required this.onSleepTimerTap,
     required this.showLyricsActive,
     required this.isDark,
   });
@@ -459,12 +466,16 @@ class _TopBar extends StatelessWidget {
   final VoidCallback onQueueTap;
   final VoidCallback onPlaylistTap;
   final VoidCallback onLyricsTap;
+  final VoidCallback onSleepTimerTap;
   final bool showLyricsActive;
   final bool isDark;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
     final colorScheme = Theme.of(context).colorScheme;
+    final timerActive = ref.watch(sleepTimerIsActiveProvider);
+    final timerRemaining = ref.watch(sleepTimerRemainingProvider);
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -497,6 +508,59 @@ class _TopBar extends StatelessWidget {
           const Spacer(),
           // Favorite button (kept beside Lyrics per design)
           _FavoriteButton(identityKey: identityKey),
+          const SizedBox(width: AppTokens.s2),
+          // Sleep Timer button — a compact pill that reveals the live
+          // countdown while a timer is running.
+          PressableScale(
+            onTap: onSleepTimerTap,
+            child: Container(
+              height: 48,
+              padding: EdgeInsets.symmetric(
+                horizontal: timerActive ? AppTokens.s4 : 0,
+              ),
+              decoration: BoxDecoration(
+                color: timerActive
+                    ? colorScheme.primary.withValues(alpha: 0.16)
+                    : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                shape: timerActive ? BoxShape.rectangle : BoxShape.circle,
+                borderRadius: timerActive
+                    ? const BorderRadius.all(Radius.circular(AppTokens.rFull))
+                    : null,
+                border: Border.all(
+                  color: timerActive
+                      ? colorScheme.primary.withValues(alpha: 0.3)
+                      : colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  width: AppTokens.borderHairline,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: timerActive ? 0 : 48,
+                    child: Icon(
+                      Icons.bedtime_rounded,
+                      size: 22,
+                      color: timerActive
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (timerActive) ...[
+                    const SizedBox(width: AppTokens.s2),
+                    Text(
+                      formatSleepTimer(timerRemaining),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: AppTokens.s2),
+                  ],
+                ],
+              ),
+            ),
+          ),
           const SizedBox(width: AppTokens.s2),
           // Lyrics button
           PressableScale(
