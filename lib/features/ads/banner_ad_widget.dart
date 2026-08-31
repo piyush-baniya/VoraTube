@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -136,9 +135,8 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
           height: 18,
           child: CircularProgressIndicator(
             strokeWidth: 2,
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurfaceVariant.withValues(alpha: 0.35),
+            color: Theme.of(context).colorScheme.onSurfaceVariant
+                .withValues(alpha: 0.35),
           ),
         ),
       );
@@ -151,22 +149,16 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
       decoration: BoxDecoration(
         // Blend the native ad surface into VoraTube's card styling so it
         // reads as a small part of the UI, not a foreign insert.
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(
-              alpha: 0.25,
-            ),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest
+            .withValues(alpha: 0.25),
         borderRadius: BorderRadius.circular(AppTokens.rMd),
         border: Border.all(
-          color: Theme.of(
-            context,
-          ).colorScheme.outlineVariant.withValues(alpha: 0.25),
+          color: Theme.of(context).colorScheme.outlineVariant
+              .withValues(alpha: 0.25),
           width: AppTokens.borderHairline,
         ),
       ),
-      child: SizedBox(
-        width: 320,
-        height: 48,
-        child: AdWidget(ad: _bannerAd!),
-      ),
+      child: SizedBox(width: 320, height: 48, child: AdWidget(ad: _bannerAd!)),
     );
   }
 }

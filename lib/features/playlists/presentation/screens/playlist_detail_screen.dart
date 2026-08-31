@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../ads/banner_ad_widget.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../library/presentation/widgets/song_tile.dart';
@@ -82,6 +83,13 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
               name: widget.name,
               playlistId: widget.playlistId,
               onAddSongs: _addSongs,
+            ),
+            // A single, small, unobtrusive banner that never overlaps playback
+            // controls. It sits under the playlist header and collapses to
+            // nothing when Premium is active or the ad fails to load.
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+              child: VoraTubeBannerAd(),
             ),
             Expanded(
               child: asyncSongs.when(

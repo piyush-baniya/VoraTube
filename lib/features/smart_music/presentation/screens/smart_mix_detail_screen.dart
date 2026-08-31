@@ -9,6 +9,7 @@ import '../../../../../features/library/data/song_ref_mapper.dart';
 import '../../../../../features/library/presentation/widgets/song_actions.dart';
 import '../../../../../features/player/presentation/providers/player_providers.dart';
 
+import 'package:vora_tube/features/ads/banner_ad_widget.dart';
 import 'package:vora_tube/features/smart_music/presentation/widgets/recommendation_disclaimer.dart';
 
 import '../../data/smart_mix_service.dart';
@@ -195,6 +196,18 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
             ),
           ),
           const SliverToBoxAdapter(child: RecommendationDisclaimer()),
+          // A single, small, unobtrusive banner that never overlaps playback
+          // controls. It sits above the song list and collapses to nothing when
+          // Premium is active or the ad fails to load.
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: AppTokens.s4,
+                vertical: AppTokens.s2,
+              ),
+              child: VoraTubeBannerAd(),
+            ),
+          ),
           if (widget.mix.songs.isEmpty)
             const SliverFillRemaining(
               hasScrollBody: false,

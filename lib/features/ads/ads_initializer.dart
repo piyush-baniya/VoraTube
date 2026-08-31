@@ -1,8 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-import 'ads_config.dart';
-
 /// Fires up the Google Mobile Ads SDK once, early in the app's life, so the
 /// first banner can load without a cold-start delay.
 ///

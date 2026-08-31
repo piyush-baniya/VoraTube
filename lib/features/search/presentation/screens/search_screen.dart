@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:vora_tube/features/ads/banner_ad_widget.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
 
 import '../../../../shared/widgets/artwork_view.dart';
@@ -173,6 +174,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
               ),
             ),
+          ),
+          // A single, small, unobtrusive banner that never overlaps playback
+          // controls. It sits under the search field and collapses to nothing
+          // when Premium is active or the ad fails to load.
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+            child: VoraTubeBannerAd(),
           ),
           Expanded(
             child: resultsAsync.when(

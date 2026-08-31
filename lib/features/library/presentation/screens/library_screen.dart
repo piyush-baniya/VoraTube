@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../../shared/widgets/scroll_reveal.dart';
+import '../../../ads/banner_ad_widget.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -37,6 +38,13 @@ class LibraryScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _LibraryHeader(),
+          // A single, small, unobtrusive banner that never overlaps playback
+          // controls. It sits under the Library header and collapses to nothing
+          // when Premium is active or the ad fails to load.
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+            child: VoraTubeBannerAd(),
+          ),
           SectionSelector(
             selected: section,
             onChanged: (s) =>

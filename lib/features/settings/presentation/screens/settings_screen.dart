@@ -7,6 +7,7 @@ import '../../../../features/player/presentation/providers/player_providers.dart
 import '../../../../features/player/presentation/providers/sleep_timer_provider.dart';
 import '../../../../features/player/presentation/widgets/sleep_timer_sheet.dart';
 import '../../../../core/player/player_controller.dart';
+import '../../../ads/banner_ad_widget.dart';
 import '../../../ads/premium_models.dart';
 import '../../../ads/premium_providers.dart';
 import '../../../ads/premium_sheets.dart';
@@ -38,6 +39,16 @@ class SettingsScreen extends ConsumerWidget {
               ],
             ),
           ),
+          // A single, small, unobtrusive banner. It sits near the top of the
+          // Settings list and collapses to nothing when Premium is active or
+          // the ad fails to load.
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+              child: VoraTubeBannerAd(),
+            ),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s2)),
           SliverToBoxAdapter(child: _AppearanceSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _PlaybackSection()),

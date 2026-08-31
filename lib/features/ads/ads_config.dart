@@ -26,7 +26,8 @@ abstract final class VoraTubeAds {
   // No ad-placement code needs to change.
 
   /// The AdMob app identifier (from the AdMob console).
-  static const String productionAppId = 'ca-app-pub-3940256099942544~3347511713';
+  static const String productionAppId =
+      'ca-app-pub-3940256099942544~3347511713';
 
   /// The production banner ad-unit ID.
   static const String productionBannerAndroidId =
@@ -36,7 +37,8 @@ abstract final class VoraTubeAds {
   static const String testAppId = 'ca-app-pub-3940256099942544~3347511713';
 
   /// Google's official Android banner test ad unit.
-  static const String testBannerAndroidId = 'ca-app-pub-3940256099942544/9214589741';
+  static const String testBannerAndroidId =
+      'ca-app-pub-3940256099942544/9214589741';
 
   /// The AdMob app ID passed to `MobileAds.instance.initialize()`.
   static String get appId => useTestAds ? testAppId : productionAppId;

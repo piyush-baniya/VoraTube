@@ -112,14 +112,15 @@ class RotatingArtworkState extends ConsumerState<RotatingArtwork>
 
   @override
   Widget build(BuildContext context) {
-    // Watching isPlaying here also lets _syncRotationState react to
+    // Watching isPlaying also lets _syncRotationState react to
     // play/pause transitions (initState/didUpdateWidget do not fire on a
     // provider change, so without this the artwork would keep rotating and
-    // glowing while paused).
-    ref.watch(playbackStateProvider.select((s) => s.isPlaying));
+    // glowing while paused). Watching only the narrow boolean (instead of the
+    // whole snapshot) means a buffering/duration/seek emission — which changes
+    // nothing the disc cares about — does not rebuild this widget.
+    final isPlaying = ref.watch(playbackStateProvider.select((s) => s.isPlaying));
     _syncRotationState();
     final file = ArtworkFileCache.resolve(widget.path);
-    final isPlaying = ref.watch(playbackStateProvider).isPlaying;
 
     Widget artwork = AnimatedSwitcher(
       duration: AppTokens.slow,

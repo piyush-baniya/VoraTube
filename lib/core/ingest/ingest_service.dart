@@ -133,6 +133,19 @@ final class ReplayGainInfo {
   /// Album peak as linear amplitude
   final double? albumPeak;
 
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReplayGainInfo &&
+          runtimeType == other.runtimeType &&
+          trackGainDb == other.trackGainDb &&
+          trackPeak == other.trackPeak &&
+          albumGainDb == other.albumGainDb &&
+          albumPeak == other.albumPeak;
+
+  @override
+  int get hashCode => Object.hash(trackGainDb, trackPeak, albumGainDb, albumPeak);
+
   bool get hasTrackGain => trackGainDb != null;
   bool get hasAlbumGain => albumGainDb != null;
 

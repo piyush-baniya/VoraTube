@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/theme/app_colors.dart';
 import '../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import 'premium_models.dart';
@@ -57,7 +56,8 @@ class _PremiumActivationSheet extends ConsumerStatefulWidget {
       _PremiumActivationSheetState();
 }
 
-class _PremiumActivationSheetState extends ConsumerState<_PremiumActivationSheet> {
+class _PremiumActivationSheetState
+    extends ConsumerState<_PremiumActivationSheet> {
   final TextEditingController _controller = TextEditingController();
   bool _obscured = true;
   bool _submitting = false;

@@ -84,6 +84,32 @@ final class SongRef {
   final String? artPath;
   final int durationMs;
   final ReplayGainInfo? replayGain;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SongRef &&
+          runtimeType == other.runtimeType &&
+          identityKey == other.identityKey &&
+          uri == other.uri &&
+          title == other.title &&
+          artist == other.artist &&
+          album == other.album &&
+          artPath == other.artPath &&
+          durationMs == other.durationMs &&
+          replayGain == other.replayGain;
+
+  @override
+  int get hashCode => Object.hash(
+    identityKey,
+    uri,
+    title,
+    artist,
+    album,
+    artPath,
+    durationMs,
+    replayGain,
+  );
 }
 
 /// Coarse playback state. Emitted only when something meaningful changes;
@@ -127,6 +153,34 @@ final class PlayerSnapshot {
   final SongRef? current;
 
   bool get hasTrack => current != null;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlayerSnapshot &&
+          runtimeType == other.runtimeType &&
+          status == other.status &&
+          isPlaying == other.isPlaying &&
+          repeatMode == other.repeatMode &&
+          shuffleEnabled == other.shuffleEnabled &&
+          queueLength == other.queueLength &&
+          currentIndex == other.currentIndex &&
+          durationMs == other.durationMs &&
+          queueRevision == other.queueRevision &&
+          current == other.current;
+
+  @override
+  int get hashCode => Object.hash(
+    status,
+    isPlaying,
+    repeatMode,
+    shuffleEnabled,
+    queueLength,
+    currentIndex,
+    durationMs,
+    queueRevision,
+    current,
+  );
 
   PlayerSnapshot copyWith({
     PlayerStatus? status,

@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../library/data/library_repository.dart';
 import '../library/presentation/providers/library_providers.dart';
 import 'premium_models.dart';
 
@@ -28,8 +27,7 @@ class PremiumController extends StateNotifier<PremiumEntitlement> {
 
   Future<void> _load() async {
     try {
-      final stored =
-          await _repository.kvGet(PremiumKeys.activated) as String?;
+      final stored = await _repository.kvGet(PremiumKeys.activated) as String?;
       if (stored == 'true' && mounted) {
         state = PremiumEntitlement.active;
       }
@@ -77,5 +75,7 @@ final premiumProvider =
 
 /// Convenience boolean mirroring whether Premium is active.
 final isPremiumProvider = Provider<bool>((ref) {
-  return ref.watch(premiumProvider.select((p) => p == PremiumEntitlement.active));
+  return ref.watch(
+    premiumProvider.select((p) => p == PremiumEntitlement.active),
+  );
 });
