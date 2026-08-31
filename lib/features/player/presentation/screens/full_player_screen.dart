@@ -67,7 +67,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
           children: [
             // Immersive purple-atmosphere background. No Hero here: the
             // artwork Hero tag belongs to exactly one widget per route.
-            _ImmersiveBackground(isPlaying: snapshot.isPlaying),
+            const _ImmersiveBackground(),
             // Main content
             SafeArea(
               bottom: false,
@@ -234,13 +234,61 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
 /// copy of the album art, keeping the artwork the visual hero while avoiding
 /// expensive full-screen blur / decode. This widget holds no [Hero] (the
 /// artwork Hero tag belongs to exactly one widget per route).
-class _ImmersiveBackground extends StatelessWidget {
-  const _ImmersiveBackground({required this.isPlaying});
+///
+/// Stateful so the subtle ring-pulse animation controller is created once and
+/// survives play/pause toggles. A stateless implementation would add/remove the
+/// pulse widget from the tree on every toggle, disposing and recreating its
+/// controller each time — which caused a visible flicker on each play/pause.
+class _ImmersiveBackground extends ConsumerStatefulWidget {
+  const _ImmersiveBackground();
 
-  final bool isPlaying;
+  @override
+  ConsumerState<_ImmersiveBackground> createState() =>
+      _ImmersiveBackgroundState();
+}
+
+class _ImmersiveBackgroundState extends ConsumerState<_ImmersiveBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  bool _wasPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      duration: const Duration(seconds: 4),
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  void _syncPulse(bool isPlaying) {
+    if (!_BackgroundPulse.enabled) return;
+    if (isPlaying && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!isPlaying && _pulseController.isAnimating) {
+      _pulseController.stop();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Listen only to isPlaying so the background rebuilds minimally and the
+    // pulse animation is toggled without rebuilding the whole stack.
+    final isPlaying = ref.watch(playbackIsPlayingProvider);
+    if (isPlaying != _wasPlaying) {
+      _wasPlaying = isPlaying;
+      // Schedule the sync for after the frame so we don't setState during build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncPulse(isPlaying);
+      });
+    }
+
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
@@ -295,12 +343,37 @@ class _ImmersiveBackground extends StatelessWidget {
             ),
           ),
         ),
-        // Subtle animated ring pulse when playing
-        if (isPlaying && _BackgroundPulse.enabled)
+        // Subtle animated ring pulse when playing — kept in the tree always and
+        // only started/stopped, so play/pause never recreates the controller.
+        if (_BackgroundPulse.enabled)
           Center(
-            child: _BackgroundPulse(
-              size: MediaQuery.sizeOf(context).width * 1.2,
-              color: colorScheme.primary,
+            child: AnimatedBuilder(
+              animation: _pulseController,
+              builder: (context, child) {
+                final scale = 0.85 + (_pulseController.value * 0.15);
+                final opacity = 0.02 + (_pulseController.value * 0.03);
+
+                return Visibility(
+                  visible: isPlaying,
+                  maintainAnimation: true,
+                  maintainState: true,
+                  maintainSize: true,
+                  child: Transform.scale(
+                    scale: scale,
+                    child: Opacity(
+                      opacity: opacity,
+                      child: Container(
+                        width: MediaQuery.sizeOf(context).width * 1.2,
+                        height: MediaQuery.sizeOf(context).width * 1.2,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: colorScheme.primary, width: 1),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
       ],
