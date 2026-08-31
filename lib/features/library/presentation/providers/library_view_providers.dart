@@ -173,11 +173,18 @@ final hiddenSongsProvider = FutureProvider.autoDispose<List<SongTileData>>((
 /// earlier session rendered as un-favourited — the flag was stored correctly and
 /// simply never read back.
 class FavoriteIdsController extends StateNotifier<Set<int>> {
-  FavoriteIdsController(this._repository) : super(const <int>{}) {
+  FavoriteIdsController(this._repository, {this.onToggleCommitted})
+    : super(const <int>{}) {
     _hydrate();
   }
 
   final LibraryRepository _repository;
+
+  /// Invoked after a favorite toggle is committed to the database, so
+  /// consumers that aggregate favorites from disk (statistics counts, mixes)
+  /// can refresh. Fired only on success — a rolled-back write must not
+  /// trigger a recomputation of derived data.
+  final void Function()? onToggleCommitted;
 
   /// Bumped by every user action, so a hydration read that is still in flight
   /// cannot land on top of a tap the user made in the meantime.
@@ -209,6 +216,10 @@ class FavoriteIdsController extends StateNotifier<Set<int>> {
         : {...state, songRowId};
     try {
       await _repository.toggleFavorite(songRowId);
+      // The DB row is committed: tell consumers that derive favorites from
+      // the database (statistics favorites count, mixes) to re-read it. This
+      // runs after the write, so a recomputation can never race the commit.
+      onToggleCommitted?.call();
     } catch (_) {
       if (mounted) {
         state = rollback;
@@ -222,7 +233,14 @@ final favoriteIdsProvider =
       // Rebuilt on library change so the set drops ids for songs a scan, import
       // or deletion removed, and picks up rows written outside this controller.
       ref.watch(libraryRefreshTickProvider);
-      return FavoriteIdsController(ref.watch(libraryRepositoryProvider));
+      return FavoriteIdsController(
+        ref.watch(libraryRepositoryProvider),
+        // A committed favorite toggle moves statistics aggregates (the
+        // Favorites count on the Statistics screen derives from the DB, not
+        // from this set), so the stats tick must move with it.
+        onToggleCommitted: () =>
+            ref.read(statsRefreshTickProvider.notifier).state++,
+      );
     });
 
 /// Signals that committed library writes are ready to be read back.
