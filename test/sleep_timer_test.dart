@@ -25,6 +25,34 @@ class _MemoryPersistence implements SleepTimerPersistence {
   Future<void> clearEndTimeMs() async => endMs = null;
 }
 
+/// In-memory persistence that also stores the [SleepTimerSchedule], so the
+/// recurring wall-clock timer path can be exercised without a real KV store.
+class _ScheduleMemoryPersistence
+    implements SleepTimerPersistence, SleepTimerSchedulePersistence {
+  int? endMs;
+  SleepTimerSchedule? schedule;
+
+  @override
+  Future<int?> readEndTimeMs() async => endMs;
+
+  @override
+  Future<void> writeEndTimeMs(int endMs) async => this.endMs = endMs;
+
+  @override
+  Future<void> clearEndTimeMs() async => endMs = null;
+
+  @override
+  Future<SleepTimerSchedule?> readSchedule() async => schedule;
+
+  @override
+  Future<void> writeSchedule(SleepTimerSchedule schedule) async {
+    this.schedule = schedule;
+  }
+
+  @override
+  Future<void> clearSchedule() async => schedule = null;
+}
+
 /// Records how many times [pause] was invoked and reports whether playback is
 /// currently playing, so expiry behavior can be asserted precisely.
 class _RecordingPlayer implements PlayerController {
@@ -549,6 +577,257 @@ void main() {
       await tester.tap(find.text('Got it'));
       await tester.pumpAndSettle();
       expect(find.text('Sleep Timer Finished'), findsNothing);
+    });
+  });
+
+  group('SleepTimer time-of-day helpers', () {
+    test('upcomingHours lists the next five whole hours', () {
+      expect(
+        upcomingHours(DateTime(2026, 1, 1, 8, 30, 0)),
+        [9, 10, 11, 12, 13],
+      );
+      expect(
+        upcomingHours(DateTime(2026, 1, 1, 8, 0, 0)),
+        [8, 9, 10, 11, 12],
+      );
+      expect(
+        upcomingHours(DateTime(2026, 1, 1, 23, 30, 0)),
+        [0, 1, 2, 3, 4],
+      );
+    });
+
+    test('formatTimeOfDay renders 12-hour clock times', () {
+      expect(formatTimeOfDay(21), '9:00 PM');
+      expect(formatTimeOfDay(7), '7:00 AM');
+      expect(formatTimeOfDay(0), '12:00 AM');
+      expect(formatTimeOfDay(12), '12:00 PM');
+    });
+  });
+
+  group('SleepTimerController time-of-day', () {
+    test('startTimeOfDay arms for the next occurrence and persists end time', () {
+      fakeAsync((async) {
+        final player = _RecordingPlayer(playing: true);
+        final pers = _ScheduleMemoryPersistence();
+        final now = DateTime(2026, 1, 1, 14, 30, 0);
+        final c = SleepTimerController(
+          player: player,
+          persistence: pers,
+          now: () => now,
+        );
+        c.startTimeOfDay(21, recurring: true);
+        async.flushMicrotasks();
+
+        expect(c.state.isActive, isTrue);
+        expect(c.state.isTimeOfDay, isTrue);
+        expect(c.state.hour, 21);
+        expect(c.state.recurring, isTrue);
+        expect(
+          c.state.endTimeMs,
+          DateTime(2026, 1, 1, 21, 0, 0).millisecondsSinceEpoch,
+        );
+        expect(pers.endMs, isNotNull);
+        expect(pers.schedule?.recurring, isTrue);
+        expect(player.pauseCalls, 0);
+      });
+    });
+
+    test('ignoreToday skips today and re-arms for tomorrow', () {
+      fakeAsync((async) {
+        final player = _RecordingPlayer(playing: true);
+        final pers = _ScheduleMemoryPersistence();
+        final now = DateTime(2026, 1, 1, 14, 30, 0);
+        final c = SleepTimerController(
+          player: player,
+          persistence: pers,
+          now: () => now,
+        );
+        c.startTimeOfDay(21, recurring: true);
+        async.flushMicrotasks();
+        expect(
+          c.state.endTimeMs,
+          DateTime(2026, 1, 1, 21, 0, 0).millisecondsSinceEpoch,
+        );
+
+        c.ignoreToday();
+        async.flushMicrotasks();
+
+        expect(c.state.isActive, isTrue);
+        expect(
+          c.state.endTimeMs,
+          DateTime(2026, 1, 2, 21, 0, 0).millisecondsSinceEpoch,
+        );
+        expect(pers.schedule?.ignoreForDate, '2026-01-01');
+      });
+    });
+
+    test(
+      'recurring timer pauses once, then dismissFinished re-arms for tomorrow',
+      () {
+        fakeAsync((async) {
+          final player = _RecordingPlayer(playing: true);
+          final pers = _ScheduleMemoryPersistence();
+          var now = DateTime(2026, 1, 1, 14, 30, 0);
+          final c = SleepTimerController(
+            player: player,
+            persistence: pers,
+            now: () => now,
+          );
+          c.startTimeOfDay(21, recurring: true);
+          async.flushMicrotasks();
+
+          now = DateTime(2026, 1, 1, 21, 0, 1);
+          async.elapse(const Duration(seconds: 1));
+
+          expect(player.pauseCalls, 1);
+          expect(c.state.isFinished, isTrue);
+          expect(c.state.recurring, isTrue);
+
+          c.dismissFinished();
+          async.flushMicrotasks();
+
+          expect(c.state.isActive, isTrue);
+          expect(c.state.hour, 21);
+          expect(
+            c.state.endTimeMs,
+            DateTime(2026, 1, 2, 21, 0, 0).millisecondsSinceEpoch,
+          );
+          expect(player.pauseCalls, 1);
+        });
+      },
+    );
+
+    test('one-shot timeOfDay is cleared on expiry and ends inactive', () {
+      fakeAsync((async) {
+        final player = _RecordingPlayer(playing: true);
+        final pers = _ScheduleMemoryPersistence();
+        var now = DateTime(2026, 1, 1, 14, 30, 0);
+        final c = SleepTimerController(
+          player: player,
+          persistence: pers,
+          now: () => now,
+        );
+        c.startTimeOfDay(21, recurring: false);
+        async.flushMicrotasks();
+        expect(c.state.recurring, isFalse);
+
+        now = DateTime(2026, 1, 1, 21, 0, 1);
+        async.elapse(const Duration(seconds: 1));
+
+        expect(player.pauseCalls, 1);
+        expect(c.state.isFinished, isTrue);
+        expect(pers.schedule, isNull);
+
+        c.dismissFinished();
+        expect(c.state.isInactive, isTrue);
+      });
+    });
+
+    test('restore re-arms a recurring timer for its next occurrence', () {
+      fakeAsync((async) {
+        final pers = _ScheduleMemoryPersistence()
+          ..schedule = SleepTimerSchedule(
+            mode: SleepTimerMode.timeOfDay,
+            hour: 21,
+            recurring: true,
+          )
+          ..endMs = DateTime(2026, 1, 1, 21, 0, 0).millisecondsSinceEpoch;
+        final c = SleepTimerController(
+          player: _RecordingPlayer(),
+          persistence: pers,
+          now: () => DateTime(2026, 1, 2, 10, 0, 0),
+        );
+        c.restore();
+        async.flushMicrotasks();
+
+        expect(c.state.isActive, isTrue);
+        expect(c.state.hour, 21);
+        expect(
+          c.state.endTimeMs,
+          DateTime(2026, 1, 2, 21, 0, 0).millisecondsSinceEpoch,
+        );
+      });
+    });
+
+    test('restore honors ignore-for-today when it matches today', () {
+      fakeAsync((async) {
+        final pers = _ScheduleMemoryPersistence()
+          ..schedule = SleepTimerSchedule(
+            mode: SleepTimerMode.timeOfDay,
+            hour: 21,
+            recurring: true,
+            ignoreForDate: '2026-01-02',
+          );
+        final c = SleepTimerController(
+          player: _RecordingPlayer(),
+          persistence: pers,
+          now: () => DateTime(2026, 1, 2, 10, 0, 0),
+        );
+        c.restore();
+        async.flushMicrotasks();
+
+        expect(c.state.isActive, isTrue);
+        expect(
+          c.state.endTimeMs,
+          DateTime(2026, 1, 3, 21, 0, 0).millisecondsSinceEpoch,
+        );
+      });
+    });
+  });
+
+  group('SleepTimer time-of-day UI', () {
+    testWidgets('inactive sheet offers wall-clock times and repeat toggle', (
+      tester,
+    ) async {
+      final controller = SleepTimerController(
+        player: FakePlayerController(),
+        persistence: _MemoryPersistence(),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sleepTimerProvider.overrideWith((ref) => controller)],
+          child: const MaterialApp(home: Scaffold(body: SizedBox())),
+        ),
+      );
+      showSleepTimerSheet(tester.element(find.byType(Scaffold)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Repeat daily'), findsOneWidget);
+      expect(find.text('Set time'), findsOneWidget);
+      expect(find.text('or end at a time'), findsOneWidget);
+      expect(controller.state.isInactive, isTrue);
+    });
+
+    testWidgets('finished overlay shows re-arm copy for a recurring timer', (
+      tester,
+    ) async {
+      final player = _RecordingPlayer(playing: true);
+      final controller = SleepTimerController(
+        player: player,
+        persistence: _ScheduleMemoryPersistence(),
+        now: () => DateTime(2026, 1, 1, 20, 0, 0),
+      );
+      await controller.startTimeOfDay(21, recurring: true);
+
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(home: Scaffold(body: SizedBox())),
+        ),
+      );
+      showSleepTimerFinishedDialog(
+        tester.element(find.byType(Scaffold)),
+        state: controller.state,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sleep Timer Finished'), findsOneWidget);
+      expect(find.text('Got it'), findsOneWidget);
+
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sleep Timer Finished'), findsNothing);
+      await controller.cancel();
     });
   });
 }
