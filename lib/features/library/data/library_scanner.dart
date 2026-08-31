@@ -131,7 +131,6 @@ class LibraryScanner {
           phase: ScanPhase.artwork,
           processedCount: seenKeys.length,
           addedCount: addedTotal,
-          totalHint: targetList.length,
         ),
       );
     }

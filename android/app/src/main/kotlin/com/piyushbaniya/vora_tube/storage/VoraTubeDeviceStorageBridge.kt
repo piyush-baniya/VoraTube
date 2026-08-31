@@ -10,10 +10,13 @@ import io.flutter.plugin.common.MethodChannel
  * Reports real on-device storage numbers to Dart.
  *
  * [StatFs] reads filesystem metadata only, so no storage permission is
- * required. The primary shared-storage partition is used, which matches the
- * "internal storage" figure Android's own Settings > Storage shows on most
- * devices. Any unreadable partition resolves to null and the Dart side renders
- * an "unavailable" state — a storage read must never crash the app.
+ * required. The **internal data volume** (what Android's own Settings >
+ * Storage shows as the device's capacity) is measured so the reported total
+ * reflects the true install size rather than the smaller shared-storage
+ * subtree that `getExternalStorageDirectory()` returns on scoped-storage
+ * devices. The external storage root is kept only as a fallback. Any
+ * unreadable volume resolves to null and the Dart side renders an
+ * "unavailable" state — a storage read must never crash the app.
  */
 class VoraTubeDeviceStorageBridge(context: Context) {
 
@@ -31,9 +34,15 @@ class VoraTubeDeviceStorageBridge(context: Context) {
 
     private fun storageSummary(): Map<String, Long>? {
         return try {
-            val path = Environment.getExternalStorageDirectory()?.absolutePath
-                ?: appContext.filesDir.absolutePath
-            val stat = StatFs(path)
+            // Find a readable volume, preferring the internal data volume which
+            // spans the whole install storage and best matches the device's real
+            // capacity on scoped-storage builds.
+            val internal = Environment.getDataDirectory().absolutePath
+            val accepted =
+                if (StatFs(internal).blockCountLong > 0L) internal
+                else Environment.getExternalStorageDirectory()?.absolutePath
+                    ?: appContext.filesDir.absolutePath
+            val stat = StatFs(accepted)
             val blockSize = stat.blockSizeLong
             val totalBytes = stat.blockCountLong * blockSize
             val availableBytes = stat.availableBlocksLong * blockSize
