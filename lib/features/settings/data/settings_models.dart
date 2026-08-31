@@ -153,6 +153,10 @@ class SettingsKeys {
   static const String audio = 'settings.audio';
   static const String library = 'settings.library';
   static const String appearance = 'settings.appearance';
+
+  /// Stores the most recent successful update-check timestamp (milliseconds
+  /// since epoch) so the check is throttled to once per interval.
+  static const String updateCheck = 'update.lastCheck';
 }
 
 /// JSON serialization for AudioSettings.

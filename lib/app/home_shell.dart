@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/update/update_dialog.dart';
+import '../core/update/update_providers.dart';
 import '../features/library/presentation/screens/home_screen.dart';
 import '../features/library/presentation/screens/library_screen.dart';
 import '../features/playlists/presentation/screens/playlists_screen.dart';
@@ -14,14 +17,18 @@ import 'widgets/glass_nav_bar.dart';
 /// details, statistics, genres, smart mixes, filtered songs) still render under
 /// the single persistent [MiniPlayer]. Only the immersive [FullPlayerScreen]
 /// pushes onto the root navigator, covering the whole shell.
-class HomeShell extends StatefulWidget {
+///
+/// It is also the natural, user-visible moment to run the (async, throttled,
+/// entirely optional) update check: the check never blocks the splash or the
+/// shell, never pauses playback, and never resets navigation.
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends ConsumerState<HomeShell> {
   static const int _libraryIndex = 1;
 
   /// The nested navigator hosting tab content and every pushed detail route.
@@ -32,6 +39,35 @@ class _HomeShellState extends State<HomeShell> {
   /// index can drive both the bottom bar and the nested navigator's base route
   /// without rebuilding either subtree on unrelated shell changes.
   final ValueNotifier<int> _tabIndex = ValueNotifier<int>(0);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Fire the throttled check once, well after the main UI is on screen.
+      ref.read(updateCheckerProvider.notifier).run();
+    });
+    // Whenever the checker lands on a decision, surface it. Uses a listener so
+    // the update dialog shows without the shell rebuilding for it.
+    ref.listenManual<UpdatePrompt?>(updateCheckerProvider, (previous, next) {
+      if (next == null) return;
+      _presentUpdate(next);
+    });
+  }
+
+  Future<void> _presentUpdate(UpdatePrompt prompt) async {
+    if (!mounted) return;
+    await showUpdateDialog(
+      context,
+      decision: prompt.decision,
+      info: prompt.info,
+    );
+    if (!mounted) return;
+    // Clear the prompt (and remember "Later" so it is not re-offered this
+    // session) once the dialog closes, whatever the button.
+    ref.read(updateCheckerProvider.notifier).dismiss();
+  }
 
   @override
   void dispose() {
