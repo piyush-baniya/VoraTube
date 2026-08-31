@@ -33,6 +33,10 @@ abstract final class VoraTubeAds {
   static const String productionBannerAndroidId =
       'ca-app-pub-3940256099942544/9214589741';
 
+  /// The production interstitial ad-unit ID (currently a test placeholder).
+  static const String productionInterstitialAndroidId =
+      'ca-app-pub-3940256099942544/1033173712';
+
   // ── Google official test ad units ────────────────────────────────────────
   static const String testAppId = 'ca-app-pub-3940256099942544~3347511713';
 
@@ -40,10 +44,18 @@ abstract final class VoraTubeAds {
   static const String testBannerAndroidId =
       'ca-app-pub-3940256099942544/9214589741';
 
+  /// Google's official Android interstitial test ad unit.
+  static const String testInterstitialAndroidId =
+      'ca-app-pub-3940256099942544/1033173712';
+
   /// The AdMob app ID passed to `MobileAds.instance.initialize()`.
   static String get appId => useTestAds ? testAppId : productionAppId;
 
   /// The banner ad-unit ID used by Android placements.
   static String get bannerAndroidId =>
       useTestAds ? testBannerAndroidId : productionBannerAndroidId;
+
+  /// The interstitial ad-unit ID used by Android placements.
+  static String get interstitialAndroidId =>
+      useTestAds ? testInterstitialAndroidId : productionInterstitialAndroidId;
 }

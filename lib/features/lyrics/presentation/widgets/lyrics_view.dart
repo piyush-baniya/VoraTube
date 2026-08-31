@@ -1,18 +1,15 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/models/lyrics.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../providers/lyrics_providers.dart';
-import '../../data/lrclib_client.dart';
+import 'lyrics_actions_panel.dart';
 
 /// Displays lyrics for the currently playing song.
 ///
@@ -245,223 +242,6 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
 
   void _retry() => ref.invalidate(currentLyricsProvider);
 
-  // ── Lyrics actions (online search, web search, user .lrc) ───────────────
-
-  bool _searchingOnline = false;
-
-  void _useLyrics(LyricsData data) {
-    ref.read(manualLyricsProvider.notifier).state = data;
-  }
-
-  void _snack(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.maybeOf(context)
-      ?..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _showOnlineLyrics() async {
-    if (_searchingOnline) return;
-    final song = ref.read(currentTrackProvider);
-    if (song == null) return;
-    setState(() => _searchingOnline = true);
-    List results;
-    try {
-      results = await ref.read(lyricsServiceProvider).searchOnlineResults(song);
-    } on LyricsNetworkException {
-      setState(() => _searchingOnline = false);
-      _snack('You are offline — connect to search online lyrics.');
-      return;
-    } catch (_) {
-      setState(() => _searchingOnline = false);
-      _snack('Searching online lyrics failed. Try again.');
-      return;
-    }
-    setState(() => _searchingOnline = false);
-
-    if (!mounted) return;
-    if (results.isEmpty) {
-      _snack('No online lyrics found for this song.');
-      return;
-    }
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: results.length,
-          itemBuilder: (context, index) {
-            final result = results[index];
-            return ListTile(
-              leading: Icon(
-                result.syncedLyrics?.isNotEmpty == true
-                    ? Icons.sync_rounded
-                    : Icons.notes_rounded,
-                color: Theme.of(sheetContext).colorScheme.primary,
-              ),
-              title: Text(
-                result.trackName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                result.artistName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: result.syncedLyrics?.isNotEmpty == true
-                  ? const Text('Synced')
-                  : null,
-              onTap: () {
-                final data = ref
-                    .read(lyricsServiceProvider)
-                    .lyricsFromResult(result);
-                if (data.isEmpty) {
-                  _snack('This result has no usable lyrics.');
-                  return;
-                }
-                Navigator.of(sheetContext).pop();
-                _useLyrics(data);
-              },
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Future<void> _searchLyricsOnWeb() async {
-    final song = ref.read(currentTrackProvider);
-    if (song == null) return;
-    final uri = ref.read(lyricsServiceProvider).webSearchUri(song);
-    try {
-      final launched = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-      if (!launched) _snack('Could not open the browser.');
-    } catch (_) {
-      _snack('Could not open the browser.');
-    }
-  }
-
-  Future<void> _uploadLrc() async {
-    final song = ref.read(currentTrackProvider);
-    if (song == null) return;
-
-    final picked = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['lrc'],
-    );
-    if (picked == null || picked.isEmpty || picked.first.path == null) return;
-    final file = picked.first;
-
-    String text;
-    try {
-      text = await File(file.path!).readAsString();
-    } catch (_) {
-      _snack('Could not read the selected file.');
-      return;
-    }
-
-    final service = ref.read(lyricsServiceProvider);
-    final data = service.importUserLrc(song, text);
-    if (data == null) {
-      _snack('That file is not a valid lyrics file.');
-      return;
-    }
-
-    final saved = await service.userLrc.save(
-      identityKey: song.identityKey,
-      lrc: text,
-      fileName: file.name,
-    );
-    if (!saved) {
-      _snack('Could not save the lyrics file.');
-      return;
-    }
-
-    ref.invalidate(uploadedLrcProvider);
-    _useLyrics(data);
-    _snack('Lyrics from "${file.name}" saved for this song.');
-  }
-
-  Future<void> _showUploadedLrc() async {
-    final song = ref.read(currentTrackProvider);
-    if (song == null) return;
-    final service = ref.read(lyricsServiceProvider);
-    final stored = await service.userLrc.load(song.identityKey);
-    final data = stored == null ? null : service.lyricsFromUserLrc(stored.lrc);
-    if (data == null) {
-      ref.invalidate(uploadedLrcProvider);
-      _snack('The saved lyrics are unavailable. Upload the file again.');
-      return;
-    }
-    _useLyrics(data);
-  }
-
-  /// The action panel shown whenever no suitable lyrics are available.
-  List<Widget> _lyricsActions() {
-    final theme = Theme.of(context);
-    final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
-    final colorScheme = theme.colorScheme;
-
-    Widget button(
-      String label,
-      IconData icon,
-      Future<void> Function() onTap, {
-      bool enabled = true,
-    }) => SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: enabled ? () => onTap() : null,
-        icon: Icon(icon, size: 18),
-        label: Text(label),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: colorScheme.primary,
-          padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
-        ),
-      ),
-    );
-
-    return [
-      const SizedBox(height: AppTokens.s3),
-      SizedBox(
-        width: 260,
-        child: Column(
-          children: [
-            button(
-              'Show online lyrics',
-              Icons.cloud_download_outlined,
-              _showOnlineLyrics,
-              enabled: !_searchingOnline,
-            ),
-            const SizedBox(height: AppTokens.s1),
-            button(
-              'Search lyrics online',
-              Icons.travel_explore_rounded,
-              _searchLyricsOnWeb,
-            ),
-            const SizedBox(height: AppTokens.s1),
-            button('Upload .lrc file', Icons.upload_file_rounded, _uploadLrc),
-            // Only meaningful when the user has actually stored an LRC for
-            // this song.
-            if (uploaded != null) ...[
-              const SizedBox(height: AppTokens.s1),
-              button(
-                'Show lyrics from uploaded LRC file',
-                Icons.lyrics_rounded,
-                _showUploadedLrc,
-              ),
-            ],
-          ],
-        ),
-      ),
-    ];
-  }
-
   void _seekTo(int milliseconds) =>
       ref.read(playerProvider).seek(Duration(milliseconds: milliseconds));
 
@@ -483,7 +263,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
         ? _buildResult(LyricsResult.loaded(manual, LyricsSource.userLrc))
         : lyricsAsync.when(
             loading: _buildLoadingState,
-            error: (_, __) => _buildMessageState(
+            error: (_, _) => _buildMessageState(
               icon: Icons.error_outline_rounded,
               message: 'Lyrics unavailable',
               subtitle: 'Something went wrong while loading lyrics.',
@@ -539,7 +319,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           message: 'No lyrics found',
           subtitle: 'We could not find lyrics for this track yet.',
           onRetry: _retry,
-          actions: _lyricsActions(),
+          actions: const [LyricsActionsPanel()],
         );
       case LyricsStatus.error:
         return _buildMessageState(
@@ -547,7 +327,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           message: 'Lyrics unavailable',
           subtitle: 'Fetching lyrics failed. Check your connection.',
           onRetry: _retry,
-          actions: _lyricsActions(),
+          actions: const [LyricsActionsPanel()],
         );
       case LyricsStatus.offline:
         return _buildMessageState(
@@ -555,7 +335,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           message: 'No internet connection available.',
           subtitle: 'You are offline. Connect to the internet to fetch lyrics.',
           onRetry: _retry,
-          actions: _lyricsActions(),
+          actions: const [LyricsActionsPanel()],
         );
       case LyricsStatus.loaded:
         final data = result.data;
@@ -565,7 +345,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             message: 'No lyrics found',
             subtitle: 'We could not find lyrics for this track yet.',
             onRetry: _retry,
-            actions: _lyricsActions(),
+            actions: const [LyricsActionsPanel()],
           );
         }
         if (data.isInstrumental) {
@@ -582,7 +362,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             message: 'No lyrics found',
             subtitle: 'We could not find lyrics for this track yet.',
             onRetry: _retry,
-            actions: _lyricsActions(),
+            actions: const [LyricsActionsPanel()],
           );
         }
         if (data.hasSyncedLines) {

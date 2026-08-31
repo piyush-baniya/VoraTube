@@ -8,6 +8,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/models/lyrics.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
+import '../../../lyrics/presentation/widgets/lyrics_actions_panel.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 
 /// Compact lyrics panel that sits at the bottom of the full player.
@@ -354,6 +355,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
           message: 'No lyrics found',
           subtitle: 'We couldn\'t find lyrics for this track yet.',
           onRetry: _retry,
+          actions: const [LyricsActionsPanel(compact: true)],
         );
       case LyricsStatus.error:
         return _buildMessageState(
@@ -361,6 +363,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
           message: 'Lyrics unavailable',
           subtitle: 'Fetching lyrics failed. Check your connection.',
           onRetry: _retry,
+          actions: const [LyricsActionsPanel(compact: true)],
         );
       case LyricsStatus.offline:
         return _buildMessageState(
@@ -368,6 +371,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
           message: 'No internet connection available.',
           subtitle: 'You\'re offline. Connect to the internet to fetch lyrics.',
           onRetry: _retry,
+          actions: const [LyricsActionsPanel(compact: true)],
         );
       case LyricsStatus.loaded:
         final data = result.data;
@@ -377,6 +381,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
             message: 'No lyrics found',
             subtitle: 'We couldn\'t find lyrics for this track yet.',
             onRetry: _retry,
+            actions: const [LyricsActionsPanel(compact: true)],
           );
         }
         if (data.isInstrumental) {
@@ -393,6 +398,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
             message: 'No lyrics found',
             subtitle: 'We couldn\'t find lyrics for this track yet.',
             onRetry: _retry,
+            actions: const [LyricsActionsPanel(compact: true)],
           );
         }
         if (data.hasSyncedLines) {
@@ -570,6 +576,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
     required String message,
     required String subtitle,
     VoidCallback? onRetry,
+    List<Widget> actions = const <Widget>[],
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -635,6 +642,8 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
                 ),
               ),
             ],
+            const SizedBox(height: AppTokens.s3),
+            ...actions,
           ],
         ),
       ),

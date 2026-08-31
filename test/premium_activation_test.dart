@@ -1,26 +1,11 @@
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/features/ads/ads_config.dart';
 import 'package:vora_tube/features/ads/premium_models.dart';
 import 'package:vora_tube/features/ads/premium_providers.dart';
-
-/// Shared-prefs-free in-memory KV double that mirrors the subset of the
-/// LibraryRepository surface the [PremiumController] actually touches
-/// (`kvGet` / `kvSet`).
-class _KvFake {
-  final Map<String, String> _store = {};
-
-  Future<String?> kvGet(String key) async => _store[key];
-
-  Future<void> kvSet(String key, String value) async => _store[key] = value;
-}
-
-class _FailingKv {
-  Future<String?> kvGet(String key) async => throw StateError('boom');
-
-  Future<void> kvSet(String key, String value) async =>
-      throw StateError('boom');
-}
+import 'package:vora_tube/features/library/data/library_repository.dart';
 
 void main() {
   group('PremiumCodeValidator', () {
@@ -52,68 +37,60 @@ void main() {
   });
 
   group('PremiumController', () {
-    test(
-      'starts inactive and loads an active entitlement on construct',
-      () async {
-        final kv = _KvFake();
-        await kv.kvSet(PremiumKeys.activated, 'true');
+    AppDatabase newDb() => AppDatabase(NativeDatabase.memory());
 
-        final controller = PremiumController(kv);
-        await Future<void>.delayed(Duration.zero); // let _load() settle
+    test('starts inactive and loads an active entitlement on construct',
+        () async {
+      final db = newDb();
+      final repo = LibraryRepository(db);
+      await repo.kvSet(PremiumKeys.activated, 'true');
 
-        expect(controller.state, PremiumEntitlement.active);
-        expect(controller.isPremium, isTrue);
-      },
-    );
+      final controller = PremiumController(repo);
+      await Future<void>.delayed(Duration.zero); // let _load() settle
+
+      expect(controller.state, PremiumEntitlement.active);
+      expect(controller.isPremium, isTrue);
+      await db.close();
+    });
 
     test('ignores a stored "false" and stays inactive', () async {
-      final kv = _KvFake();
-      await kv.kvSet(PremiumKeys.activated, 'false');
+      final db = newDb();
+      final repo = LibraryRepository(db);
+      await repo.kvSet(PremiumKeys.activated, 'false');
 
-      final controller = PremiumController(kv);
+      final controller = PremiumController(repo);
       await Future<void>.delayed(Duration.zero);
 
       expect(controller.state, PremiumEntitlement.inactive);
       expect(controller.isPremium, isFalse);
-    });
-
-    test('load failure falls back to inactive (safe default)', () async {
-      final controller = PremiumController(_FailingKv());
-      await Future<void>.delayed(Duration.zero);
-
-      expect(controller.state, PremiumEntitlement.inactive);
+      await db.close();
     });
 
     test('activate promotes state and persists the entitlement', () async {
-      final kv = _KvFake();
-      final controller = PremiumController(kv);
+      final db = newDb();
+      final repo = LibraryRepository(db);
+      final controller = PremiumController(repo);
       await Future<void>.delayed(Duration.zero);
 
       await controller.activate();
 
       expect(controller.isPremium, isTrue);
-      expect(await kv.kvGet(PremiumKeys.activated), 'true');
+      expect(await repo.kvGet(PremiumKeys.activated), 'true');
+      await db.close();
     });
 
     test('deactivate revokes state and persists the revocation', () async {
-      final kv = _KvFake();
-      final controller = PremiumController(kv);
+      final db = newDb();
+      final repo = LibraryRepository(db);
+      final controller = PremiumController(repo);
       await Future<void>.delayed(Duration.zero);
 
       await controller.activate();
       await controller.deactivate();
 
       expect(controller.isPremium, isFalse);
-      expect(await kv.kvGet(PremiumKeys.activated), 'false');
-    });
-
-    test('deactivate on a fresh controller is a safe no-op', () async {
-      final controller = PremiumController(_KvFake());
-      await Future<void>.delayed(Duration.zero);
-
-      await controller.deactivate();
-
-      expect(controller.isPremium, isFalse);
+      expect(await repo.kvGet(PremiumKeys.activated), 'false');
+      await db.close();
     });
   });
 

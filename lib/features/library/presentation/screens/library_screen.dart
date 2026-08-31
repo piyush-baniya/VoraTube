@@ -291,44 +291,10 @@ class _SongsViewState extends ConsumerState<_SongsView> {
           controller: _controller,
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            SliverList.separated(
-              itemCount:
-                  tiles.length +
-                  (ref.read(pagedSongsProvider.notifier).hasMore ? 1 : 0),
-              separatorBuilder: (_, i) => i == tiles.length - 1
-                  ? const SizedBox.shrink()
-                  : Divider(
-                      height: AppTokens.borderHairline,
-                      thickness: AppTokens.borderHairline,
-                      indent: AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
-                      endIndent: AppTokens.s4,
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-              itemBuilder: (context, index) {
-                if (index >= tiles.length) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    child: Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
-                      ),
-                    ),
-                  );
-                }
-                return ScrollReveal(
-                  // Same scroll-jank rationale as All Songs: only the initial
-                  // screenful animates in.
-                  enabled: index < scrollRevealInitialItems,
-                  child: SongTile(
-                    key: ValueKey(tiles[index].song.id),
-                    tile: tiles[index],
-                    index: index,
-                    onPlay: (_) => _playFrom(tiles, index),
-                  ),
-                );
-              },
+            _SongsSliver(
+              tiles: tiles,
+              hasMore: ref.read(pagedSongsProvider.notifier).hasMore,
+              onPlay: _playFrom,
             ),
             const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s8)),
           ],
@@ -340,6 +306,93 @@ class _SongsViewState extends ConsumerState<_SongsView> {
   void _playFrom(List<SongTileData> tiles, int startIndex) {
     final ctx = playContextFromTiles(tiles, startIndex);
     ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
+  }
+}
+
+/// The paginated song list. A banner ad is inserted every [_adEveryTracks]
+/// songs so ads appear dispersed through the scrolling library rather than
+/// stacked up front. The ad collapses to nothing when Premium is active or the
+/// ad fails to load (a [SizedBox.shrink]), so song indices never shift and the
+/// list stays responsive.
+class _SongsSliver extends ConsumerWidget {
+  const _SongsSliver({
+    required this.tiles,
+    required this.hasMore,
+    required this.onPlay,
+  });
+
+  final List<SongTileData> tiles;
+  final bool hasMore;
+  final void Function(List<SongTileData> tiles, int startIndex) onPlay;
+
+  /// Insert a banner after every group of this many songs (per 90 songs).
+  static const int _adEveryTracks = 90;
+
+  /// Number of banner slots for [tiles]: one per full group of [tiles].
+  int get _adCount => tiles.length ~/ _adEveryTracks;
+
+  /// Total sliver items: songs + banners + (an end-of-list loader if paging).
+  int get _total => tiles.length + _adCount + (hasMore ? 1 : 0);
+
+  /// True when the combined sliver index [t] is a banner slot.
+  bool _isBanner(int t) => (t + 1) % (_adEveryTracks + 1) == 0;
+
+  /// Maps a combined sliver index (non-banner, non-loader) to a song index.
+  int _songIndex(int t) => t - ((t + 1) ~/ (_adEveryTracks + 1));
+
+  /// True when the combined sliver index [t] is the trailing loader.
+  bool _isLoader(int t) => hasMore && t == _total - 1;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SliverList.separated(
+      itemCount: _total,
+      separatorBuilder: (context, i) {
+        // Skip the divider when it would sit beside a banner or the loader.
+        if (_isBanner(i) || _isBanner(i + 1) || _isLoader(i) || _isLoader(i + 1)) {
+          return const SizedBox.shrink();
+        }
+        return Divider(
+          height: AppTokens.borderHairline,
+          thickness: AppTokens.borderHairline,
+          indent: AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
+          endIndent: AppTokens.s4,
+          color: Theme.of(context).colorScheme.outlineVariant,
+        );
+      },
+      itemBuilder: (context, index) {
+        if (_isLoader(index)) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 18),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.2),
+              ),
+            ),
+          );
+        }
+        if (_isBanner(index)) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppTokens.s2),
+            child: VoraTubeBannerAd(),
+          );
+        }
+        final songIndex = _songIndex(index);
+        return ScrollReveal(
+          // Same scroll-jank rationale as All Songs: only the initial
+          // screenful animates in.
+          enabled: songIndex < scrollRevealInitialItems,
+          child: SongTile(
+            key: ValueKey(tiles[songIndex].song.id),
+            tile: tiles[songIndex],
+            index: songIndex,
+            onPlay: (_) => onPlay(tiles, songIndex),
+          ),
+        );
+      },
+    );
   }
 }
 

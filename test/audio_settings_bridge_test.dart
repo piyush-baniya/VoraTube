@@ -1,7 +1,10 @@
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
+import 'package:vora_tube/features/library/data/library_repository.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
 import 'package:vora_tube/features/settings/data/settings_models.dart';
 import 'package:vora_tube/features/settings/presentation/providers/settings_providers.dart';
@@ -78,10 +81,13 @@ class SpyPlayerController implements PlayerController {
 }
 
 /// A controller that skips the KV persistence layer so tests can drive state
-/// without a database. State changes still notify listeners exactly like the
-/// real controller, which is what the bridge reacts to.
+/// without persisting. State changes still notify listeners exactly like the
+/// real controller, which is what the bridge reacts to. An empty in-memory
+/// database gives it a real [LibraryRepository] so the `_load()` read returns
+/// null (the default state).
 class _TestAudioSettingsController extends AudioSettingsController {
-  _TestAudioSettingsController() : super(_NullRepo());
+  _TestAudioSettingsController()
+    : super(LibraryRepository(AppDatabase(NativeDatabase.memory())));
 
   @override
   Future<void> setReplayGain(ReplayGainPreference mode) async {
@@ -92,10 +98,6 @@ class _TestAudioSettingsController extends AudioSettingsController {
   Future<void> setPreampDb(double v) async {
     state = state.copyWith(preampDb: v.clamp(-12.0, 12.0));
   }
-}
-
-class _NullRepo {
-  Future<String?> kvGet(String key) async => null;
 }
 
 void main() {

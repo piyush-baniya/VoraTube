@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/storage/device_storage_service.dart';
+import '../../../../features/library/data/library_repository.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../data/settings_models.dart';
 
@@ -45,8 +46,9 @@ class StorageInfo {
   static String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024)
+    if (bytes < 1024 * 1024 * 1024) {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 }
@@ -70,11 +72,11 @@ Future<int> _getFileSize(String path) async {
 // ── Persisted app settings loaded from KV storage ───────────────────────
 
 final appSettingsProvider = FutureProvider<AppSettings>((ref) async {
-  final repository = ref.watch(libraryRepositoryProvider) as dynamic;
-  final audioJson = await repository.kvGet(SettingsKeys.audio) as String?;
-  final libraryJson = await repository.kvGet(SettingsKeys.library) as String?;
+  final repository = ref.watch(libraryRepositoryProvider);
+  final audioJson = await repository.kvGet(SettingsKeys.audio);
+  final libraryJson = await repository.kvGet(SettingsKeys.library);
   final appearanceJson =
-      await repository.kvGet(SettingsKeys.appearance) as String?;
+      await repository.kvGet(SettingsKeys.appearance);
   return AppSettings(
     audio: audioJson != null
         ? AudioSettingsJson.fromJson(audioJson)
@@ -95,11 +97,11 @@ class AudioSettingsController extends StateNotifier<AudioSettings> {
     _load();
   }
 
-  final dynamic _repository;
+  final LibraryRepository _repository;
 
   Future<void> _load() async {
     try {
-      final json = await _repository.kvGet(SettingsKeys.audio) as String?;
+      final json = await _repository.kvGet(SettingsKeys.audio);
       if (json != null && mounted) state = AudioSettingsJson.fromJson(json);
     } catch (_) {}
   }
@@ -128,11 +130,11 @@ class LibrarySettingsController extends StateNotifier<LibrarySettings> {
     _load();
   }
 
-  final dynamic _repository;
+  final LibraryRepository _repository;
 
   Future<void> _load() async {
     try {
-      final json = await _repository.kvGet(SettingsKeys.library) as String?;
+      final json = await _repository.kvGet(SettingsKeys.library);
       if (json != null && mounted) state = LibrarySettingsJson.fromJson(json);
     } catch (_) {}
   }
@@ -162,13 +164,14 @@ class AppearanceSettingsController extends StateNotifier<AppearanceSettings> {
     _load();
   }
 
-  final dynamic _repository;
+  final LibraryRepository _repository;
 
   Future<void> _load() async {
     try {
-      final json = await _repository.kvGet(SettingsKeys.appearance) as String?;
-      if (json != null && mounted)
+      final json = await _repository.kvGet(SettingsKeys.appearance);
+      if (json != null && mounted) {
         state = AppearanceSettingsJson.fromJson(json);
+      }
     } catch (_) {}
   }
 
