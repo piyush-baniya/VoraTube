@@ -51,8 +51,9 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   /// null when none is selected.
   int? _selectedHour;
 
-  /// Whether the user chose to enter a custom wall-clock time (hour + minute +
-  /// AM/PM) rather than a preset on-the-hour chip.
+  /// Whether a wall-clock stop time was chosen on the clock picker (as opposed
+  /// to an on-the-hour preset chip). Set by [_pickOnClock]; drives the
+  /// "Playback stops at ..." preview and the time-based "Set time" button.
   bool _isCustomTime = false;
 
   /// Custom wall-clock time being composed (24-hour hour + minute).
@@ -296,7 +297,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
       children: [
         Text(
           'Stop playback automatically. Playback pauses when the timer runs '
-          'out — your spot is kept.',
+          'out â€” your spot is kept.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -382,58 +383,10 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
                 }),
                 selected: _selectedHour == h && !_isCustomTime,
               ),
-            ChoiceChip(
-              avatar: const Icon(Icons.tune_rounded, size: 16),
-              label: const Text('Custom time'),
-              onSelected: (_) => setState(() {
-                _isCustomTime = true;
-                _selectedHour = null;
-                _isCustom = false;
-              }),
-              selected: _isCustomTime,
-            ),
           ],
         ),
         if (_isCustomTime) ...[
           const SizedBox(height: AppTokens.s4),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: _TimeStepper(
-                  label: 'Hour',
-                  value: _customHour24 % 12 == 0 ? 12 : _customHour24 % 12,
-                  onChanged: (v) => setState(() {
-                    final h12 = v == 0 ? 12 : v;
-                    final isPm = _customHour24 >= 12;
-                    _customHour24 = (isPm ? h12 % 12 + 12 : h12 % 12);
-                  }),
-                ),
-              ),
-              const SizedBox(width: AppTokens.s3),
-              Expanded(
-                child: _TimeStepper(
-                  label: 'Minute',
-                  value: _customMinute,
-                  max: 59,
-                  onChanged: (v) => setState(() {
-                    _customMinute = v.clamp(0, 59);
-                  }),
-                ),
-              ),
-              const SizedBox(width: AppTokens.s3),
-              _AmPmToggle(
-                value: _customHour24 >= 12,
-                onChanged: (_) => setState(() {
-                  final h12 = _customHour24 % 12 == 0 ? 12 : _customHour24 % 12;
-                  _customHour24 = _customHour24 >= 12
-                      ? (h12 % 12)
-                      : (h12 % 12) + 12;
-                }),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppTokens.s1),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -520,7 +473,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   }
 }
 
-/// A compact − / value / + stepper used to compose a custom wall-clock time.
+/// A compact âˆ’ / value / + stepper used to compose a custom wall-clock time.
 class _TimeStepper extends StatelessWidget {
   const _TimeStepper({
     required this.label,
@@ -580,57 +533,9 @@ class _TimeStepper extends StatelessWidget {
       icon: Icon(icon, size: 20),
       visualDensity: VisualDensity.compact,
       style: IconButton.styleFrom(
-        backgroundColor: Theme.of(
-          context,
-        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest
+            .withValues(alpha: 0.5),
       ),
-    );
-  }
-}
-
-/// AM / PM segmented toggle for the custom wall-clock time.
-class _AmPmToggle extends StatelessWidget {
-  const _AmPmToggle({required this.value, required this.onChanged});
-
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'AM/PM',
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: AppTokens.s1),
-        SegmentedButton<bool>(
-          segments: const [
-            ButtonSegment(
-              value: false,
-              label: Text('AM'),
-              icon: Icon(Icons.wb_sunny_outlined, size: 16),
-            ),
-            ButtonSegment(
-              value: true,
-              label: Text('PM'),
-              icon: Icon(Icons.nights_stay_outlined, size: 16),
-            ),
-          ],
-          selected: {value},
-          onSelectionChanged: (s) => onChanged(s.first),
-          showSelectedIcon: false,
-          style: ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            textStyle: WidgetStatePropertyAll(theme.textTheme.labelMedium),
-          ),
-        ),
-      ],
     );
   }
 }
