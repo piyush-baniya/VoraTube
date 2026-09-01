@@ -505,21 +505,44 @@ void main() {
         showSleepTimerSheet(tester.element(find.byType(Scaffold)));
         await tester.pumpAndSettle();
 
-        // The Custom chip exposes minute and second fields.
+        // The Custom chip exposes minute and second steppers.
         await tester.tap(find.text('Custom'));
         await tester.pumpAndSettle();
         expect(find.text('Minutes'), findsOneWidget);
         expect(find.text('Seconds'), findsOneWidget);
 
-        // Enter 1 minute 30 seconds and confirm the preview updates.
-        await tester.enterText(
-          find.widgetWithText(TextField, 'Minutes'),
-          '1',
+        // Step the steppers down/up to 1 minute 30 seconds and confirm the
+        // preview updates. The minutes stepper starts at 15.
+        final minutesStepper = find.ancestor(
+          of: find.text('Minutes'),
+          matching: find.byType(Column),
+        ).first;
+        final minutesMinus = find.descendant(
+          of: minutesStepper,
+          matching: find.byIcon(Icons.remove_rounded),
         );
-        await tester.enterText(
-          find.widgetWithText(TextField, 'Seconds'),
-          '30',
+        final secondsStepper = find.ancestor(
+          of: find.text('Seconds'),
+          matching: find.byType(Column),
+        ).first;
+        final secondsPlus = find.descendant(
+          of: secondsStepper,
+          matching: find.byIcon(Icons.add_rounded),
         );
+        await tester.ensureVisible(minutesMinus);
+        await tester.pumpAndSettle();
+        // ignore: avoid_print
+        for (var i = 0; i < 14; i++) {
+          await tester.tap(minutesMinus, warnIfMissed: false);
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(secondsPlus);
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 30; i++) {
+          await tester.tap(secondsPlus, warnIfMissed: false);
+          await tester.pump();
+        }
         await tester.pumpAndSettle();
         expect(find.text('Custom: 01:30'), findsOneWidget);
 

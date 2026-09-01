@@ -319,7 +319,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           children: [
             if (!compact) const SizedBox(height: AppTokens.s3),
             // Compact lyrics panel — fills whatever height the region has.
-            Expanded(child: CompactLyricsPanel(height: 280)),
+            // Flexible (not Expanded) keeps constraints loose so the panel can
+            // shrink to its collapsed preview height instead of staying at
+            // full height when the user taps the collapse control.
+            const Flexible(child: CompactLyricsPanel(height: 280)),
             SizedBox(height: compact ? AppTokens.s1 : AppTokens.s4),
             _SongMetadata(
               title: current.title,

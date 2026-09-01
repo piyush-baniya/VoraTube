@@ -256,14 +256,10 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
           color: isDark
               ? AppColors.surfaceDark.withValues(alpha: 0.85)
               : AppColors.surfaceLight.withValues(alpha: 0.85),
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppTokens.rXl),
-          ),
-          border: Border(
-            top: BorderSide(
-              color: accent.withValues(alpha: 0.2),
-              width: AppTokens.borderHairline,
-            ),
+          borderRadius: BorderRadius.circular(AppTokens.rXl),
+          border: Border.all(
+            color: accent.withValues(alpha: 0.2),
+            width: AppTokens.borderHairline,
           ),
           boxShadow: [
             BoxShadow(
@@ -275,9 +271,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
           ],
         ),
         child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppTokens.rXl),
-          ),
+          borderRadius: BorderRadius.circular(AppTokens.rXl),
           child: _expanded
               ? _buildExpanded(lyricsAsync, manual)
               : _buildCollapsedPreview(lyricsAsync, manual),

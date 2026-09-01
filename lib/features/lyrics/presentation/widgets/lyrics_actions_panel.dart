@@ -237,20 +237,6 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     _snack('Lyrics from "${file.name}" saved for this song.');
   }
 
-  Future<void> _showUploadedLrc() async {
-    final song = ref.read(currentTrackProvider);
-    if (song == null) return;
-    final service = ref.read(lyricsServiceProvider);
-    final stored = await service.userLrc.load(song.identityKey);
-    final data = stored == null ? null : service.lyricsFromUserLrc(stored.lrc);
-    if (data == null) {
-      ref.invalidate(uploadedLrcProvider);
-      _snack('The saved lyrics are unavailable. Upload the file again.');
-      return;
-    }
-    _useLyrics(data);
-  }
-
   /// Removes the persisted LRC for the current song, clears any displayed
   /// lyrics and returns to the buttons-first entry.
   Future<void> _removeUploadedLrc() async {
@@ -279,21 +265,23 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     bool? destructive,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    return OutlinedButton.icon(
+    final isDestructive = destructive == true;
+    return FilledButton.tonalIcon(
       onPressed: enabled ? () => onTap() : null,
       icon: Icon(
         icon,
         size: widget.grid ? 20 : 18,
-        color: destructive == true ? colorScheme.error : colorScheme.primary,
+        color: isDestructive ? colorScheme.error : colorScheme.primary,
       ),
       label: Text(
         label,
-        style: destructive == true
-            ? TextStyle(color: colorScheme.error)
-            : null,
+        style: isDestructive ? TextStyle(color: colorScheme.error) : null,
       ),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: colorScheme.primary,
+      style: FilledButton.styleFrom(
+        foregroundColor: isDestructive ? colorScheme.error : null,
+        backgroundColor: isDestructive
+            ? colorScheme.errorContainer.withValues(alpha: 0.5)
+            : null,
         padding: EdgeInsets.symmetric(
           vertical: widget.compact ? AppTokens.s2 : AppTokens.s3,
         ),
@@ -325,13 +313,12 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
 
   /// The primary actions: "Show online lyrics", "Search lyrics online", plus
   /// the third slot that swaps between "Upload .lrc file" and (once a file is
-  /// saved) "Remove .LRC File". When a saved LRC exists a "Show uploaded
-  /// lyrics" tile also appears so those lyrics stay reachable.
+  /// saved) "Remove .lrc file".
   List<Widget> _actionTiles() {
     final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
     final uploadAction = uploaded != null
         ? _button(
-            'Remove .LRC File',
+            'Remove .lrc file',
             Icons.delete_outline_rounded,
             _removeUploadedLrc,
             destructive: true,
@@ -350,21 +337,38 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         Icons.travel_explore_rounded,
         _searchLyricsOnWeb,
       ),
-      if (uploaded != null)
-        _button('Show uploaded lyrics', Icons.lyrics_rounded, _showUploadedLrc),
       uploadAction,
     ];
+  }
+
+  /// Lays buttons out exactly two per row with equal widths and spacing.
+  List<Widget> _pairedRows(List<Widget> buttons) {
+    final rows = <Widget>[];
+    for (var i = 0; i < buttons.length; i += 2) {
+      final second = i + 1 < buttons.length ? buttons[i + 1] : null;
+      rows.add(
+        Row(
+          children: [
+            Expanded(child: buttons[i]),
+            const SizedBox(width: AppTokens.s2),
+            if (second != null) Expanded(child: second) else const Spacer(),
+          ],
+        ),
+      );
+      if (i + 2 < buttons.length) {
+        rows.add(const SizedBox(height: AppTokens.s2));
+      }
+    }
+    return rows;
   }
 
   Widget _buildGrid() {
     if (_onlinePick != null) {
       return _buildOnlinePicker();
     }
-    return Wrap(
-      alignment: WrapAlignment.center,
-      spacing: AppTokens.s2,
-      runSpacing: AppTokens.s2,
-      children: _actionTiles(),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: _pairedRows(_actionTiles()),
     );
   }
 
@@ -456,18 +460,16 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
       children: [
         content,
         const SizedBox(height: AppTokens.s2),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: AppTokens.s2,
-          runSpacing: AppTokens.s2,
-          children: [
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: _pairedRows([
             _button(
               'Back',
               Icons.arrow_back_rounded,
               () async => setState(() => _onlinePick = null),
             ),
             ..._actionTiles(),
-          ],
+          ]),
         ),
       ],
     );
@@ -504,7 +506,7 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
             ),
             const SizedBox(width: AppTokens.s1),
             if (uploaded != null)
-              _chip('Show uploaded', Icons.lyrics_rounded, _showUploadedLrc)
+              _chip('Remove .lrc', Icons.delete_outline_rounded, _removeUploadedLrc)
             else
               _chip('Upload .lrc', Icons.upload_file_rounded, _uploadLrc),
           ],
@@ -513,7 +515,7 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     }
 
     if (widget.compact) {
-      return Column(mainAxisSize: MainAxisSize.min, children: buttons);
+      return Column(mainAxisSize: MainAxisSize.min, children: _pairedRows(buttons));
     }
 
     return Column(

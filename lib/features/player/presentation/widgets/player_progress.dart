@@ -15,13 +15,13 @@ void disableWaveTimelineForTesting() {
 
 /// Purple, smooth flowing wave progress bar for the full-screen player.
 ///
-/// Two overlapping sine-based wave paths (a primary stroke plus a softer echo)
-/// are drawn as continuous curves — deliberately NOT equalizer bars. The wave
-/// is split at the playback progress point: the played region is stroked in
-/// vivid purple, the remainder in a faint purple tint, so progress stays
-/// readable while the shape stays a smooth flowing wave. While playing the
-/// phase advances so the wave gently flows; when paused the phase freezes and
-/// the painter only repaints on progress changes.
+/// A single sine-based wave path is drawn as a continuous curve — deliberately
+/// NOT equalizer bars. The wave is split at the playback progress point: the
+/// played region is stroked in vivid purple, the remainder in a faint purple
+/// tint, so progress stays readable while the shape stays a smooth flowing
+/// single line. While playing the phase advances so the wave gently flows;
+/// when paused the phase freezes and the painter only repaints on progress
+/// changes.
 class PlayerProgress extends StatefulWidget {
   const PlayerProgress({
     super.key,
@@ -342,21 +342,10 @@ class _WavePainter extends CustomPainter {
     final midY = size.height / 2;
     // Flow amplitude: gently larger while playing, settled when paused.
     final amplitude = isPlaying ? size.height * 0.36 : size.height * 0.28;
-    // The envelope drifts slowly with the phase so the silhouette itself
-    // breathes; when paused everything freezes naturally.
-    final envelopePhase = wave * 2 * math.pi * 0.35;
+    // The envelope is static so the silhouette stays consistent frame to
+    // frame; only the wave phase advances, which keeps the animation smooth
+    // and free of visual jumps.
 
-    // Softer echo wave beneath the primary stroke.
-    final echo = _wavePath(
-      width: size.width,
-      midY: midY,
-      amplitude: amplitude * 0.6,
-      frequency: 2 * math.pi / 130,
-      phaseShift: 1.7,
-      envelopeFrequency: 2 * math.pi / 420,
-      envelopePhase: envelopePhase + 2.1,
-    );
-    // Primary wave.
     final main = _wavePath(
       width: size.width,
       midY: midY,
@@ -364,10 +353,9 @@ class _WavePainter extends CustomPainter {
       frequency: 2 * math.pi / 95,
       phaseShift: 0,
       envelopeFrequency: 2 * math.pi / 300,
-      envelopePhase: envelopePhase,
+      envelopePhase: 0,
     );
 
-    _paintSplit(canvas, echo, 2.0, size);
     _paintSplit(canvas, main, 3.0, size);
   }
 

@@ -62,13 +62,14 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   /// Whether the selected wall-clock time repeats every day.
   bool _repeatDaily = false;
 
-  final TextEditingController _customMinutes = TextEditingController();
-  final TextEditingController _customSeconds = TextEditingController();
+  /// Custom duration being composed with the tap steppers (minutes/seconds).
+  int _customMinutesValue = 15;
+  int _customSecondsValue = 0;
 
   /// The parsed custom duration, or null when the input is invalid/empty.
   Duration? get _customDuration {
-    final minutes = int.tryParse(_customMinutes.text.trim()) ?? 0;
-    final seconds = int.tryParse(_customSeconds.text.trim()) ?? 0;
+    final minutes = _customMinutesValue;
+    final seconds = _customSecondsValue;
     if (minutes < 0 || seconds < 0) return null;
     final total = Duration(minutes: minutes, seconds: seconds);
     if (total <= Duration.zero) return null;
@@ -83,9 +84,28 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
 
   @override
   void dispose() {
-    _customMinutes.dispose();
-    _customSeconds.dispose();
     super.dispose();
+  }
+
+  /// Opens the Material clock dial so the user can pick the stop time on a
+  /// real clock face instead of composing it with steppers.
+  Future<void> _pickOnClock() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _customHour24 % 24, minute: _customMinute),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: false),
+        child: child!,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _customHour24 = picked.hour;
+      _customMinute = picked.minute;
+      _isCustomTime = true;
+      _selectedHour = null;
+      _isCustom = false;
+    });
   }
 
   Future<void> _start(Duration d) async {
@@ -209,7 +229,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
           ),
         ),
         const SizedBox(height: AppTokens.s6),
-        OutlinedButton.icon(
+        FilledButton.tonalIcon(
           onPressed: () async {
             await ref.read(sleepTimerProvider.notifier).cancel();
             if (mounted) Navigator.of(context).pop();
@@ -251,14 +271,14 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
         ),
         const SizedBox(height: AppTokens.s6),
         if (state.recurring) ...[
-          OutlinedButton.icon(
+          FilledButton.tonalIcon(
             onPressed: _ignoreToday,
             icon: const Icon(Icons.skip_next_rounded),
             label: const Text('Ignore for today'),
           ),
           const SizedBox(height: AppTokens.s2),
         ],
-        OutlinedButton.icon(
+        FilledButton.tonalIcon(
           onPressed: () async {
             await ref.read(sleepTimerProvider.notifier).cancel();
             if (mounted) Navigator.of(context).pop();
@@ -337,6 +357,12 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
             ),
             Expanded(child: Divider(color: colorScheme.outlineVariant)),
           ],
+        ),
+        const SizedBox(height: AppTokens.s4),
+        FilledButton.tonalIcon(
+          onPressed: _pickOnClock,
+          icon: const Icon(Icons.access_time_rounded),
+          label: const Text('Pick a time on the clock'),
         ),
         const SizedBox(height: AppTokens.s4),
         Wrap(
@@ -452,28 +478,22 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
-              child: TextField(
-                controller: _customMinutes,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Minutes',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {}),
+              child: _TimeStepper(
+                label: 'Minutes',
+                value: _customMinutesValue,
+                max: 359,
+                onChanged: (v) =>
+                    setState(() => _customMinutesValue = v.clamp(0, 359)),
               ),
             ),
             const SizedBox(width: AppTokens.s3),
             Expanded(
-              child: TextField(
-                controller: _customSeconds,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Seconds',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {}),
+              child: _TimeStepper(
+                label: 'Seconds',
+                value: _customSecondsValue,
+                max: 59,
+                onChanged: (v) =>
+                    setState(() => _customSecondsValue = v.clamp(0, 59)),
               ),
             ),
           ],
@@ -481,7 +501,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
         const SizedBox(height: AppTokens.s2),
         Text(
           custom == null
-              ? 'Enter a duration greater than zero.'
+              ? 'Choose a duration greater than zero.'
               : 'Custom: ${formatSleepTimer(custom)}'
                     '${custom >= SleepTimerController.maxDuration ? ' (max 6 h)' : ''}',
           style: theme.textTheme.bodySmall?.copyWith(
@@ -560,7 +580,9 @@ class _TimeStepper extends StatelessWidget {
       icon: Icon(icon, size: 20),
       visualDensity: VisualDensity.compact,
       style: IconButton.styleFrom(
-        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+        backgroundColor: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       ),
     );
   }
