@@ -742,7 +742,15 @@ class JustAudioController extends BaseAudioHandler
     // sequence must never linger as an orphan AudioTrack playing with no UI.
     _queueRevision++;
     ++_playGeneration;
-    _schedulePersist(immediate: true);
+    // Explicit stop is a deliberate end of the session: wipe the persisted
+    // snapshot so a restart doesn't resurrect a session the user cleared.
+    _persistDebounce?.cancel();
+    _persistDebounce = null;
+    try {
+      await _persistence.write(_kSnapshotKey, const QueueSnapshot.empty().toJson());
+    } catch (e) {
+      debugPrint('VoraTube snapshot clear failed: $e');
+    }
     _emit();
     await _clearEngine();
   }
@@ -1094,7 +1102,11 @@ class JustAudioController extends BaseAudioHandler
       // Current-first: the playing song is always at index 0.
       queueLength: _queueRefs.length,
       currentIndex: _queueRefs.isEmpty ? -1 : 0,
-      durationMs: _player.duration?.inMilliseconds ?? 0,
+      // Fall back to the known track metadata while the engine hasn't decoded
+      // its own duration yet (fresh load, or a restored idle session), so the
+      // progress bar has a denominator before the first engine duration event.
+      durationMs:
+          _player.duration?.inMilliseconds ?? _currentRef()?.durationMs ?? 0,
       queueRevision: _queueRevision,
       current: _currentRef(),
     );
@@ -1189,6 +1201,14 @@ class JustAudioController extends BaseAudioHandler
       if (_queueRefs.isEmpty) {
         return;
       }
+      // Never persist mid-transition: the engine position belongs to whichever
+      // source is being swapped, so writing now could clobber a good saved
+      // position with a transient 0 (a classic "progress lost on restart"
+      // race). The snapshot emitted at the end of the transition re-arms the
+      // persist with the coherent state.
+      if (_queueTransition) {
+        return;
+      }
       final snapshot = QueueSnapshot(
         identityKeys: [
           for (final r in _queueRefs)
@@ -1247,18 +1267,24 @@ class JustAudioController extends BaseAudioHandler
         saved.positionMs,
         rotated.first.durationMs,
       );
+      // Load the restored track headfully so the engine is genuinely READY at
+      // the saved position. The previous `preload: false` + seek approach left
+      // the engine idle with the position deferred to a future play(), so the
+      // restored progress was never actually applied (and the position stream
+      // never reported it) — progress appeared to reset to 0 on every restart.
       _queueRefs = List.unmodifiable(rotated);
       _shuffleEnabled = saved.shuffleEnabled;
       _repeatMode = saved.repeatMode;
       await _player.setAudioSource(
         _sourceFor(_queueRefs.first),
-        preload: false,
+        preload: true,
         initialPosition: Duration(milliseconds: resumeMs),
       );
-      // A preload:false restore leaves the engine idle with the position not
-      // applied. Seek to load the current track headfully (without starting
-      // playback) so the media session and player UI agree with the queue.
-      await _player.seek(Duration(milliseconds: resumeMs));
+      // Defensive: make sure the engine agrees with the saved position even if
+      // the platform ignored initialPosition.
+      if ((_player.position.inMilliseconds - resumeMs).abs() > 1500) {
+        await _player.seek(Duration(milliseconds: resumeMs));
+      }
       // Engine never uses native shuffle; reflect the restored state only.
       await _player.setShuffleModeEnabled(false);
       await _player.setLoopMode(
@@ -1270,6 +1296,15 @@ class JustAudioController extends BaseAudioHandler
         _statLastKey = restoredRef.identityKey;
       }
       _queueRevision++;
+      // Seed the position stream with the restored position so progress-
+      // rendering widgets (MiniPlayer, full player) show the saved location
+      // immediately, without waiting for playback to start: a paused/idle
+      // engine does not tick the position stream on its own.
+      if (!_positionController.isClosed) {
+        _positionController.add(Duration(milliseconds: resumeMs));
+      }
+      _schedulePersist(immediate: true);
+      _emit();
       debugPrint(
         'VoraTube restored queue (${_queueRefs.length} tracks @ '
         '$resumeMs ms)',
