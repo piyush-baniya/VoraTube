@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/update/update_dialog.dart';
-import '../core/update/update_providers.dart';
 import '../features/library/presentation/screens/home_screen.dart';
 import '../features/library/presentation/screens/library_screen.dart';
 import '../features/playlists/presentation/screens/playlists_screen.dart';
@@ -16,13 +14,8 @@ import 'widgets/glass_nav_bar.dart';
 /// The app shell: a tabbed scaffold with a persistent [MiniPlayer].
 ///
 /// Tab bodies live inside a nested [Navigator] so drilled-down routes (playlist
-/// details, statistics, genres, smart mixes, filtered songs) still render under
-/// the single persistent [MiniPlayer]. Only the immersive [FullPlayerScreen]
-/// pushes onto the root navigator, covering the whole shell.
-///
-/// It is also the natural, user-visible moment to run the (async, throttled,
-/// entirely optional) update check: the check never blocks the splash or the
-/// shell, never pauses playback, and never resets navigation.
+/// details, playlist details, statistics, genres, smart mixes, filtered songs)
+/// still render under the single persistent [MiniPlayer].
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -52,17 +45,6 @@ class _HomeShellState extends ConsumerState<HomeShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      // Fire the throttled check once, well after the main UI is on screen.
-      ref.read(updateCheckerProvider.notifier).run();
-    });
-    // Whenever the checker lands on a decision, surface it. Uses a listener so
-    // the update dialog shows without the shell rebuilding for it.
-    ref.listenManual<UpdatePrompt?>(updateCheckerProvider, (previous, next) {
-      if (next == null) return;
-      _presentUpdate(next);
-    });
     // Surface the sleep-timer-finished popup the moment the timer expires
     // while the app is in the foreground.
     ref.listenManual<SleepTimerState>(sleepTimerProvider, (previous, next) {
@@ -100,19 +82,6 @@ class _HomeShellState extends ConsumerState<HomeShell>
       ref.read(sleepTimerProvider.notifier).dismissFinished();
       _handlingTimerFinished = false;
     });
-  }
-
-  Future<void> _presentUpdate(UpdatePrompt prompt) async {
-    if (!mounted) return;
-    await showUpdateDialog(
-      context,
-      decision: prompt.decision,
-      info: prompt.info,
-    );
-    if (!mounted) return;
-    // Clear the prompt (and remember "Later" so it is not re-offered this
-    // session) once the dialog closes, whatever the button.
-    ref.read(updateCheckerProvider.notifier).dismiss();
   }
 
   @override

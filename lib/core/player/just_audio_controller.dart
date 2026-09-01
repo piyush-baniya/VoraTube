@@ -13,6 +13,23 @@ import 'queue_order.dart';
 
 const String _kSnapshotKey = 'playback.snapshot.v1';
 
+/// Decides the millisecond position a restored session should resume from.
+///
+/// Negative saved positions clamp to 0, and a position at or beyond the
+/// track's known [durationMs] (e.g. the persist raced a natural completion,
+/// or the file changed length between sessions) restarts the track from 0
+/// instead of seeking into an invalid range that would make the restored
+/// source complete instantly. An unknown duration (0) keeps the saved value.
+int clampResumeMs(int savedPositionMs, int durationMs) {
+  if (savedPositionMs < 0) {
+    return 0;
+  }
+  if (durationMs > 0 && savedPositionMs >= durationMs) {
+    return 0;
+  }
+  return savedPositionMs;
+}
+
 /// Position-stream resolution used for lyrics highlight, progress bar and the
 /// listening-time accumulator. A fixed ~200 ms period keeps the lyrics
 /// highlight in step with the actual playback position (a coarse maxPeriod of
@@ -1222,18 +1239,26 @@ class JustAudioController extends BaseAudioHandler
         for (var i = 0; i < ordered.length; i++)
           ordered[(index + i) % ordered.length],
       ];
+      // Clamp an impossible saved position before touching the engine: a
+      // position at/after the track's known duration (e.g. the persist raced a
+      // natural completion) would make the restored source complete instantly
+      // and silently advance to the next track. Restart such a track from 0.
+      final resumeMs = clampResumeMs(
+        saved.positionMs,
+        rotated.first.durationMs,
+      );
       _queueRefs = List.unmodifiable(rotated);
       _shuffleEnabled = saved.shuffleEnabled;
       _repeatMode = saved.repeatMode;
       await _player.setAudioSource(
         _sourceFor(_queueRefs.first),
         preload: false,
-        initialPosition: Duration(milliseconds: saved.positionMs),
+        initialPosition: Duration(milliseconds: resumeMs),
       );
       // A preload:false restore leaves the engine idle with the position not
       // applied. Seek to load the current track headfully (without starting
       // playback) so the media session and player UI agree with the queue.
-      await _player.seek(Duration(milliseconds: saved.positionMs));
+      await _player.seek(Duration(milliseconds: resumeMs));
       // Engine never uses native shuffle; reflect the restored state only.
       await _player.setShuffleModeEnabled(false);
       await _player.setLoopMode(
@@ -1247,7 +1272,7 @@ class JustAudioController extends BaseAudioHandler
       _queueRevision++;
       debugPrint(
         'VoraTube restored queue (${_queueRefs.length} tracks @ '
-        '${saved.positionMs}ms)',
+        '$resumeMs ms)',
       );
     } catch (e) {
       debugPrint('VoraTube restore failed: $e');

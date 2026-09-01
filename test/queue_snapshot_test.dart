@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/core/player/player_controller.dart';
+import 'package:vora_tube/core/player/just_audio_controller.dart';
 
 void main() {
   group('QueueSnapshot JSON round-trip', () {
@@ -47,6 +48,31 @@ void main() {
       // Version 1 but missing the required key list.
       expect(QueueSnapshot.fromJson('{"v":1}').isEmpty, isTrue);
       expect(QueueSnapshot.fromJson('{"v":1,"keys":["a"]}').isEmpty, isFalse);
+    });
+  });
+
+  group('clampResumeMs (restored-position safety)', () {
+    test('keeps a normal mid-track position', () {
+      // e.g. user paused at 2:37 (157s) in a 4:12 song.
+      expect(clampResumeMs(157000, 252000), 157000);
+    });
+
+    test('clamps a negative saved position to zero', () {
+      expect(clampResumeMs(-5, 252000), 0);
+    });
+
+    test('restarts a position at/after the known duration from zero', () {
+      // Persist raced a natural completion: position == duration.
+      expect(clampResumeMs(252000, 252000), 0);
+      expect(clampResumeMs(300000, 252000), 0);
+    });
+
+    test('keeps the saved value when the duration is unknown', () {
+      expect(clampResumeMs(157000, 0), 157000);
+    });
+
+    test('zero position stays zero', () {
+      expect(clampResumeMs(0, 252000), 0);
     });
   });
 }
