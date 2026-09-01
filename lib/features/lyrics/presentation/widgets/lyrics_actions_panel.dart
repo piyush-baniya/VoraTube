@@ -20,11 +20,17 @@ import '../providers/lyrics_providers.dart';
 /// Shared between the standalone [LyricsView] and the full player's compact
 /// lyrics panel so the actions are reachable in both places.
 class LyricsActionsPanel extends ConsumerStatefulWidget {
-  const LyricsActionsPanel({super.key, this.compact = false});
+  const LyricsActionsPanel({super.key, this.compact = false, this.row = false});
 
   /// When true the buttons are sized for a tighter panel (used by the compact
   /// full-player lyrics panel) and render without the fixed 260 dp column.
   final bool compact;
+
+  /// When true the actions render as a single horizontally-scrolling row of
+  /// small chips instead of a stacked column. Used where vertical space is
+  /// tight but the actions must stay reachable — the collapsed lyrics preview
+  /// and the bottom of a loaded-lyrics surface.
+  final bool row;
 
   @override
   ConsumerState<LyricsActionsPanel> createState() => _LyricsActionsPanelState();
@@ -135,7 +141,6 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
   }
 
   Future<void> _uploadLrc() async {
-    
     final song = ref.read(currentTrackProvider);
     if (song == null) return;
 
@@ -182,7 +187,6 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
   }
 
   Future<void> _showUploadedLrc() async {
-    
     final song = ref.read(currentTrackProvider);
     if (song == null) return;
     final service = ref.read(lyricsServiceProvider);
@@ -213,11 +217,28 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
       label: Text(label),
       style: OutlinedButton.styleFrom(
         foregroundColor: colorScheme.primary,
-      padding: EdgeInsets.symmetric(
-        vertical: widget.compact ? AppTokens.s2 : AppTokens.s3,
-      ),
+        padding: EdgeInsets.symmetric(
+          vertical: widget.compact ? AppTokens.s2 : AppTokens.s3,
+        ),
         visualDensity: widget.compact ? VisualDensity.compact : null,
       ),
+    );
+
+    Widget chip(
+      String label,
+      IconData icon,
+      Future<void> Function() onTap, {
+      bool enabled = true,
+    }) => ActionChip(
+      onPressed: enabled ? () => onTap() : null,
+      avatar: Icon(icon, size: 16, color: colorScheme.primary),
+      label: Text(label),
+      labelStyle: theme.textTheme.labelMedium?.copyWith(
+        color: colorScheme.onSurfaceVariant,
+      ),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s2),
     );
 
     final buttons = <Widget>[
@@ -247,21 +268,43 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
       ],
     ];
 
-    if (widget.compact) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: buttons,
+    if (widget.row) {
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            chip(
+              'Show online',
+              Icons.cloud_download_outlined,
+              _showOnlineLyrics,
+              enabled: !_searchingOnline,
+            ),
+            const SizedBox(width: AppTokens.s1),
+            chip(
+              'Search online',
+              Icons.travel_explore_rounded,
+              _searchLyricsOnWeb,
+            ),
+            const SizedBox(width: AppTokens.s1),
+            chip('Upload .lrc', Icons.upload_file_rounded, _uploadLrc),
+            if (uploaded != null) ...[
+              const SizedBox(width: AppTokens.s1),
+              chip('Show uploaded', Icons.lyrics_rounded, _showUploadedLrc),
+            ],
+          ],
+        ),
       );
+    }
+
+    if (widget.compact) {
+      return Column(mainAxisSize: MainAxisSize.min, children: buttons);
     }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 260,
-          child: Column(children: buttons),
-        ),
-      ],
+      children: [SizedBox(width: 260, child: Column(children: buttons))],
     );
   }
 }

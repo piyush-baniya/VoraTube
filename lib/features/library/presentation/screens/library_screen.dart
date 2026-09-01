@@ -349,7 +349,10 @@ class _SongsSliver extends ConsumerWidget {
       itemCount: _total,
       separatorBuilder: (context, i) {
         // Skip the divider when it would sit beside a banner or the loader.
-        if (_isBanner(i) || _isBanner(i + 1) || _isLoader(i) || _isLoader(i + 1)) {
+        if (_isBanner(i) ||
+            _isBanner(i + 1) ||
+            _isLoader(i) ||
+            _isLoader(i + 1)) {
           return const SizedBox.shrink();
         }
         return Divider(
@@ -505,29 +508,31 @@ class _GenresView extends ConsumerWidget {
                 'simply don\u2019t carry them.',
           );
         }
-        return ListView.separated(
+        return ListView(
           padding: const EdgeInsets.symmetric(
             horizontal: AppTokens.s4,
             vertical: AppTokens.s3,
           ),
-          itemCount: genres.length,
-          separatorBuilder: (_, _) => Divider(
-            height: AppTokens.borderHairline,
-            thickness: AppTokens.borderHairline,
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-          itemBuilder: (context, index) {
-            final genre = genres[index];
-            return GenreTile(
-              genre: genre,
-              onTap: () => Navigator.of(context).push(
-                pushSharedAxis<void>(
-                  context,
-                  FilteredSongsScreen.genre(genre.genre),
+          children: [
+            const GenreDisclaimer(),
+            for (var i = 0; i < genres.length; i++) ...[
+              if (i > 0)
+                Divider(
+                  height: AppTokens.borderHairline,
+                  thickness: AppTokens.borderHairline,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              GenreTile(
+                genre: genres[i],
+                onTap: () => Navigator.of(context).push(
+                  pushSharedAxis<void>(
+                    context,
+                    FilteredSongsScreen.genre(genres[i].genre),
+                  ),
                 ),
               ),
-            );
-          },
+            ],
+          ],
         );
       },
     );

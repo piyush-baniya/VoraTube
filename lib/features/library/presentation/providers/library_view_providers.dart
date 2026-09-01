@@ -19,6 +19,18 @@ final libraryRefreshTickProvider = StateProvider<int>((ref) => 0);
 /// few seconds during playback.
 final statsRefreshTickProvider = StateProvider<int>((ref) => 0);
 
+/// Bumped after a favorite is committed, so favorites-derived UIs (the
+/// Collection "Favorites" count and list) recompute without forcing playback
+/// statistics to refetch.
+///
+/// This is a dedicated tick rather than a reuse of [statsRefreshTickProvider]:
+/// favorites do not change listening time, play counts or history, so a
+/// favorite tap must not make the Home "Your Listening" strip or the
+/// Statistics listening sections refetch and repaint — that is the tick a
+/// favorite was historically (incorrectly) wired to, and the source of the
+/// Home screen flicker on a heart tap.
+final favoritesRefreshTickProvider = StateProvider<int>((ref) => 0);
+
 final librarySectionProvider = StateProvider<LibrarySection>(
   (ref) => LibrarySection.songs,
 );
@@ -235,11 +247,14 @@ final favoriteIdsProvider =
       ref.watch(libraryRefreshTickProvider);
       return FavoriteIdsController(
         ref.watch(libraryRepositoryProvider),
-        // A committed favorite toggle moves statistics aggregates (the
-        // Favorites count on the Statistics screen derives from the DB, not
-        // from this set), so the stats tick must move with it.
+        // A committed favorite toggle moves favorites-derived aggregates (the
+        // Collection "Favorites" count/list), so the dedicated favorites tick
+        // must move with it. It deliberately does NOT bump the stats tick:
+        // favorites do not change listening time or play counts, and doing so
+        // made the Home "Your Listening" strip (which watches the stats tick)
+        // refetch and repaint on a heart tap.
         onToggleCommitted: () =>
-            ref.read(statsRefreshTickProvider.notifier).state++,
+            ref.read(favoritesRefreshTickProvider.notifier).state++,
       );
     });
 

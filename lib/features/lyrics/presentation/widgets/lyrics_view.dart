@@ -366,9 +366,19 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           );
         }
         if (data.hasSyncedLines) {
-          return _buildSyncedLyrics(lines);
+          return Column(
+            children: [
+              Expanded(child: _buildSyncedLyrics(lines)),
+              const LyricsActionsPanel(row: true),
+            ],
+          );
         }
-        return _buildPlainLyrics(lines);
+        return Column(
+          children: [
+            Expanded(child: _buildPlainLyrics(lines)),
+            const LyricsActionsPanel(row: true),
+          ],
+        );
     }
   }
 

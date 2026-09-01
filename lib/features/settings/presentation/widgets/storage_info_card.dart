@@ -15,7 +15,7 @@ class StorageInfoCard extends ConsumerWidget {
 
     return storageInfo.when(
       loading: () => _buildLoading(context),
-      error: (_, __) => _buildError(context),
+      error: (_, _) => _buildError(context),
       data: (info) => _buildData(context, info),
     );
   }
@@ -141,21 +141,20 @@ class StorageInfoCard extends ConsumerWidget {
               value: info.deviceTotalSize!,
               iconColor: colorScheme.primary,
             ),
-            _PremiumDivider(),
+            const _PremiumDivider(),
             _InfoRow(
               icon: Icons.pie_chart_rounded,
               label: 'Used',
               value: info.deviceUsedSize!,
               iconColor: colorScheme.primary.withValues(alpha: 0.8),
             ),
-            _PremiumDivider(),
+            const _PremiumDivider(),
             _InfoRow(
               icon: Icons.sd_card_rounded,
               label: 'Available',
               value: info.deviceAvailableSize!,
               iconColor: colorScheme.secondary,
             ),
-            _PremiumDivider(),
           ] else
             _InfoRow(
               icon: Icons.info_outline_rounded,
@@ -163,45 +162,6 @@ class StorageInfoCard extends ConsumerWidget {
               value: 'Unavailable on this platform',
               iconColor: colorScheme.onSurfaceVariant,
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppTokens.s5,
-              AppTokens.s3,
-              AppTokens.s5,
-              AppTokens.s1,
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'APP USAGE',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  letterSpacing: 1.2,
-                  fontWeight: FontWeight.w700,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ),
-          _InfoRow(
-            icon: Icons.data_object_rounded,
-            label: 'Database',
-            value: info.databaseSize,
-            iconColor: colorScheme.primary.withValues(alpha: 0.8),
-          ),
-          _PremiumDivider(),
-          _InfoRow(
-            icon: Icons.image_rounded,
-            label: 'Artwork Cache',
-            value: info.artworkCacheSize,
-            iconColor: colorScheme.secondary,
-          ),
-          _PremiumDivider(),
-          _InfoRow(
-            icon: Icons.music_note_rounded,
-            label: 'Imported Music',
-            value: info.importedMusicSize,
-            iconColor: colorScheme.tertiary,
-          ),
         ],
       ),
     );

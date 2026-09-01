@@ -70,6 +70,37 @@ const _playHistoryIndexes = <String>[
   'CREATE INDEX IF NOT EXISTS play_history_song ON play_history(song_id)',
 ];
 
+/// Multi-artist credits: one row per (song, artist) pair.
+///
+/// A track's primary artist remains on `songs.artist_row_id` for back-compat
+/// (and that column keeps tiles/detail views working untouched), while this
+/// join table records *every* credited artist — primary plus any `feat.`/
+/// `ft.`/`featuring` artists split out at ingest time. `artistOverview` and
+/// `songsForArtist` read through this table so a featured artist's page lists
+/// the songs it appears on with the correct count.
+///
+/// A plain side table (see [songExtrasDdl]) created idempotently in
+/// `beforeOpen`. Only `song_id` carries a foreign key: deleting a song removes
+/// its credits via `ON DELETE CASCADE`, while an orphaned credited `artist_id`
+/// (no longer linked to any song) is pruned by `_cleanupOrphans`' explicit
+/// artist sweep rather than a cascade.
+const songArtistsDdl = '''
+CREATE TABLE IF NOT EXISTS song_artists (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+  artist_id INTEGER NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(song_id, artist_id)
+)
+''';
+
+const _songArtistsIndexes = <String>[
+  'CREATE INDEX IF NOT EXISTS song_artists_artist '
+      'ON song_artists(artist_id)',
+  'CREATE INDEX IF NOT EXISTS song_artists_song '
+      'ON song_artists(song_id)',
+];
+
 /// Album-level bookkeeping that has no place on the drift-declared table.
 ///
 /// Only [artResolvedAt]-style attempt tracking lives here. Without it, an album
@@ -119,10 +150,14 @@ class AppDatabase extends _$AppDatabase {
       await customStatement(albumExtrasDdl);
       await customStatement(_playHistoryDdl);
       await customStatement(userLrcDdl);
+      await customStatement(songArtistsDdl);
       for (final statement in _songExtrasIndexes) {
         await customStatement(statement);
       }
       for (final statement in _playHistoryIndexes) {
+        await customStatement(statement);
+      }
+      for (final statement in _songArtistsIndexes) {
         await customStatement(statement);
       }
     },

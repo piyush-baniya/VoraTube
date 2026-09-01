@@ -174,3 +174,44 @@ class GenreTile extends StatelessWidget {
     );
   }
 }
+
+/// Small, visually secondary disclaimer for the Genres section.
+///
+/// Genres are read from the audio files' own tags and are optional metadata —
+/// files without a tag (or with a misspelled/odd variant) won't show under a
+/// genre here. We surface that rather than implying the list is exhaustive.
+class GenreDisclaimer extends StatelessWidget {
+  const GenreDisclaimer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s4,
+        vertical: AppTokens.s1,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            size: 14,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+          ),
+          const SizedBox(width: AppTokens.s2),
+          Expanded(
+            child: Text(
+              'Genres are read from the genre tag on each audio file and may '
+              'be missing or inaccurate, so some songs may not appear under a '
+              'genre here.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -170,4 +170,34 @@ void main() {
       expect(r.isEmpty, isTrue);
     });
   });
+
+  group('multi-artist credits', () {
+    test('feat. credits are split and counted in artist overview', () async {
+      await repository.syncTracks([
+        _track(1, artist: 'Chance the Rapper feat. Noname'),
+        _track(2, artist: 'Chance the Rapper feat. Noname'),
+      ]);
+
+      final artists = await repository.artistOverview();
+      final chance = artists.firstWhere((a) => a.name == 'Chance the Rapper');
+      final noname = artists.firstWhere((a) => a.name == 'Noname');
+
+      expect(chance.songCount, 2);
+      expect(noname.songCount, 2);
+    });
+
+    test('credited artist page lists songs it appears on', () async {
+      await repository.syncTracks([
+        _track(1, artist: 'Artist A ft. Artist B'),
+        _track(2, artist: 'Artist C ft. Artist B'),
+        _track(3, artist: 'Artist A'),
+      ]);
+
+      final artists = await repository.artistOverview();
+      final b = artists.firstWhere((a) => a.name == 'Artist B');
+      final songs = await repository.songsForArtist(b.artistRowId);
+
+      expect(songs.map((t) => t.song.mediaStoreId).toSet(), {1, 2});
+    });
+  });
 }

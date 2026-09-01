@@ -26,6 +26,7 @@ class SleepTimerSchedule {
   const SleepTimerSchedule({
     required this.mode,
     this.hour,
+    this.minute = 0,
     this.recurring = false,
     this.ignoreForDate,
   });
@@ -36,6 +37,7 @@ class SleepTimerSchedule {
           ? SleepTimerMode.timeOfDay
           : SleepTimerMode.countdown,
       hour: json['hour'] as int?,
+      minute: json['minute'] as int? ?? 0,
       recurring: json['recurring'] as bool? ?? false,
       ignoreForDate: json['ignoreForDate'] as String?,
     );
@@ -47,6 +49,11 @@ class SleepTimerSchedule {
   /// [mode] is [SleepTimerMode.timeOfDay].
   final int? hour;
 
+  /// The wall-clock minute (0–59) this timer should fire at, when
+  /// [mode] is [SleepTimerMode.timeOfDay]. Older persisted schedules written
+  /// before minute support default to 0 (on the hour).
+  final int minute;
+
   /// Whether a [SleepTimerMode.timeOfDay] timer repeats every day.
   final bool recurring;
 
@@ -57,6 +64,7 @@ class SleepTimerSchedule {
   Map<String, dynamic> toJson() => {
     'mode': mode == SleepTimerMode.timeOfDay ? 'timeOfDay' : 'countdown',
     if (hour != null) 'hour': hour,
+    if (minute != 0) 'minute': minute,
     if (recurring) 'recurring': true,
     if (ignoreForDate != null) 'ignoreForDate': ignoreForDate,
   };
@@ -66,7 +74,9 @@ class SleepTimerSchedule {
   static SleepTimerSchedule? decode(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     try {
-      return SleepTimerSchedule.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      return SleepTimerSchedule.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
     } catch (_) {
       return null;
     }
@@ -78,11 +88,12 @@ class SleepTimerSchedule {
       other is SleepTimerSchedule &&
           other.mode == mode &&
           other.hour == hour &&
+          other.minute == minute &&
           other.recurring == recurring &&
           other.ignoreForDate == ignoreForDate;
 
   @override
-  int get hashCode => Object.hash(mode, hour, recurring, ignoreForDate);
+  int get hashCode => Object.hash(mode, hour, minute, recurring, ignoreForDate);
 }
 
 /// Immutable snapshot of the sleep timer.
@@ -100,6 +111,7 @@ class SleepTimerState {
     this.remaining = Duration.zero,
     this.mode = SleepTimerMode.countdown,
     this.hour,
+    this.minute = 0,
     this.recurring = false,
   });
 
@@ -115,16 +127,18 @@ class SleepTimerState {
          remaining: duration,
        );
 
-  /// An active timer aimed at a wall-clock [hour] ([0..23]).
+  /// An active timer aimed at a wall-clock [hour]:[minute] (`hour` 0–23).
   const SleepTimerState.activeTimeOfDay({
     required int endTimeMs,
     required int hour,
+    int minute = 0,
     required bool recurring,
   }) : this._(
          phase: SleepTimerPhase.active,
          endTimeMs: endTimeMs,
          mode: SleepTimerMode.timeOfDay,
          hour: hour,
+         minute: minute,
          recurring: recurring,
        );
 
@@ -147,6 +161,9 @@ class SleepTimerState {
 
   /// The wall-clock hour this timer targets, when [mode] is timeOfDay.
   final int? hour;
+
+  /// The wall-clock minute this timer targets, when [mode] is timeOfDay.
+  final int minute;
 
   /// Whether a timeOfDay timer repeats every day.
   final bool recurring;
@@ -172,6 +189,7 @@ class SleepTimerState {
     remaining: value,
     mode: mode,
     hour: hour,
+    minute: minute,
     recurring: recurring,
   );
 
@@ -185,12 +203,20 @@ class SleepTimerState {
           other.remaining == remaining &&
           other.mode == mode &&
           other.hour == hour &&
+          other.minute == minute &&
           other.recurring == recurring;
 
   @override
-  int get hashCode =>
-      Object.hash(phase, endTimeMs, totalDuration, remaining, mode, hour,
-          recurring);
+  int get hashCode => Object.hash(
+    phase,
+    endTimeMs,
+    totalDuration,
+    remaining,
+    mode,
+    hour,
+    minute,
+    recurring,
+  );
 }
 
 /// Abstraction over where the timer's end timestamp lives, so the controller
@@ -341,6 +367,7 @@ class SleepTimerController extends StateNotifier<SleepTimerState> {
         // restart even if a previous end timestamp already passed.
         await _armTimeOfDay(
           hour,
+          minute: _schedule!.minute,
           recurring: true,
           ignoreForDate: _schedule!.ignoreForDate,
           writeSchedule: true,
@@ -381,14 +408,20 @@ class SleepTimerController extends StateNotifier<SleepTimerState> {
     await _persistence.writeEndTimeMs(endMs);
   }
 
-  /// Starts (or replaces) the timer to fire at a wall-clock [hour] (0–23).
+  /// Starts (or replaces) the timer to fire at a wall-clock [hour]:[minute]
+  /// (`hour` 0–23, `minute` 0–59).
   ///
-  /// When [recurring] is true the timer repeats at the same hour every day;
+  /// When [recurring] is true the timer repeats at the same time every day;
   /// otherwise it fires once. The countdown runs until the next occurrence of
-  /// that hour.
-  Future<void> startTimeOfDay(int hour, {required bool recurring}) async {
+  /// that time.
+  Future<void> startTimeOfDay(
+    int hour, {
+    int minute = 0,
+    required bool recurring,
+  }) async {
     await _armTimeOfDay(
       hour,
+      minute: minute,
       recurring: recurring,
       ignoreForDate: recurring ? _schedule?.ignoreForDate : null,
       writeSchedule: true,
@@ -410,6 +443,7 @@ class SleepTimerController extends StateNotifier<SleepTimerState> {
     final updated = SleepTimerSchedule(
       mode: SleepTimerMode.timeOfDay,
       hour: hour,
+      minute: schedule.minute,
       recurring: true,
       ignoreForDate: today,
     );
@@ -417,6 +451,7 @@ class SleepTimerController extends StateNotifier<SleepTimerState> {
     await _scheduleStore?.writeSchedule(updated);
     await _armTimeOfDay(
       hour,
+      minute: schedule.minute,
       recurring: true,
       ignoreForDate: today,
       writeSchedule: false,
@@ -425,22 +460,31 @@ class SleepTimerController extends StateNotifier<SleepTimerState> {
 
   Future<void> _armTimeOfDay(
     int hour, {
+    int minute = 0,
     required bool recurring,
     String? ignoreForDate,
     bool writeSchedule = true,
   }) async {
-    final normalized = hour % 24;
-    final end = _nextOccurrence(_now(), normalized, ignoreForDate);
+    final normalizedHour = hour % 24;
+    final normalizedMinute = minute % 60;
+    final end = _nextOccurrence(
+      _now(),
+      normalizedHour,
+      normalizedMinute,
+      ignoreForDate,
+    );
     _timer?.cancel();
     state = SleepTimerState.activeTimeOfDay(
       endTimeMs: end.millisecondsSinceEpoch,
-      hour: normalized,
+      hour: normalizedHour,
+      minute: normalizedMinute,
       recurring: recurring,
     );
     if (writeSchedule) {
       _schedule = SleepTimerSchedule(
         mode: SleepTimerMode.timeOfDay,
-        hour: normalized,
+        hour: normalizedHour,
+        minute: normalizedMinute,
         recurring: recurring,
         ignoreForDate: ignoreForDate,
       );
@@ -471,26 +515,39 @@ class SleepTimerController extends StateNotifier<SleepTimerState> {
     _timer = null;
     final schedule = _schedule;
     final hour = state.hour ?? schedule?.hour;
+    final minute = state.minute != 0 || state.mode == SleepTimerMode.timeOfDay
+        ? state.minute
+        : schedule?.minute ?? 0;
     if (schedule != null &&
         schedule.mode == SleepTimerMode.timeOfDay &&
         schedule.recurring &&
         hour != null) {
       unawaited(
-        _armTimeOfDay(hour, recurring: true, ignoreForDate: schedule.ignoreForDate),
+        _armTimeOfDay(
+          hour,
+          minute: minute,
+          recurring: true,
+          ignoreForDate: schedule.ignoreForDate,
+        ),
       );
       return;
     }
     state = const SleepTimerState.inactive();
   }
 
-  DateTime _nextOccurrence(DateTime now, int hour, String? ignoreForDate) {
-    final t = DateTime(now.year, now.month, now.day, hour);
+  DateTime _nextOccurrence(
+    DateTime now,
+    int hour,
+    int minute,
+    String? ignoreForDate,
+  ) {
+    final t = DateTime(now.year, now.month, now.day, hour, minute);
     if (!t.isAfter(now)) {
-      return DateTime(now.year, now.month, now.day + 1, hour);
+      return DateTime(now.year, now.month, now.day + 1, hour, minute);
     }
     // Still today, but the user asked to ignore today.
     if (ignoreForDate != null && _dateKey(t) == ignoreForDate) {
-      return DateTime(now.year, now.month, now.day + 1, hour);
+      return DateTime(now.year, now.month, now.day + 1, hour, minute);
     }
     return t;
   }
@@ -525,6 +582,7 @@ class SleepTimerController extends StateNotifier<SleepTimerState> {
     final wasTimeOfDay = state.isTimeOfDay;
     final recurring = state.recurring;
     final hour = state.hour;
+    final minute = state.minute;
     try {
       if (_player.current.isPlaying) {
         await _player.pause();
@@ -546,6 +604,7 @@ class SleepTimerController extends StateNotifier<SleepTimerState> {
       endTimeMs: null,
       mode: wasTimeOfDay ? SleepTimerMode.timeOfDay : SleepTimerMode.countdown,
       hour: hour,
+      minute: minute,
       recurring: recurring,
     );
   }
@@ -599,17 +658,18 @@ String formatSleepTimer(Duration d) {
 }
 
 /// Formats a wall-clock hour in 12-hour form, e.g. `9:00 PM` or `12:00 AM`.
-String formatTimeOfDay(int hour) {
+String formatTimeOfDay(int hour, {int minute = 0}) {
   final h = hour % 24;
+  final m = minute.clamp(0, 59);
   final period = h < 12 ? 'AM' : 'PM';
-  final display = h % 12 == 0 ? 12 : h % 12;
-  return '$display:00 $period';
+  final displayHour = h % 12 == 0 ? 12 : h % 12;
+  final displayMinute = m.toString().padLeft(2, '0');
+  return '$displayHour:$displayMinute $period';
 }
 
 /// Returns the [count] nearest upcoming whole hours after [now].
 List<int> upcomingHours(DateTime now, {int count = 5}) {
-  final onTheHour =
-      now.minute == 0 && now.second == 0 && now.millisecond == 0;
+  final onTheHour = now.minute == 0 && now.second == 0 && now.millisecond == 0;
   var h = onTheHour ? now.hour : (now.hour + 1) % 24;
   final result = <int>[];
   while (result.length < count) {

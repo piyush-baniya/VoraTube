@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data' show Uint8List;
 
+import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -128,15 +128,37 @@ class LibraryRepository {
           if (row.artistKey != null) row.artistKey!: row.id,
       };
 
+      // Artist rows keyed by their stable key, so split-out "feat." credits
+      // collide on the same row within this batch.
+      final creditedArtistRowIdByKey = <String, int>{};
+
       for (final track in tracks) {
         final albumRowId = await _ensureAlbum(
           track: track,
           rowIdByKey: albumRowIdByKey,
         );
+        // Split "Artist A feat. Artist B" into its individual credits. The
+        // first entry stays the primary artist (back-compat via
+        // `songs.artistRowId`), the rest are recorded in `song_artists`.
+        final credits = splitArtists(track.artist);
+        final primaryName = credits.isNotEmpty
+            ? credits.first
+            : track.artist?.trim();
         final artistRowId = await _ensureArtist(
           track: track,
           rowIdByKey: artistRowIdByKey,
+          artistName: primaryName,
         );
+        final creditedRowIds = <int>{?artistRowId};
+        for (final name in credits.skip(1)) {
+          final rowId = await _ensureCreditedArtist(
+            name,
+            rowIdByKey: creditedArtistRowIdByKey,
+          );
+          if (rowId != null) {
+            creditedRowIds.add(rowId);
+          }
+        }
 
         final title = _resolveTitle(track);
         final replayGainJson = track.replayGain != null
@@ -170,21 +192,32 @@ class LibraryRepository {
             );
 
         final existing = songByIdentityKey[track.identityKey];
+        // The song row id the credits below attach to. Insert returns the new
+        // id; an existing row (added, updated, or untouched) keeps its own.
+        final int songRowId;
         if (existing == null) {
-          await _db.into(_db.songs).insert(companion);
+          songRowId = await _db.into(_db.songs).insert(companion);
           added++;
           if (albumRowId != null && track.albumKey != null) {
             dirtyAlbums.add(track.albumKey!);
           }
-        } else if (existing.dateModifiedSec != track.dateModifiedSec) {
-          await (_db.update(
-            _db.songs,
-          )..where((tbl) => tbl.id.equals(existing.id))).write(companion);
-          updated++;
-          if (albumRowId != null && track.albumKey != null) {
-            dirtyAlbums.add(track.albumKey!);
+        } else {
+          songRowId = existing.id;
+          if (existing.dateModifiedSec != track.dateModifiedSec) {
+            await (_db.update(
+              _db.songs,
+            )..where((tbl) => tbl.id.equals(existing.id))).write(companion);
+            updated++;
+            if (albumRowId != null && track.albumKey != null) {
+              dirtyAlbums.add(track.albumKey!);
+            }
           }
         }
+
+        // Record every credit (primary + featured) so artist pages count and
+        // list songs correctly. Unchanged tracks are re-written here too, so
+        // songs ingested before this split existed converge on the next scan.
+        await _writeSongArtists(songRowId, creditedRowIds);
 
         if (track.album != null && albumRowId != null) {
           await (_db.update(_db.albums)
@@ -240,6 +273,7 @@ class LibraryRepository {
   Future<int?> _ensureArtist({
     required IngestTrack track,
     required Map<String, int> rowIdByKey,
+    String? artistName,
   }) async {
     final key = track.artistKey;
     if (key == null || key.isEmpty) {
@@ -248,7 +282,7 @@ class LibraryRepository {
     if (rowIdByKey.containsKey(key)) {
       return rowIdByKey[key];
     }
-    final name = track.artist?.trim();
+    final name = artistName?.trim() ?? track.artist?.trim();
     if (name == null || name.isEmpty) {
       return null;
     }
@@ -270,6 +304,68 @@ class LibraryRepository {
     }
     rowIdByKey[key] = created.id;
     return created.id;
+  }
+
+  /// Stable key for a split-out credited artist that has no MediaStore ID.
+  ///
+  /// The 'c:' prefix distinguishes these rows from platform keys (`ms:`, `n:`)
+  /// and the lowercase hashing makes "A feat. Bob" and "A feat. BOB" collide
+  /// on the same artist row.
+  String creditedArtistKey(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    final digest = sha1.convert(utf8.encode(trimmed.toLowerCase()));
+    return 'c:$digest';
+  }
+
+  Future<int?> _ensureCreditedArtist(
+    String name, {
+    required Map<String, int> rowIdByKey,
+  }) async {
+    final key = creditedArtistKey(name);
+    if (key.isEmpty) {
+      return null;
+    }
+    if (rowIdByKey.containsKey(key)) {
+      return rowIdByKey[key];
+    }
+    await _db
+        .into(_db.artists)
+        .insert(
+          ArtistsCompanion.insert(name: name, artistKey: Value(key)),
+          mode: InsertMode.insertOrIgnore,
+        );
+    final created = await (_db.select(
+      _db.artists,
+    )..where((tbl) => tbl.artistKey.equals(key))).getSingleOrNull();
+    if (created == null) {
+      return null;
+    }
+    rowIdByKey[key] = created.id;
+    return created.id;
+  }
+
+  /// Replaces the [song_artists] rows for one song with [creditedRowIds].
+  ///
+  /// Delete-then-insert keeps a song's credits authoritative — an updated tag
+  /// that drops a feat. no longer leaves a stale row behind. Unchanged songs
+  /// re-written here is what lets tracks ingested before this table existed
+  /// converge on subsequent scans.
+  Future<void> _writeSongArtists(int songId, Set<int> creditedRowIds) async {
+    await _db.customStatement('DELETE FROM song_artists WHERE song_id = ?', [
+      songId,
+    ]);
+    var position = 0;
+    for (final artistId in creditedRowIds) {
+      await _db.customStatement(
+        'INSERT OR IGNORE INTO song_artists (song_id, artist_id, position) '
+        'VALUES (?, ?, ?)',
+        [songId, artistId, position],
+      );
+      position++;
+    }
   }
 
   /// Artwork lookups that are still worth attempting, newest content first.
@@ -609,7 +705,8 @@ ON CONFLICT(song_id) DO UPDATE SET art_resolved_at = excluded.art_resolved_at
     );
     await _db.customStatement(
       'DELETE FROM artists WHERE id NOT IN '
-      '(SELECT DISTINCT artist_row_id FROM songs WHERE artist_row_id IS NOT NULL)',
+      '(SELECT DISTINCT artist_row_id FROM songs WHERE artist_row_id IS NOT NULL) '
+      'AND id NOT IN (SELECT DISTINCT artist_id FROM song_artists)',
     );
     await _db.customStatement(
       'DELETE FROM playlist_songs WHERE song_row_id NOT IN '
@@ -899,27 +996,35 @@ extension LibraryQueries on LibraryRepository {
   }
 
   Future<List<ArtistSummary>> artistOverview({int limit = 500}) async {
-    final artists = _db.artists;
-    final songs = _db.songs;
-    final songCount = songs.id.count();
-
-    final query = _db.selectOnly(artists).join([
-      innerJoin(songs, songs.artistRowId.equalsExp(artists.id)),
-    ]);
-    query
-      ..addColumns([artists.id, artists.artistKey, artists.name, songCount])
-      ..groupBy([artists.id])
-      ..orderBy([OrderingTerm.desc(songCount)]);
-
-    query.limit(limit);
-    final rows = await query.get();
+    // Counts every song an artist is credited on — its own songs via the
+    // back-compat `songs.artist_row_id` and featured appearances via
+    // `song_artists` — so feat. credits surface in the artist list with
+    // accurate numbers. COALESCE + DISTINCT dedups a song credited through
+    // both paths (primary artists are also written to `song_artists`).
+    final rows = await _db
+        .customSelect(
+          '''
+              SELECT a.id AS id, a.artist_key AS artist_key, a.name AS name,
+                COUNT(DISTINCT COALESCE(sa.song_id, s.artist_row_id))
+                  AS song_count
+              FROM artists a
+              LEFT JOIN song_artists sa ON sa.artist_id = a.id
+              LEFT JOIN songs s ON s.artist_row_id = a.id
+              GROUP BY a.id
+              HAVING COUNT(DISTINCT COALESCE(sa.song_id, s.artist_row_id)) > 0
+              ORDER BY song_count DESC, a.name COLLATE NOCASE
+              LIMIT ?
+              ''',
+          variables: [Variable<int>(limit)],
+        )
+        .get();
     return [
       for (final row in rows)
         ArtistSummary(
-          artistRowId: row.read(artists.id)!,
-          key: row.read(artists.artistKey) ?? '',
-          name: row.read(artists.name)!,
-          songCount: row.read(songCount) ?? 0,
+          artistRowId: row.data['id'] as int,
+          key: row.data['artist_key'] as String? ?? '',
+          name: row.data['name'] as String,
+          songCount: row.data['song_count'] as int? ?? 0,
         ),
     ];
   }
@@ -1300,9 +1405,22 @@ extension FilteredSongQueries on LibraryRepository {
     int artistRowId, {
     int limit = 1000,
   }) async {
+    final creditedIds = await _db
+        .customSelect(
+          'SELECT DISTINCT song_id FROM song_artists WHERE artist_id = ?',
+          variables: [Variable<int>(artistRowId)],
+        )
+        .get();
+    final creditedSongIds = <int>{
+      for (final row in creditedIds) row.data['song_id'] as int,
+    };
     final rows =
         await (_db.select(_db.songs)
-              ..where((tbl) => tbl.artistRowId.equals(artistRowId))
+              ..where(
+                (tbl) =>
+                    tbl.artistRowId.equals(artistRowId) |
+                    tbl.id.isIn(creditedSongIds),
+              )
               ..orderBy([
                 (t) => OrderingTerm.desc(t.dateAddedSec),
                 (t) => OrderingTerm.asc(t.titleSearch),

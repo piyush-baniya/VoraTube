@@ -51,6 +51,14 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   /// null when none is selected.
   int? _selectedHour;
 
+  /// Whether the user chose to enter a custom wall-clock time (hour + minute +
+  /// AM/PM) rather than a preset on-the-hour chip.
+  bool _isCustomTime = false;
+
+  /// Custom wall-clock time being composed (24-hour hour + minute).
+  int _customHour24 = 21;
+  int _customMinute = 0;
+
   /// Whether the selected wall-clock time repeats every day.
   bool _repeatDaily = false;
 
@@ -70,7 +78,8 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   }
 
   /// The duration the Start/Restart button will use.
-  Duration get _chosen => _isCustom ? (_customDuration ?? _selected) : _selected;
+  Duration get _chosen =>
+      _isCustom ? (_customDuration ?? _selected) : _selected;
 
   @override
   void dispose() {
@@ -87,6 +96,16 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   Future<void> _startAtHour(int hour) async {
     final notifier = ref.read(sleepTimerProvider.notifier);
     await notifier.startTimeOfDay(hour, recurring: _repeatDaily);
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _startAtTime(int hour, int minute) async {
+    final notifier = ref.read(sleepTimerProvider.notifier);
+    await notifier.startTimeOfDay(
+      hour,
+      minute: minute,
+      recurring: _repeatDaily,
+    );
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -123,7 +142,9 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.3,
+                      ),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -272,6 +293,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
                   _selected = d;
                   _isCustom = false;
                   _selectedHour = null;
+                  _isCustomTime = false;
                 }),
                 selected: !_isCustom && _selectedHour == null && d == _selected,
               ),
@@ -281,6 +303,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
               onSelected: (_) => setState(() {
                 _isCustom = true;
                 _selectedHour = null;
+                _isCustomTime = false;
               }),
               selected: _isCustom,
             ),
@@ -302,9 +325,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
         const SizedBox(height: AppTokens.s4),
         Row(
           children: [
-            Expanded(
-              child: Divider(color: colorScheme.outlineVariant),
-            ),
+            Expanded(child: Divider(color: colorScheme.outlineVariant)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
               child: Text(
@@ -314,9 +335,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
                 ),
               ),
             ),
-            Expanded(
-              child: Divider(color: colorScheme.outlineVariant),
-            ),
+            Expanded(child: Divider(color: colorScheme.outlineVariant)),
           ],
         ),
         const SizedBox(height: AppTokens.s4),
@@ -324,17 +343,81 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
           spacing: AppTokens.s2,
           runSpacing: AppTokens.s2,
           children: [
-            for (final h in upcomingHours(DateTime.now(), count: kUpcomingHourCount))
+            for (final h in upcomingHours(
+              DateTime.now(),
+              count: kUpcomingHourCount,
+            ))
               ChoiceChip(
                 label: Text(formatTimeOfDay(h)),
                 onSelected: (_) => setState(() {
                   _selectedHour = h;
                   _isCustom = false;
+                  _isCustomTime = false;
                 }),
-                selected: _selectedHour == h,
+                selected: _selectedHour == h && !_isCustomTime,
               ),
+            ChoiceChip(
+              avatar: const Icon(Icons.tune_rounded, size: 16),
+              label: const Text('Custom time'),
+              onSelected: (_) => setState(() {
+                _isCustomTime = true;
+                _selectedHour = null;
+                _isCustom = false;
+              }),
+              selected: _isCustomTime,
+            ),
           ],
         ),
+        if (_isCustomTime) ...[
+          const SizedBox(height: AppTokens.s4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: _TimeStepper(
+                  label: 'Hour',
+                  value: _customHour24 % 12 == 0 ? 12 : _customHour24 % 12,
+                  onChanged: (v) => setState(() {
+                    final h12 = v == 0 ? 12 : v;
+                    final isPm = _customHour24 >= 12;
+                    _customHour24 = (isPm ? h12 % 12 + 12 : h12 % 12);
+                  }),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Expanded(
+                child: _TimeStepper(
+                  label: 'Minute',
+                  value: _customMinute,
+                  max: 59,
+                  onChanged: (v) => setState(() {
+                    _customMinute = v.clamp(0, 59);
+                  }),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s3),
+              _AmPmToggle(
+                value: _customHour24 >= 12,
+                onChanged: (_) => setState(() {
+                  final h12 = _customHour24 % 12 == 0 ? 12 : _customHour24 % 12;
+                  _customHour24 = _customHour24 >= 12
+                      ? (h12 % 12)
+                      : (h12 % 12) + 12;
+                }),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTokens.s1),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Playback stops at ${formatTimeOfDay(_customHour24, minute: _customMinute)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: AppTokens.s3),
         Material(
           color: Colors.transparent,
@@ -348,8 +431,10 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
         ),
         const SizedBox(height: AppTokens.s2),
         FilledButton.tonalIcon(
-          onPressed: _selectedHour == null
+          onPressed: _selectedHour == null && !_isCustomTime
               ? null
+              : _isCustomTime
+              ? () => _startAtTime(_customHour24, _customMinute)
               : () => _startAtHour(_selectedHour!),
           icon: const Icon(Icons.schedule_rounded),
           label: const Text('Set time'),
@@ -412,6 +497,119 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   String _presetLabel(Duration d) {
     if (d.inHours > 0) return '${d.inHours} h';
     return '${d.inMinutes} min';
+  }
+}
+
+/// A compact − / value / + stepper used to compose a custom wall-clock time.
+class _TimeStepper extends StatelessWidget {
+  const _TimeStepper({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.max = 23,
+  });
+
+  final String label;
+  final int value;
+  final int max;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppTokens.s1),
+        Row(
+          children: [
+            _stepButton(context, Icons.remove_rounded, () {
+              onChanged(value == 0 ? max : value - 1);
+            }),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
+                alignment: Alignment.center,
+                child: Text(
+                  value.toString(),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            _stepButton(context, Icons.add_rounded, () {
+              onChanged(value == max ? 0 : value + 1);
+            }),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _stepButton(BuildContext context, IconData icon, VoidCallback onTap) {
+    return IconButton(
+      onPressed: onTap,
+      icon: Icon(icon, size: 20),
+      visualDensity: VisualDensity.compact,
+      style: IconButton.styleFrom(
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+    );
+  }
+}
+
+/// AM / PM segmented toggle for the custom wall-clock time.
+class _AmPmToggle extends StatelessWidget {
+  const _AmPmToggle({required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'AM/PM',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: AppTokens.s1),
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(
+              value: false,
+              label: Text('AM'),
+              icon: Icon(Icons.wb_sunny_outlined, size: 16),
+            ),
+            ButtonSegment(
+              value: true,
+              label: Text('PM'),
+              icon: Icon(Icons.nights_stay_outlined, size: 16),
+            ),
+          ],
+          selected: {value},
+          onSelectionChanged: (s) => onChanged(s.first),
+          showSelectedIcon: false,
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            textStyle: WidgetStatePropertyAll(theme.textTheme.labelMedium),
+          ),
+        ),
+      ],
+    );
   }
 }
 

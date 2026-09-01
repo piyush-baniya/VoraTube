@@ -4,9 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/ingest/ingest_service.dart';
-import 'package:vora_tube/features/collections/presentation/providers/statistics_providers.dart';
-import 'package:vora_tube/features/collections/presentation/widgets/listening_insights.dart'
-    show listeningStatsProvider;
 import 'package:vora_tube/features/library/data/library_repository.dart';
 import 'package:vora_tube/features/library/presentation/providers/library_providers.dart';
 import 'package:vora_tube/features/library/presentation/providers/library_view_providers.dart';
@@ -69,69 +66,55 @@ void main() {
     );
 
     test(
-      'a committed toggle bumps the stats tick so statistics recompute',
+      'a committed toggle bumps the favorites tick, not the stats tick',
       () async {
         final controller = container.read(favoriteIdsProvider.notifier);
         await Future<void>.delayed(Duration.zero);
 
-        final before = container.read(statsRefreshTickProvider);
+        final statsBefore = container.read(statsRefreshTickProvider);
+        final favBefore = container.read(favoritesRefreshTickProvider);
         await controller.toggle(2);
+        expect(
+          container.read(favoritesRefreshTickProvider),
+          favBefore + 1,
+          reason:
+              'Favorites-derived aggregates (the Collection Favorites '
+              'count/list) watch this dedicated tick, so it must move after '
+              'every committed toggle.',
+        );
         expect(
           container.read(statsRefreshTickProvider),
-          before + 1,
+          statsBefore,
           reason:
-              'Statistics aggregates derive favorites from the DB, so the '
-              'tick they watch must move after every committed toggle.',
+              'Favorites do not change listening time or play counts. The '
+              'stats tick must NOT move, or the Home "Your Listening" strip '
+              'and Statistics listening sections would refetch and repaint on '
+              'a heart tap.',
         );
 
-        final beforeUnfav = container.read(statsRefreshTickProvider);
+        final statsBeforeUnfav = container.read(statsRefreshTickProvider);
         await controller.toggle(2);
-        expect(container.read(statsRefreshTickProvider), beforeUnfav + 1);
+        expect(container.read(favoritesRefreshTickProvider), favBefore + 2);
+        expect(container.read(statsRefreshTickProvider), statsBeforeUnfav);
       },
     );
 
-    test(
-      'statistics favorites count reacts to toggling with no stale state',
-      () async {
-        final controller = container.read(favoriteIdsProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
+    test('live favorites count comes from the in-memory set', () async {
+      final controller = container.read(favoriteIdsProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
 
-        // Initial aggregate: no favorites.
-        expect(
-          (await container.read(listeningStatsProvider.future)).favoritesCount,
-          0,
-        );
+      // Initial aggregate: no favorites.
+      expect(container.read(favoriteIdsProvider).length, 0);
 
-        await controller.toggle(1);
-        // Re-reading the provider must return fresh DB-derived data — the old
-        // favoritesCount: 0 must not be served again.
-        expect(
-          (await container.read(listeningStatsProvider.future)).favoritesCount,
-          1,
-        );
+      await controller.toggle(1);
+      expect(container.read(favoriteIdsProvider).length, 1);
 
-        await controller.toggle(1);
-        expect(
-          (await container.read(listeningStatsProvider.future)).favoritesCount,
-          0,
-        );
-      },
-    );
+      await controller.toggle(2);
+      expect(container.read(favoriteIdsProvider).length, 2);
 
-    test(
-      'top played / recently played providers rebuild after a toggle',
-      () async {
-        final controller = container.read(favoriteIdsProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
-
-        final before = container.read(topPlayedSongsProvider).valueOrNull;
-        expect(before, isNull);
-
-        await controller.toggle(3);
-        final after = await container.read(topPlayedSongsProvider.future);
-        expect(after, isNotNull);
-      },
-    );
+      await controller.toggle(1);
+      expect(container.read(favoriteIdsProvider).length, 1);
+    });
   });
 }
 

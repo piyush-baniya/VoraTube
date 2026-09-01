@@ -273,10 +273,13 @@ void main() {
 
       expect(find.text('uploaded line'), findsOneWidget);
       expect(
-        find.text('Show online lyrics'),
-        findsNothing,
-        reason: 'Lyrics are now displayed; the action panel is gone.',
+        find.text('Show online'),
+        findsOneWidget,
+        reason:
+            'BUG 1: the lyrics actions stay visible even once lyrics load, '
+            'as a compact row instead of disappearing.',
       );
+      expect(find.text('Show uploaded'), findsOneWidget);
     });
   });
 }

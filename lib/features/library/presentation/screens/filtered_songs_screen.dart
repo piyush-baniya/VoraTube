@@ -11,6 +11,7 @@ import '../../data/library_models.dart';
 import '../../data/library_repository.dart';
 import '../../data/song_ref_mapper.dart';
 import '../providers/library_providers.dart';
+import '../widgets/library_tiles.dart';
 import '../widgets/song_tile.dart';
 
 /// Songs of one album, artist, or collection — the drill-down target.
@@ -111,6 +112,8 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                   subtitle: subtitle,
                 ),
               ),
+              if (widget.genre != null)
+                const SliverToBoxAdapter(child: GenreDisclaimer()),
               if (tiles.isNotEmpty)
                 SliverToBoxAdapter(
                   child: Padding(

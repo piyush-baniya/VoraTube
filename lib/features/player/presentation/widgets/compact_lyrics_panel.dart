@@ -41,8 +41,9 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   static const double _minLineExtent = 38;
   static const double _activeScale = 1.05;
 
-  /// Height of the collapsed "current line" preview.
-  static const double _previewHeight = 76;
+  /// Height of the collapsed "current line" preview including the compact
+  /// lyrics action row beneath it.
+  static const double _previewHeight = 132;
 
   final ScrollController _scrollController = ScrollController();
 
@@ -286,7 +287,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   }
 
   Widget _buildExpanded(AsyncValue<LyricsResult> lyricsAsync) {
-    return Column(
+    final body = Column(
       children: [
         _LyricsPanelHeader(expanded: true, onToggle: _toggleExpanded),
         Expanded(
@@ -303,13 +304,50 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         ),
       ],
     );
+    // Keep the lyrics actions visible even when lyrics are shown. Layered over
+    // the list (not a Column sibling) so short/temporary heights — e.g. the
+    // AnimatedSize sub-frames while the panel animates into a tight landscape
+    // region — can never overflow the flex. The list already reserves generous
+    // bottom padding, so the chips float in that zone instead of covering text.
+    if (!_hasUsableLyrics(lyricsAsync)) {
+      return body;
+    }
+    return Stack(
+      children: [
+        body,
+        const Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: LyricsActionsPanel(compact: true, row: true),
+        ),
+      ],
+    );
+  }
+
+  /// True when the current result actually displays lyric lines, so the
+  /// always-on action row below the list is shown (and not double-embedded).
+  bool _hasUsableLyrics(AsyncValue<LyricsResult> lyricsAsync) {
+    final result = lyricsAsync.valueOrNull;
+    if (result == null || result.status != LyricsStatus.loaded) return false;
+    final data = result.data;
+    if (data == null || data.isInstrumental) return false;
+    return _linesOf(data).isNotEmpty;
   }
 
   Widget _buildCollapsedPreview(AsyncValue<LyricsResult> lyricsAsync) {
-    return _LyricsPanelHeader(
-      expanded: false,
-      onToggle: _toggleExpanded,
-      previewText: _previewText(lyricsAsync),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _LyricsPanelHeader(
+          expanded: false,
+          onToggle: _toggleExpanded,
+          previewText: _previewText(lyricsAsync),
+        ),
+        // Actions stay reachable while collapsed: they sit right below the
+        // one-line preview instead of hiding behind the empty/error states.
+        const LyricsActionsPanel(compact: true, row: true),
+      ],
     );
   }
 

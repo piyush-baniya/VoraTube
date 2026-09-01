@@ -6,6 +6,7 @@ import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
+import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../library/presentation/widgets/song_tile.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../providers/statistics_providers.dart';
@@ -81,16 +82,19 @@ class StatisticsScreen extends ConsumerWidget {
   }
 }
 
-class _SummaryHeader extends StatelessWidget {
+class _SummaryHeader extends ConsumerWidget {
   const _SummaryHeader({required this.stats});
 
   final ListeningStats stats;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final accent = AppColors.accent;
+    // Live favorite count from the in-memory set — a heart tap updates it with
+    // no DB refetch, and it reflects the set exactly.
+    final favoritesCount = ref.watch(favoriteIdsProvider).length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -157,7 +161,7 @@ class _SummaryHeader extends StatelessWidget {
                     _StatChip(
                       icon: Icons.favorite_rounded,
                       label: 'Favorites',
-                      value: '${stats.favoritesCount}',
+                      value: '$favoritesCount',
                     ),
                   ],
                 ),
