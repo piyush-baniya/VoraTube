@@ -13,17 +13,15 @@ void disableWaveTimelineForTesting() {
   waveTimelineEnabled = false;
 }
 
-/// Seekable wave-style progress bar for the full-screen player.
+/// Purple, smooth flowing wave progress bar for the full-screen player.
 ///
-/// The track is drawn as a row of vertical segments that fill one by one as
-/// playback advances (like a sound wave / equalizer). While playing, a subtle
-/// travelling pulse animates the bars; when paused or stopped the bars stay
-/// static so the animation costs nothing.
-///
-/// Designed for performance:
-/// - Only this widget rebuilds on position ticks.
-/// - The pulse animation repaints just the small custom-painted bar area.
-/// - Uses a local StatefulWidget for drag state and the pulse controller.
+/// Two overlapping sine-based wave paths (a primary stroke plus a softer echo)
+/// are drawn as continuous curves — deliberately NOT equalizer bars. The wave
+/// is split at the playback progress point: the played region is stroked in
+/// vivid purple, the remainder in a faint purple tint, so progress stays
+/// readable while the shape stays a smooth flowing wave. While playing the
+/// phase advances so the wave gently flows; when paused the phase freezes and
+/// the painter only repaints on progress changes.
 class PlayerProgress extends StatefulWidget {
   const PlayerProgress({
     super.key,
@@ -124,6 +122,11 @@ class _PlayerProgressState extends State<PlayerProgress>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final totalMs = _duration.inMilliseconds;
+    // Compact-height screens (landscape phones) get a slimmer wave so the
+    // fixed control region never overflows.
+    final compactHeight = MediaQuery.sizeOf(context).height < 480;
+    final waveHeight = compactHeight ? 30.0 : 44.0;
+    final wavePaintHeight = compactHeight ? 22.0 : 36.0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -132,8 +135,10 @@ class _PlayerProgressState extends State<PlayerProgress>
           progress: totalMs > 0 ? _progress : 0,
           isPlaying: widget.snapshot.isPlaying,
           pulse: _pulse,
-          activeColor: colorScheme.onSurface,
-          inactiveColor: colorScheme.onSurface.withValues(alpha: 0.12),
+          activeColor: colorScheme.primary,
+          inactiveColor: colorScheme.primary.withValues(alpha: 0.16),
+          height: waveHeight,
+          paintHeight: wavePaintHeight,
           onDragStart: _startDrag,
           onDrag: _updateDrag,
           onDragEnd: _endDrag,
@@ -180,6 +185,8 @@ class _WaveTimeline extends StatelessWidget {
     required this.pulse,
     required this.activeColor,
     required this.inactiveColor,
+    required this.height,
+    required this.paintHeight,
     required this.onDragStart,
     required this.onDrag,
     required this.onDragEnd,
@@ -191,6 +198,8 @@ class _WaveTimeline extends StatelessWidget {
   final Animation<double> pulse;
   final Color activeColor;
   final Color inactiveColor;
+  final double height;
+  final double paintHeight;
   final ValueChanged<double> onDragStart;
   final ValueChanged<double> onDrag;
   final VoidCallback onDragEnd;
@@ -219,15 +228,15 @@ class _WaveTimeline extends StatelessWidget {
             onHorizontalDragEnd: (_) => onDragEnd(),
             onHorizontalDragCancel: onDragEnd,
             child: SizedBox(
-              height: 30,
+              height: height,
               width: width,
               child: Center(
                 child: AnimatedBuilder(
                   animation: pulse,
                   builder: (context, _) {
                     return CustomPaint(
-                      size: const Size(double.infinity, 18),
-                      painter: _WaveBarPainter(
+                      size: Size(double.infinity, paintHeight),
+                      painter: _WavePainter(
                         progress: progress,
                         isPlaying: isPlaying,
                         wave: pulse.value,
@@ -246,8 +255,14 @@ class _WaveTimeline extends StatelessWidget {
   }
 }
 
-class _WaveBarPainter extends CustomPainter {
-  const _WaveBarPainter({
+/// Paints the smooth flowing wave.
+///
+/// Geometry: a height envelope (a slow sine over x) modulates the amplitude so
+/// the silhouette varies like a real waveform, while two phase-shifted sine
+/// curves provide the flowing motion. The played portion is clipped and
+/// re-stroked in the active color so seeking stays pixel-accurate.
+class _WavePainter extends CustomPainter {
+  const _WavePainter({
     required this.progress,
     required this.isPlaying,
     required this.wave,
@@ -261,60 +276,103 @@ class _WaveBarPainter extends CustomPainter {
   final Color activeColor;
   final Color inactiveColor;
 
-  static const int _barCount = 36;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final gap = 2.5;
-    final barWidth = (size.width - gap * (_barCount - 1)) / _barCount;
-    if (barWidth <= 0) return;
-
-    final baseHeight = 11.0;
-    final pulseAmp = isPlaying ? 3.0 : 0.0;
-    final phase = wave * 2 * math.pi;
-    final centerY = size.height / 2;
-
-    final playedIndex = progress * _barCount;
-    final currentIndex = playedIndex.floor().clamp(0, _barCount - 1);
-
-    for (var i = 0; i < _barCount; i++) {
-      final x = i * (barWidth + gap);
-
-      final double height;
-      if (isPlaying) {
-        final offset = math.sin(phase + i * 0.6);
-        height = baseHeight + pulseAmp * offset;
+  Path _wavePath({
+    required double width,
+    required double midY,
+    required double amplitude,
+    required double frequency,
+    required double phaseShift,
+    required double envelopeFrequency,
+    required double envelopePhase,
+  }) {
+    final path = Path();
+    const step = 4.0;
+    var first = true;
+    for (double x = 0; x <= width + step; x += step) {
+      final envelope =
+          0.55 + 0.45 * math.sin(x * envelopeFrequency + envelopePhase);
+      final y =
+          midY + math.sin(x * frequency + wave * 2 * math.pi + phaseShift) *
+              amplitude *
+              envelope;
+      if (first) {
+        path.moveTo(0, y);
+        first = false;
       } else {
-        height = baseHeight;
+        path.lineTo(x, y);
       }
+    }
+    return path;
+  }
 
-      final bool fullyFilled = i < playedIndex.floor();
-      final bool isCurrent = i == currentIndex && progress < 1.0;
+  void _paintSplit(Canvas canvas, Path path, double strokeWidth, Size size) {
+    final playedWidth = size.width * progress.clamp(0.0, 1.0);
 
-      final Color color;
-      if (fullyFilled) {
-        color = activeColor;
-      } else if (isCurrent) {
-        color = activeColor.withValues(alpha: 0.5);
-      } else {
-        color = inactiveColor;
-      }
+    final activePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = activeColor;
+    final inactivePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = inactiveColor;
 
-      final rect = Rect.fromLTWH(
-        x,
-        centerY - height / 2,
-        barWidth,
-        height,
+    if (playedWidth > 0) {
+      canvas.save();
+      canvas.clipRect(Offset.zero & Size(playedWidth, size.height));
+      canvas.drawPath(path, activePaint);
+      canvas.restore();
+    }
+    if (playedWidth < size.width) {
+      canvas.save();
+      canvas.clipRect(
+        Offset(playedWidth, 0) & Size(size.width - playedWidth, size.height),
       );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, Radius.circular(barWidth / 2)),
-        Paint()..color = color,
-      );
+      canvas.drawPath(path, inactivePaint);
+      canvas.restore();
     }
   }
 
   @override
-  bool shouldRepaint(covariant _WaveBarPainter oldDelegate) {
+  void paint(Canvas canvas, Size size) {
+    final midY = size.height / 2;
+    // Flow amplitude: gently larger while playing, settled when paused.
+    final amplitude = isPlaying ? size.height * 0.36 : size.height * 0.28;
+    // The envelope drifts slowly with the phase so the silhouette itself
+    // breathes; when paused everything freezes naturally.
+    final envelopePhase = wave * 2 * math.pi * 0.35;
+
+    // Softer echo wave beneath the primary stroke.
+    final echo = _wavePath(
+      width: size.width,
+      midY: midY,
+      amplitude: amplitude * 0.6,
+      frequency: 2 * math.pi / 130,
+      phaseShift: 1.7,
+      envelopeFrequency: 2 * math.pi / 420,
+      envelopePhase: envelopePhase + 2.1,
+    );
+    // Primary wave.
+    final main = _wavePath(
+      width: size.width,
+      midY: midY,
+      amplitude: amplitude,
+      frequency: 2 * math.pi / 95,
+      phaseShift: 0,
+      envelopeFrequency: 2 * math.pi / 300,
+      envelopePhase: envelopePhase,
+    );
+
+    _paintSplit(canvas, echo, 2.0, size);
+    _paintSplit(canvas, main, 3.0, size);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WavePainter oldDelegate) {
     return oldDelegate.progress != progress ||
         oldDelegate.isPlaying != isPlaying ||
         oldDelegate.wave != wave ||

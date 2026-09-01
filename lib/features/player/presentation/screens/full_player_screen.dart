@@ -182,9 +182,34 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Normal-height screens: repeat/shuffle sit above the
+                        // wave (repeat left, shuffle right). Compact-height
+                        // screens (landscape phones) fold them back into the
+                        // control row so nothing overflows.
+                        if (MediaQuery.sizeOf(context).height >= 480)
+                          Consumer(builder: (context, ref, _) {
+                            final snapshot = ref.watch(playbackStateProvider);
+                            return PlayerModeRow(
+                              snapshot: snapshot,
+                              onToggleShuffle: () => ref
+                                  .read(playerProvider)
+                                  .setShuffle(!snapshot.shuffleEnabled),
+                              onToggleRepeat: () {
+                                final next = switch (snapshot.repeatMode) {
+                                  RepeatMode.off => RepeatMode.all,
+                                  RepeatMode.all => RepeatMode.one,
+                                  RepeatMode.one => RepeatMode.off,
+                                };
+                                ref.read(playerProvider).setRepeat(next);
+                              },
+                            );
+                          }),
                         _PositionConsumer(),
                         const SizedBox(height: AppTokens.s3),
-                        _ControlsConsumer(),
+                        _ControlsConsumer(
+                          showModeToggles:
+                              MediaQuery.sizeOf(context).height < 480,
+                        ),
                       ],
                     ),
                   ),
@@ -1106,19 +1131,17 @@ class _BoostPreset extends StatelessWidget {
 }
 
 class _ControlsConsumer extends ConsumerWidget {
+  const _ControlsConsumer({this.showModeToggles = false});
+
+  final bool showModeToggles;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final snapshot = ref.watch(playbackStateProvider);
 
     return PlayerControls(
       snapshot: snapshot,
-      onTogglePlay: () => ref.read(playerProvider).togglePlay(),
-      onPrevious: () => ref.read(playerProvider).previous(),
-      onNext: () => ref.read(playerProvider).next(),
-      onRewind10: () =>
-          ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
-      onForward10: () =>
-          ref.read(playerProvider).seekBy(const Duration(seconds: 10)),
+      showModeToggles: showModeToggles,
       onToggleShuffle: () =>
           ref.read(playerProvider).setShuffle(!snapshot.shuffleEnabled),
       onToggleRepeat: () {
@@ -1129,6 +1152,13 @@ class _ControlsConsumer extends ConsumerWidget {
         };
         ref.read(playerProvider).setRepeat(next);
       },
+      onTogglePlay: () => ref.read(playerProvider).togglePlay(),
+      onPrevious: () => ref.read(playerProvider).previous(),
+      onNext: () => ref.read(playerProvider).next(),
+      onRewind10: () =>
+          ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
+      onForward10: () =>
+          ref.read(playerProvider).seekBy(const Duration(seconds: 10)),
     );
   }
 }

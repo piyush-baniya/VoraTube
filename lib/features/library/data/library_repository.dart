@@ -159,6 +159,22 @@ class LibraryRepository {
             creditedRowIds.add(rowId);
           }
         }
+        // The combined credit as written in the tag ("Atif Aslam, Pritam")
+        // also becomes its own artist entry, so grouped-credit pages exist
+        // alongside the individual ones without duplicating any song: the
+        // song_artists rows for this song are a set keyed by artist row id.
+        final rawCredit = track.artist?.trim();
+        if (rawCredit != null &&
+            hasGroupSeparator(rawCredit) &&
+            !credits.contains(rawCredit)) {
+          final rawRowId = await _ensureCreditedArtist(
+            rawCredit,
+            rowIdByKey: creditedArtistRowIdByKey,
+          );
+          if (rawRowId != null) {
+            creditedRowIds.add(rawRowId);
+          }
+        }
 
         final title = _resolveTitle(track);
         final replayGainJson = track.replayGain != null

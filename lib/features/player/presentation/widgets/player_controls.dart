@@ -5,11 +5,12 @@ import '../../../../app/theme/app_tokens.dart';
 
 /// Central playback controls for the full-screen player.
 ///
-/// Layout:  [shuffle]  [previous]  [rewind-10]  [play/pause]  [forward-10]  [next]  [repeat]
+/// Layout:  [previous]  [rewind-10]  [play/pause]  [forward-10]  [next]
 ///
-/// Play/pause is the largest element with a prominent shadow.
-/// Rewind/forward-10 are compact glass buttons flanking play/pause.
-/// Shuffle/repeat are smaller toggle buttons with active-state coloring.
+/// Shuffle and repeat live in [PlayerModeRow] above the wave timeline
+/// (repeat on the left, shuffle on the right). Play/pause is the largest
+/// element with a prominent shadow; rewind/forward-10 are compact glass
+/// buttons flanking play/pause so the row keeps comfortable, equal spacing.
 class PlayerControls extends StatelessWidget {
   const PlayerControls({
     super.key,
@@ -19,8 +20,9 @@ class PlayerControls extends StatelessWidget {
     required this.onNext,
     required this.onRewind10,
     required this.onForward10,
-    required this.onToggleShuffle,
-    required this.onToggleRepeat,
+    this.showModeToggles = false,
+    this.onToggleShuffle,
+    this.onToggleRepeat,
   });
 
   final PlayerSnapshot snapshot;
@@ -29,8 +31,13 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback onNext;
   final VoidCallback onRewind10;
   final VoidCallback onForward10;
-  final VoidCallback onToggleShuffle;
-  final VoidCallback onToggleRepeat;
+
+  /// Compact-height layouts (e.g. landscape phones) keep shuffle/repeat in
+  /// this row instead of the [PlayerModeRow] above the timeline, which would
+  /// not fit. Normal-height layouts leave this false and use the mode row.
+  final bool showModeToggles;
+  final VoidCallback? onToggleShuffle;
+  final VoidCallback? onToggleRepeat;
 
   bool get _canStep =>
       snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
@@ -47,7 +54,7 @@ class PlayerControls extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final needed = playFootprint + unit * 6;
+        final needed = playFootprint + unit * (showModeToggles ? 6 : 4);
         final scale = constraints.maxWidth < needed
             ? constraints.maxWidth / needed
             : 1.0;
@@ -58,17 +65,18 @@ class PlayerControls extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _ControlButton(
-              width: baseUnit,
-              icon: snapshot.shuffleEnabled
-                  ? Icons.shuffle_on_rounded
-                  : Icons.shuffle_rounded,
-              size: 22,
-              isActive: snapshot.shuffleEnabled,
-              activeColor: colorScheme.primary,
-              inactiveColor: colorScheme.onSurfaceVariant,
-              onTap: onToggleShuffle,
-            ),
+            if (showModeToggles)
+              _ControlButton(
+                width: baseUnit,
+                icon: snapshot.shuffleEnabled
+                    ? Icons.shuffle_on_rounded
+                    : Icons.shuffle_rounded,
+                size: 22,
+                isActive: snapshot.shuffleEnabled,
+                activeColor: colorScheme.primary,
+                inactiveColor: colorScheme.onSurfaceVariant,
+                onTap: onToggleShuffle,
+              ),
             _ControlButton(
               width: baseUnit,
               icon: Icons.skip_previous_rounded,
@@ -108,22 +116,113 @@ class PlayerControls extends StatelessWidget {
                   : colorScheme.onSurface.withValues(alpha: 0.2),
               onTap: _canNext ? onNext : null,
             ),
-            _ControlButton(
-              width: baseUnit,
-              icon: snapshot.repeatMode == RepeatMode.one
-                  ? Icons.repeat_one_on_rounded
-                  : snapshot.repeatMode == RepeatMode.all
-                  ? Icons.repeat_on_rounded
-                  : Icons.repeat_rounded,
-              size: 22,
-              isActive: snapshot.repeatMode != RepeatMode.off,
-              activeColor: colorScheme.primary,
-              inactiveColor: colorScheme.onSurfaceVariant,
-              onTap: onToggleRepeat,
-            ),
+            if (showModeToggles)
+              _ControlButton(
+                width: baseUnit,
+                icon: snapshot.repeatMode == RepeatMode.one
+                    ? Icons.repeat_one_on_rounded
+                    : snapshot.repeatMode == RepeatMode.all
+                    ? Icons.repeat_on_rounded
+                    : Icons.repeat_rounded,
+                size: 22,
+                isActive: snapshot.repeatMode != RepeatMode.off,
+                activeColor: colorScheme.primary,
+                inactiveColor: colorScheme.onSurfaceVariant,
+                onTap: onToggleRepeat,
+              ),
           ],
         );
       },
+    );
+  }
+}
+
+/// Shuffle and repeat toggles that sit above the wave timeline:
+/// repeat on the left, shuffle on the right, evenly balanced across the width.
+class PlayerModeRow extends StatelessWidget {
+  const PlayerModeRow({
+    super.key,
+    required this.snapshot,
+    required this.onToggleShuffle,
+    required this.onToggleRepeat,
+  });
+
+  final PlayerSnapshot snapshot;
+  final VoidCallback onToggleShuffle;
+  final VoidCallback onToggleRepeat;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        _ModeButton(
+          icon: snapshot.repeatMode == RepeatMode.one
+              ? Icons.repeat_one_on_rounded
+              : snapshot.repeatMode == RepeatMode.all
+              ? Icons.repeat_on_rounded
+              : Icons.repeat_rounded,
+          label: switch (snapshot.repeatMode) {
+            RepeatMode.off => 'Repeat',
+            RepeatMode.all => 'Repeat all',
+            RepeatMode.one => 'Repeat one',
+          },
+          isActive: snapshot.repeatMode != RepeatMode.off,
+          activeColor: colorScheme.primary,
+          inactiveColor: colorScheme.onSurfaceVariant,
+          onTap: onToggleRepeat,
+        ),
+        const Spacer(),
+        _ModeButton(
+          icon: snapshot.shuffleEnabled
+              ? Icons.shuffle_on_rounded
+              : Icons.shuffle_rounded,
+          label: 'Shuffle',
+          isActive: snapshot.shuffleEnabled,
+          activeColor: colorScheme.primary,
+          inactiveColor: colorScheme.onSurfaceVariant,
+          onTap: onToggleShuffle,
+        ),
+      ],
+    );
+  }
+}
+
+/// One toggle in the mode row: icon centred on a comfortable touch target
+/// with a tiny label beneath it for discoverability.
+class _ModeButton extends StatelessWidget {
+  const _ModeButton({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.activeColor,
+    required this.inactiveColor,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final Color activeColor;
+  final Color inactiveColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isActive ? activeColor : inactiveColor;
+    return Tooltip(
+      message: label,
+      child: SizedBox(
+        width: AppTokens.touchTarget,
+        height: AppTokens.touchTarget,
+        child: IconButton(
+          onPressed: onTap,
+          icon: Icon(icon, size: 22),
+          color: color,
+          splashRadius: 24,
+          padding: EdgeInsets.zero,
+        ),
+      ),
     );
   }
 }
