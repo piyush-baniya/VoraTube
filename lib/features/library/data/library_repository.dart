@@ -141,14 +141,27 @@ class LibraryRepository {
         // first entry stays the primary artist (back-compat via
         // `songs.artistRowId`), the rest are recorded in `song_artists`.
         final credits = splitArtists(track.artist);
-        final primaryName = credits.isNotEmpty
-            ? credits.first
-            : track.artist?.trim();
-        final artistRowId = await _ensureArtist(
-          track: track,
-          rowIdByKey: artistRowIdByKey,
-          artistName: primaryName,
-        );
+        final rawCredit = track.artist?.trim();
+        // BUG #5: a grouped credit ("Atif Aslam, Pritam") must NOT bind the
+        // song's primary artist to the MediaStore *combined* artist key —
+        // that row would be created/renamed after the first credit and
+        // duplicate the real individual artist entry. Resolve the primary
+        // through the name-keyed credited-artist path instead, which unifies
+        // with the existing solo artist row by name.
+        final isGroupCredit = rawCredit != null && hasGroupSeparator(rawCredit);
+        final int? artistRowId;
+        if (isGroupCredit && credits.isNotEmpty) {
+          artistRowId = await _ensureCreditedArtist(
+            credits.first,
+            rowIdByKey: creditedArtistRowIdByKey,
+          );
+        } else {
+          artistRowId = await _ensureArtist(
+            track: track,
+            rowIdByKey: artistRowIdByKey,
+            artistName: credits.isNotEmpty ? credits.first : rawCredit,
+          );
+        }
         final creditedRowIds = <int>{?artistRowId};
         for (final name in credits.skip(1)) {
           final rowId = await _ensureCreditedArtist(
@@ -163,7 +176,6 @@ class LibraryRepository {
         // also becomes its own artist entry, so grouped-credit pages exist
         // alongside the individual ones without duplicating any song: the
         // song_artists rows for this song are a set keyed by artist row id.
-        final rawCredit = track.artist?.trim();
         if (rawCredit != null &&
             hasGroupSeparator(rawCredit) &&
             !credits.contains(rawCredit)) {
@@ -219,7 +231,12 @@ class LibraryRepository {
           }
         } else {
           songRowId = existing.id;
-          if (existing.dateModifiedSec != track.dateModifiedSec) {
+          // BUG #5: also converge the primary artist when a rescan resolves a
+          // different (corrected) artist row — pre-fix rows may point at a
+          // stale combined-credit artist row. Unchanged tracks previously
+          // kept their old artist_row_id forever.
+          if (existing.dateModifiedSec != track.dateModifiedSec ||
+              existing.artistRowId != artistRowId) {
             await (_db.update(
               _db.songs,
             )..where((tbl) => tbl.id.equals(existing.id))).write(companion);
@@ -346,6 +363,22 @@ class LibraryRepository {
     }
     if (rowIdByKey.containsKey(key)) {
       return rowIdByKey[key];
+    }
+    // BUG #5: unify with an existing artist row that carries the same name
+    // BEFORE inserting — "Atif Aslam" credited on a group track must be the
+    // SAME artist entry as the solo MediaStore-keyed "Atif Aslam" row, so the
+    // artist list never shows duplicate entries for one artist. The matched
+    // row keeps its own (platform) key; nothing is rewritten on it.
+    final nameMatch =
+        await (_db.select(_db.artists)
+              ..where(
+                (tbl) => tbl.name.lower().equals(name.trim().toLowerCase()),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    if (nameMatch != null) {
+      rowIdByKey[key] = nameMatch.id;
+      return nameMatch.id;
     }
     await _db
         .into(_db.artists)

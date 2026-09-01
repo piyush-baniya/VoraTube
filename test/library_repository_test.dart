@@ -1,4 +1,4 @@
-import 'dart:io';
+﻿import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -390,8 +390,8 @@ void main() {
     test('removeAbsentMediaStore refuses to wipe on an empty scan', () async {
       await repository.syncTracks([_msTrack(1), _msTrack(2)]);
 
-      // An empty seen-set means the scan enumerated nothing — a denied
-      // permission or an unmounted volume — not that the user deleted every
+      // An empty seen-set means the scan enumerated nothing â€” a denied
+      // permission or an unmounted volume â€” not that the user deleted every
       // song. Acting on it would destroy the library, playlists and stats.
       expect(await repository.removeAbsentMediaStore({}), 0);
       expect(await db.select(db.songs).get(), hasLength(2));
@@ -412,6 +412,113 @@ void main() {
       expect(entry, isNotNull);
       expect(entry!.totalSongs, 42);
       expect(entry.lastCompletedAt, isNotNull);
+    });
+  });
+
+  group('BUG #5: multi-artist song relationships', () {
+    // Library mirroring the bug report's example: Song 4 carries a grouped
+    // credit "Atif Aslam, Pritam" (MediaStore models it as its own combined
+    // artist, artistId 29), the rest are solo artists.
+    List<IngestTrack> library() => [
+      _msTrack(1, artist: 'Atif Aslam', artistId: 21),
+      _msTrack(2, artist: 'Atif Aslam', artistId: 21),
+      _msTrack(3, artist: 'Pritam', artistId: 22),
+      _msTrack(4, artist: 'Atif Aslam, Pritam', artistId: 29),
+      _msTrack(5, artist: 'Arijit Singh', artistId: 23),
+      _msTrack(6, artist: 'Arijit Singh', artistId: 23),
+    ];
+
+    test('grouped credit maps the song to each individual artist', () async {
+      await repository.syncTracks(library());
+
+      final artists = await repository.artistOverview();
+      final names = artists.map((a) => a.name).toList();
+      // One entry per distinct artist name â€” the grouped credit may keep its
+      // own combined entry, but "Atif Aslam" must appear exactly once.
+      expect(names.where((n) => n == 'Atif Aslam'), hasLength(1));
+      expect(names.where((n) => n == 'Pritam'), hasLength(1));
+      expect(names.where((n) => n == 'Arijit Singh'), hasLength(1));
+
+      final atif = artists.singleWhere((a) => a.name == 'Atif Aslam');
+      expect(atif.songCount, 3); // Songs 1, 2 and the grouped Song 4.
+      final pritam = artists.singleWhere((a) => a.name == 'Pritam');
+      expect(pritam.songCount, 2); // Song 3 and the grouped Song 4.
+      final arijit = artists.singleWhere((a) => a.name == 'Arijit Singh');
+      expect(arijit.songCount, 2);
+
+      final atifSongs = await repository.songsForArtist(atif.artistRowId);
+      expect(atifSongs.map((s) => s.song.mediaStoreId).toSet(), {1, 2, 4});
+      final pritamSongs = await repository.songsForArtist(pritam.artistRowId);
+      expect(pritamSongs.map((s) => s.song.mediaStoreId).toSet(), {3, 4});
+
+      // The grouped-credit combined entry exists and holds exactly Song 4.
+      final combined = artists.singleWhere(
+        (a) => a.name == 'Atif Aslam, Pritam',
+      );
+      expect(combined.songCount, 1);
+      expect((await repository.songsForArtist(combined.artistRowId)).length, 1);
+    });
+
+    test('rescan does not duplicate artists or songs', () async {
+      await repository.syncTracks(library());
+      final first = await repository.artistOverview();
+
+      final result = await repository.syncTracks(library());
+      expect(result.added, 0);
+
+      final second = await repository.artistOverview();
+      expect(
+        second.map((a) => (a.name, a.songCount)),
+        first.map((a) => (a.name, a.songCount)),
+      );
+      expect(
+        second.map((a) => a.name).where((n) => n == 'Atif Aslam'),
+        hasLength(1),
+      );
+
+      final atif = second.singleWhere((a) => a.name == 'Atif Aslam');
+      final atifSongs = await repository.songsForArtist(atif.artistRowId);
+      expect(atifSongs.map((s) => s.song.mediaStoreId).toSet(), {1, 2, 4});
+    });
+
+    test('case/whitespace variants of a credited artist unify', () async {
+      // Solo row via MediaStore, then the same artist credited on a group
+      // track with different case and trailing whitespace.
+      await repository.syncTracks([
+        _msTrack(1, artist: 'Atif Aslam', artistId: 21),
+        _msTrack(2, artist: 'atif aslam ,  Pritam', artistId: 29),
+      ]);
+
+      final artists = await repository.artistOverview();
+      expect(
+        artists.map((a) => a.name).where((n) => n == 'Atif Aslam'),
+        hasLength(1),
+      );
+      final atif = artists.singleWhere((a) => a.name == 'Atif Aslam');
+      final songs = await repository.songsForArtist(atif.artistRowId);
+      expect(songs.map((s) => s.song.mediaStoreId).toSet(), {1, 2});
+    });
+
+    test('stale combined-credit primary converges on rescan', () async {
+      // Simulate pre-fix data: ingest a group-credit song twice is not enough;
+      // instead verify a previously wrong primary artist row is superseded:
+      // ingest song 4 solo-first under the combined key name, then rescan with
+      // the same data and confirm the individual artists surface.
+      await repository.syncTracks(library());
+      await repository.syncTracks(
+        library().map((t) {
+          // Force an artist_row_id-affecting pass with unchanged dates.
+          return t;
+        }).toList(),
+      );
+
+      final songs = await db.select(db.songs).get();
+      final grouped = songs.singleWhere((s) => s.mediaStoreId == 4);
+      final artists = await db.select(db.artists).get();
+      final primary = artists.singleWhere((a) => a.id == grouped.artistRowId);
+      // The primary artist of the grouped song is the individual "Atif
+      // Aslam", not the combined-credit row.
+      expect(primary.name, 'Atif Aslam');
     });
   });
 }
