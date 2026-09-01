@@ -129,8 +129,9 @@ void main() {
     expect(find.text('Line one'), findsOneWidget);
     // The rest of the list is hidden.
     expect(find.text('Line three'), findsNothing);
-    // The compact action chips stay reachable while collapsed.
-    expect(find.text('Show online'), findsOneWidget);
+    // BUG #2: the three action buttons disappear completely while collapsed.
+    expect(find.text('Show online'), findsNothing);
+    expect(find.byType(LyricsActionsPanel), findsNothing);
   });
 
   testWidgets('tapping the collapsed preview expands the panel again', (
@@ -142,11 +143,19 @@ void main() {
     await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+    // Buttons stay hidden while collapsed.
+    expect(find.byType(LyricsActionsPanel), findsNothing);
 
     await tester.tap(find.byIcon(Icons.keyboard_arrow_up_rounded));
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
     expect(find.text('Line three'), findsOneWidget);
+    // BUG #2: expanding brings the action buttons back, OUTSIDE the card
+    // (as a sibling below it, not inside the collapsible container).
+    expect(find.byType(LyricsActionsPanel), findsOneWidget);
+    final cardRect = tester.getRect(find.byType(AnimatedSize).first);
+    final buttonsRect = tester.getRect(find.byType(LyricsActionsPanel));
+    expect(buttonsRect.top, greaterThanOrEqualTo(cardRect.bottom));
   });
 }

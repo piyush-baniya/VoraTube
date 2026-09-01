@@ -41,9 +41,17 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   static const double _minLineExtent = 38;
   static const double _activeScale = 1.05;
 
-  /// Height of the collapsed "current line" preview including the compact
-  /// lyrics action row beneath it.
-  static const double _previewHeight = 132;
+  /// Height of the collapsed "current line" preview (header only — the lyrics
+  /// action buttons live OUTSIDE the card below it, and are hidden entirely
+  /// while collapsed).
+  static const double _previewHeight = 60;
+
+  /// Vertical space reserved below the expanded card for the lyrics action
+  /// buttons row. While lyrics are shown and expanded the card shrinks by this
+  /// amount and the buttons render OUTSIDE the card, directly beneath it, so
+  /// the overall footprint stays the same and tight landscape viewports never
+  /// overflow.
+  static const double _actionsReserve = 48;
 
   final ScrollController _scrollController = ScrollController();
 
@@ -240,12 +248,27 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
     final isDark = theme.brightness == Brightness.dark;
     final accent = AppColors.accent;
 
+    // Lyrics action buttons live OUTSIDE the collapsible card:
+    // - expanded + lyrics shown → visible directly below the card;
+    // - collapsed → hidden completely;
+    // - no lyrics shown → the existing buttons-first intro inside the card
+    //   keeps its original (unchanged) presentation.
+    final showActionsBelow = _expanded && manual != null;
+    final double cardHeight;
+    if (!_expanded) {
+      cardHeight = _previewHeight;
+    } else if (showActionsBelow) {
+      cardHeight = math.max(200.0, widget.height - _actionsReserve);
+    } else {
+      cardHeight = widget.height;
+    }
+
     final container = AnimatedSize(
       duration: AppTokens.medium,
       curve: AppTokens.easeOut,
       alignment: Alignment.topCenter,
       child: Container(
-        height: _expanded ? widget.height : _previewHeight,
+        height: cardHeight,
         margin: const EdgeInsets.fromLTRB(
           AppTokens.s4,
           0,
@@ -278,7 +301,33 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         ),
       ),
     );
-    return container;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Flexible so the card itself absorbs tight landscape constraints —
+        // its fixed desired height is clamped by the region instead of
+        // overflowing now that the buttons row adds height below it.
+        Flexible(child: container),
+        // The three lyrics action buttons are STRUCTURALLY OUTSIDE the card,
+        // directly below it, and appear/disappear with the expand state.
+        AnimatedSize(
+          duration: AppTokens.medium,
+          curve: AppTokens.easeOut,
+          alignment: Alignment.topCenter,
+          child: showActionsBelow
+              ? const Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    AppTokens.s4,
+                    AppTokens.s2,
+                    AppTokens.s4,
+                    0,
+                  ),
+                  child: LyricsActionsPanel(compact: true, row: true),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
   }
 
   /// The expanded panel shows the buttons-first entry until the user has
@@ -293,18 +342,9 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         _LyricsPanelHeader(expanded: true, onToggle: _toggleExpanded),
         Expanded(
           child: manual != null
-              ? Stack(
-                  children: [
-                    Positioned.fill(child: _buildManualLyrics(manual)),
-                    // The actions stay reachable under the loaded lyrics.
-                    const Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: LyricsActionsPanel(compact: true, row: true),
-                    ),
-                  ],
-                )
+              // The buttons are rendered OUTSIDE the card by [build]; the
+              // card body here is lyrics-only.
+              ? _buildManualLyrics(manual)
               : _buildActionsIntro(lyricsAsync),
         ),
       ],
@@ -364,18 +404,13 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
     AsyncValue<LyricsResult> lyricsAsync,
     LyricsData? manual,
   ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _LyricsPanelHeader(
-          expanded: false,
-          onToggle: _toggleExpanded,
-          previewText: _previewText(manual),
-        ),
-        // Actions stay reachable while collapsed: they sit right below the
-        // one-line preview instead of hiding behind the buttons-first entry.
-        const LyricsActionsPanel(compact: true, row: true),
-      ],
+    // Collapsed state: header + one-line preview ONLY. The three action
+    // buttons are hidden completely while collapsed (they live outside the
+    // card and are gated on the expanded state in [build]).
+    return _LyricsPanelHeader(
+      expanded: false,
+      onToggle: _toggleExpanded,
+      previewText: _previewText(manual),
     );
   }
 
