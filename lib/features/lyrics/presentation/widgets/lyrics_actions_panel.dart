@@ -7,30 +7,43 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/models/lyrics.dart';
+import '../../../../core/player/player_controller.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/lrclib_client.dart';
 import '../providers/lyrics_providers.dart';
 
-/// The action panel offered whenever no suitable lyrics are available.
+/// The action panel offered at the start of a lyrics session.
 ///
-/// Provides a consistent set of options for the current song: fetch lyrics from
-/// an online service, search the web, upload a `.lrc` file — and, only when the
-/// user has already uploaded one for this song, show those uploaded lyrics.
+/// Provides the three primary ways to obtain lyrics for the current song —
+/// fetch online (with an inline options list), search the web, and upload a
+/// `.lrc` file (which then swaps to a "Remove .LRC File" action). When the
+/// user has already uploaded an LRC for this song, a "Show uploaded" action
+/// is added so those lyrics stay reachable.
 ///
 /// Shared between the standalone [LyricsView] and the full player's compact
 /// lyrics panel so the actions are reachable in both places.
 class LyricsActionsPanel extends ConsumerStatefulWidget {
-  const LyricsActionsPanel({super.key, this.compact = false, this.row = false});
+  const LyricsActionsPanel({
+    super.key,
+    this.compact = false,
+    this.row = false,
+    this.grid = false,
+  });
 
   /// When true the buttons are sized for a tighter panel (used by the compact
   /// full-player lyrics panel) and render without the fixed 260 dp column.
   final bool compact;
 
   /// When true the actions render as a single horizontally-scrolling row of
-  /// small chips instead of a stacked column. Used where vertical space is
+  /// small chips instead of a stacked/grid column. Used where vertical space is
   /// tight but the actions must stay reachable — the collapsed lyrics preview
   /// and the bottom of a loaded-lyrics surface.
   final bool row;
+
+  /// When true the primary actions render as a centred two-per-row grid (the
+  /// buttons-first entry the lyrics surface opens with) and the online options
+  /// list is shown inline rather than in a modal sheet.
+  final bool grid;
 
   @override
   ConsumerState<LyricsActionsPanel> createState() => _LyricsActionsPanelState();
@@ -38,6 +51,12 @@ class LyricsActionsPanel extends ConsumerStatefulWidget {
 
 class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
   bool _searchingOnline = false;
+
+  /// Term of the online-options phase: null until "Show online lyrics" is
+  /// tapped, then a status (loading / error / offline / done / notFound) plus
+  /// the fetched results once available. Only meaningful in [grid] mode, where
+  /// the options list renders inline.
+  _OnlinePick? _onlinePick;
 
   void _useLyrics(LyricsData data) {
     ref.read(manualLyricsProvider.notifier).state = data;
@@ -50,10 +69,42 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Opens the online lyric picker. In [grid] mode the options appear inline so
+  /// the user sees a real, selectable list; otherwise a modal sheet is used.
   Future<void> _showOnlineLyrics() async {
     if (_searchingOnline) return;
     final song = ref.read(currentTrackProvider);
     if (song == null) return;
+    if (widget.grid) {
+      await _showOnlineLyricsInline(song);
+      return;
+    }
+    await _showOnlineLyricsSheet(song);
+  }
+
+  Future<void> _showOnlineLyricsInline(SongRef song) async {
+    if (_searchingOnline) return;
+    setState(() => _onlinePick = const _OnlinePick.searching());
+    List<LrclibResult> results;
+    try {
+      results = await ref.read(lyricsServiceProvider).searchOnlineResults(song);
+    } on LyricsNetworkException {
+      if (!mounted) return;
+      setState(() => _onlinePick = const _OnlinePick.offline());
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _onlinePick = const _OnlinePick.error());
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      _onlinePick = _OnlinePick.done(results);
+    });
+  }
+
+  Future<void> _showOnlineLyricsSheet(SongRef song) async {
+    if (_searchingOnline) return;
     setState(() => _searchingOnline = true);
     List<LrclibResult> results;
     try {
@@ -200,21 +251,47 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     _useLyrics(data);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
+  /// Removes the persisted LRC for the current song, clears any displayed
+  /// lyrics and returns to the buttons-first entry.
+  Future<void> _removeUploadedLrc() async {
+    final song = ref.read(currentTrackProvider);
+    if (song == null) return;
+    final service = ref.read(lyricsServiceProvider);
+    try {
+      await service.userLrc.delete(song.identityKey);
+    } catch (_) {
+      _snack('Could not remove the lyrics file.');
+      return;
+    }
+    if (!mounted) return;
+    ref
+      ..invalidate(uploadedLrcProvider)
+      ..read(manualLyricsProvider.notifier).state = null;
+    setState(() => _onlinePick = null);
+    _snack('Removed the uploaded lyrics file.');
+  }
 
-    Widget button(
-      String label,
-      IconData icon,
-      Future<void> Function() onTap, {
-      bool enabled = true,
-    }) => OutlinedButton.icon(
+  Widget _button(
+    String label,
+    IconData icon,
+    Future<void> Function() onTap, {
+    bool enabled = true,
+    bool? destructive,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return OutlinedButton.icon(
       onPressed: enabled ? () => onTap() : null,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
+      icon: Icon(
+        icon,
+        size: widget.grid ? 20 : 18,
+        color: destructive == true ? colorScheme.error : colorScheme.primary,
+      ),
+      label: Text(
+        label,
+        style: destructive == true
+            ? TextStyle(color: colorScheme.error)
+            : null,
+      ),
       style: OutlinedButton.styleFrom(
         foregroundColor: colorScheme.primary,
         padding: EdgeInsets.symmetric(
@@ -223,13 +300,17 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         visualDensity: widget.compact ? VisualDensity.compact : null,
       ),
     );
+  }
 
-    Widget chip(
-      String label,
-      IconData icon,
-      Future<void> Function() onTap, {
-      bool enabled = true,
-    }) => ActionChip(
+  Widget _chip(
+    String label,
+    IconData icon,
+    Future<void> Function() onTap, {
+    bool enabled = true,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return ActionChip(
       onPressed: enabled ? () => onTap() : null,
       avatar: Icon(icon, size: 16, color: colorScheme.primary),
       label: Text(label),
@@ -240,33 +321,167 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       padding: const EdgeInsets.symmetric(horizontal: AppTokens.s2),
     );
+  }
 
-    final buttons = <Widget>[
-      button(
+  /// The primary actions: "Show online lyrics", "Search lyrics online", plus
+  /// the third slot that swaps between "Upload .lrc file" and (once a file is
+  /// saved) "Remove .LRC File". When a saved LRC exists a "Show uploaded
+  /// lyrics" tile also appears so those lyrics stay reachable.
+  List<Widget> _actionTiles() {
+    final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
+    final uploadAction = uploaded != null
+        ? _button(
+            'Remove .LRC File',
+            Icons.delete_outline_rounded,
+            _removeUploadedLrc,
+            destructive: true,
+          )
+        : _button('Upload .lrc file', Icons.upload_file_rounded, _uploadLrc);
+
+    return [
+      _button(
         'Show online lyrics',
         Icons.cloud_download_outlined,
         _showOnlineLyrics,
         enabled: !_searchingOnline,
       ),
-      const SizedBox(height: AppTokens.s1),
-      button(
+      _button(
         'Search lyrics online',
         Icons.travel_explore_rounded,
         _searchLyricsOnWeb,
       ),
-      const SizedBox(height: AppTokens.s1),
-      button('Upload .lrc file', Icons.upload_file_rounded, _uploadLrc),
-      // Only meaningful when the user has actually stored an LRC for
-      // this song.
-      if (uploaded != null) ...[
-        const SizedBox(height: AppTokens.s1),
-        button(
-          'Show lyrics from uploaded LRC file',
-          Icons.lyrics_rounded,
-          _showUploadedLrc,
+      if (uploaded != null)
+        _button('Show uploaded lyrics', Icons.lyrics_rounded, _showUploadedLrc),
+      uploadAction,
+    ];
+  }
+
+  Widget _buildGrid() {
+    if (_onlinePick != null) {
+      return _buildOnlinePicker();
+    }
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: AppTokens.s2,
+      runSpacing: AppTokens.s2,
+      children: _actionTiles(),
+    );
+  }
+
+  Widget _buildOnlinePicker() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final pick = _onlinePick!;
+    Widget content;
+    if (pick.isSearching) {
+      content = const Padding(
+        padding: EdgeInsets.all(AppTokens.s2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: AppTokens.s2),
+            Text('Searching online lyrics…'),
+          ],
+        ),
+      );
+    } else if (pick.isOffline) {
+      content = Text(
+        'You are offline — connect to search online lyrics.',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        textAlign: TextAlign.center,
+      );
+    } else if (pick.isError) {
+      content = Text(
+        'Searching online lyrics failed. Try again.',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        textAlign: TextAlign.center,
+      );
+    } else if (pick.results == null || pick.results!.isEmpty) {
+      content = Text(
+        'No online lyrics found for this song.',
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        textAlign: TextAlign.center,
+      );
+    } else {
+      final results = pick.results!;
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Choose a result',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: AppTokens.s1),
+          for (var i = 0; i < results.length; i++) ...[
+            _ResultTile(
+              index: i,
+              result: results[i],
+              onTap: () {
+                final data = ref
+                    .read(lyricsServiceProvider)
+                    .lyricsFromResult(results[i]);
+                if (data.isEmpty) {
+                  _snack('This result has no usable lyrics.');
+                  return;
+                }
+                _useLyrics(data);
+              },
+            ),
+            const SizedBox(height: AppTokens.s1),
+          ],
+        ],
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        content,
+        const SizedBox(height: AppTokens.s2),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: AppTokens.s2,
+          runSpacing: AppTokens.s2,
+          children: [
+            _button(
+              'Back',
+              Icons.arrow_back_rounded,
+              () async => setState(() => _onlinePick = null),
+            ),
+            ..._actionTiles(),
+          ],
         ),
       ],
-    ];
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
+
+    final buttons = _actionTiles();
+
+    if (widget.grid) {
+      return _buildGrid();
+    }
 
     if (widget.row) {
       return SingleChildScrollView(
@@ -275,24 +490,23 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            chip(
+            _chip(
               'Show online',
               Icons.cloud_download_outlined,
               _showOnlineLyrics,
               enabled: !_searchingOnline,
             ),
             const SizedBox(width: AppTokens.s1),
-            chip(
+            _chip(
               'Search online',
               Icons.travel_explore_rounded,
               _searchLyricsOnWeb,
             ),
             const SizedBox(width: AppTokens.s1),
-            chip('Upload .lrc', Icons.upload_file_rounded, _uploadLrc),
-            if (uploaded != null) ...[
-              const SizedBox(width: AppTokens.s1),
-              chip('Show uploaded', Icons.lyrics_rounded, _showUploadedLrc),
-            ],
+            if (uploaded != null)
+              _chip('Show uploaded', Icons.lyrics_rounded, _showUploadedLrc)
+            else
+              _chip('Upload .lrc', Icons.upload_file_rounded, _uploadLrc),
           ],
         ),
       );
@@ -308,3 +522,101 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     );
   }
 }
+
+/// Lightweight inline picker result row that shows a visible selection affordance
+/// (index + synced/timed indicator) so the user can confirm which result they
+/// are about to load.
+class _ResultTile extends StatelessWidget {
+  const _ResultTile({
+    required this.index,
+    required this.result,
+    required this.onTap,
+  });
+
+  final int index;
+  final LrclibResult result;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+      borderRadius: BorderRadius.circular(AppTokens.s3),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTokens.s3),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppTokens.s3,
+            vertical: AppTokens.s2,
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 12,
+                backgroundColor: colorScheme.primaryContainer,
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      result.trackName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    Text(
+                      result.artistName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              if (result.syncedLyrics?.isNotEmpty == true) ...[
+                const SizedBox(width: AppTokens.s2),
+                Icon(Icons.sync_rounded, size: 16, color: colorScheme.primary),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The transient state of the inline online-option phase.
+class _OnlinePick {
+  const _OnlinePick.searching()
+      : status = _OnlineStatus.searching,
+        results = null;
+  const _OnlinePick.offline()
+      : status = _OnlineStatus.offline,
+        results = null;
+  const _OnlinePick.error()
+      : status = _OnlineStatus.error,
+        results = null;
+  const _OnlinePick.done(this.results)
+      : status = _OnlineStatus.done;
+
+  final _OnlineStatus status;
+  final List<LrclibResult>? results;
+
+  bool get isSearching => status == _OnlineStatus.searching;
+  bool get isOffline => status == _OnlineStatus.offline;
+  bool get isError => status == _OnlineStatus.error;
+}
+
+enum _OnlineStatus { searching, offline, error, done }

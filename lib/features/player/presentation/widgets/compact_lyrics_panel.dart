@@ -235,6 +235,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   @override
   Widget build(BuildContext context) {
     final lyricsAsync = ref.watch(currentLyricsProvider);
+    final manual = ref.watch(manualLyricsProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final accent = AppColors.accent;
@@ -278,93 +279,120 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
             top: Radius.circular(AppTokens.rXl),
           ),
           child: _expanded
-              ? _buildExpanded(lyricsAsync)
-              : _buildCollapsedPreview(lyricsAsync),
+              ? _buildExpanded(lyricsAsync, manual)
+              : _buildCollapsedPreview(lyricsAsync, manual),
         ),
       ),
     );
     return container;
   }
 
-  Widget _buildExpanded(AsyncValue<LyricsResult> lyricsAsync) {
+  /// The expanded panel shows the buttons-first entry until the user has
+  /// actively chosen lyrics (via an online pick or an .lrc upload/saved file).
+  /// Only then does it render the actual lyrics list.
+  Widget _buildExpanded(
+    AsyncValue<LyricsResult> lyricsAsync,
+    LyricsData? manual,
+  ) {
     final body = Column(
       children: [
         _LyricsPanelHeader(expanded: true, onToggle: _toggleExpanded),
         Expanded(
-          child: lyricsAsync.when(
-            loading: () => _buildLoadingState(),
-            error: (_, _) => _buildMessageState(
-              icon: Icons.error_outline_rounded,
-              message: 'Lyrics unavailable',
-              subtitle: 'Unable to load lyrics at this time',
-              onRetry: _retry,
-            ),
-            data: _buildResult,
-          ),
+          child: manual != null
+              ? Stack(
+                  children: [
+                    Positioned.fill(child: _buildManualLyrics(manual)),
+                    // The actions stay reachable under the loaded lyrics.
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: LyricsActionsPanel(compact: true, row: true),
+                    ),
+                  ],
+                )
+              : _buildActionsIntro(lyricsAsync),
         ),
       ],
     );
-    // Keep the lyrics actions visible even when lyrics are shown. Layered over
-    // the list (not a Column sibling) so short/temporary heights — e.g. the
-    // AnimatedSize sub-frames while the panel animates into a tight landscape
-    // region — can never overflow the flex. The list already reserves generous
-    // bottom padding, so the chips float in that zone instead of covering text.
-    if (!_hasUsableLyrics(lyricsAsync)) {
-      return body;
-    }
-    return Stack(
-      children: [
-        body,
-        const Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: LyricsActionsPanel(compact: true, row: true),
-        ),
-      ],
-    );
+    return body;
   }
 
-  /// True when the current result actually displays lyric lines, so the
-  /// always-on action row below the list is shown (and not double-embedded).
-  bool _hasUsableLyrics(AsyncValue<LyricsResult> lyricsAsync) {
+  /// The buttons-first entry surface: three centred actions (two per row) with
+  /// a short contextual hint drawn from the auto pipeline result.
+  Widget _buildActionsIntro(AsyncValue<LyricsResult> lyricsAsync) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final result = lyricsAsync.valueOrNull;
-    if (result == null || result.status != LyricsStatus.loaded) return false;
-    final data = result.data;
-    if (data == null || data.isInstrumental) return false;
-    return _linesOf(data).isNotEmpty;
+    final status = result?.status;
+
+    String hint;
+    IconData icon;
+    switch (status) {
+      case LyricsStatus.offline:
+        hint = 'You\'re offline. Add lyrics for this track from a saved list.';
+        icon = Icons.wifi_off_rounded;
+      case LyricsStatus.error:
+        hint = 'Fetching lyrics failed. Choose how you\'d like to add them.';
+        icon = Icons.cloud_off_rounded;
+      case LyricsStatus.loaded:
+        hint = 'Lyrics are ready below — pick how to open them.';
+        icon = Icons.lyrics_outlined;
+      default:
+        hint = 'No lyrics for this track yet — choose how to add them.';
+        icon = Icons.lyrics_outlined;
+    }
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppTokens.s4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 26, color: colorScheme.onSurfaceVariant),
+            const SizedBox(height: AppTokens.s2),
+            Text(
+              hint,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppTokens.s3),
+            const LyricsActionsPanel(compact: true, grid: true),
+          ],
+        ),
+      ),
+    );
   }
 
-  Widget _buildCollapsedPreview(AsyncValue<LyricsResult> lyricsAsync) {
+  Widget _buildCollapsedPreview(
+    AsyncValue<LyricsResult> lyricsAsync,
+    LyricsData? manual,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         _LyricsPanelHeader(
           expanded: false,
           onToggle: _toggleExpanded,
-          previewText: _previewText(lyricsAsync),
+          previewText: _previewText(manual),
         ),
         // Actions stay reachable while collapsed: they sit right below the
-        // one-line preview instead of hiding behind the empty/error states.
+        // one-line preview instead of hiding behind the buttons-first entry.
         const LyricsActionsPanel(compact: true, row: true),
       ],
     );
   }
 
-  /// Best single line to preview when the panel is collapsed, or null when
-  /// there is nothing useful to preview yet.
-  String? _previewText(AsyncValue<LyricsResult> lyricsAsync) {
-    final result = lyricsAsync.valueOrNull;
-    if (result == null ||
-        result.status != LyricsStatus.loaded ||
-        result.data == null) {
-      return null;
-    }
-    final data = result.data!;
-    if (data.isInstrumental) return 'Instrumental';
-    final lines = _linesOf(data);
+  /// Best single line to preview when the panel is collapsed, drawn only from
+  /// lyrics the user has actually chosen (never the auto pipeline), or null.
+  String? _previewText(LyricsData? manual) {
+    if (manual == null) return null;
+    if (manual.isInstrumental) return 'Instrumental';
+    final lines = _linesOf(manual);
     if (lines.isEmpty) return null;
-    if (data.hasSyncedLines) {
+    if (manual.hasSyncedLines) {
       final idx = ref.watch(currentLyricLineIndexProvider).valueOrNull ?? -1;
       if (idx >= 0 && idx < lines.length) return lines[idx].text;
     }
@@ -383,67 +411,29 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         .toList(growable: false);
   }
 
-  Widget _buildResult(LyricsResult result) {
-    switch (result.status) {
-      case LyricsStatus.loading:
-        return _buildLoadingState();
-      case LyricsStatus.notFound:
-        return _buildMessageState(
-          icon: Icons.lyrics_outlined,
-          message: 'No lyrics found',
-          subtitle: 'We couldn\'t find lyrics for this track yet.',
-          onRetry: _retry,
-          actions: const [LyricsActionsPanel(compact: true)],
-        );
-      case LyricsStatus.error:
-        return _buildMessageState(
-          icon: Icons.cloud_off_rounded,
-          message: 'Lyrics unavailable',
-          subtitle: 'Fetching lyrics failed. Check your connection.',
-          onRetry: _retry,
-          actions: const [LyricsActionsPanel(compact: true)],
-        );
-      case LyricsStatus.offline:
-        return _buildMessageState(
-          icon: Icons.wifi_off_rounded,
-          message: 'No internet connection available.',
-          subtitle: 'You\'re offline. Connect to the internet to fetch lyrics.',
-          onRetry: _retry,
-          actions: const [LyricsActionsPanel(compact: true)],
-        );
-      case LyricsStatus.loaded:
-        final data = result.data;
-        if (data == null) {
-          return _buildMessageState(
-            icon: Icons.lyrics_outlined,
-            message: 'No lyrics found',
-            subtitle: 'We couldn\'t find lyrics for this track yet.',
-            onRetry: _retry,
-            actions: const [LyricsActionsPanel(compact: true)],
-          );
-        }
-        if (data.isInstrumental) {
-          return _buildMessageState(
-            icon: Icons.piano_rounded,
-            message: 'Instrumental',
-            subtitle: 'This track has no vocals.',
-          );
-        }
-        final lines = _linesOf(data);
-        if (lines.isEmpty) {
-          return _buildMessageState(
-            icon: Icons.lyrics_outlined,
-            message: 'No lyrics found',
-            subtitle: 'We couldn\'t find lyrics for this track yet.',
-            onRetry: _retry,
-            actions: const [LyricsActionsPanel(compact: true)],
-          );
-        }
-        if (data.hasSyncedLines) {
-          return _buildSyncedLyrics(lines);
-        }
-        return _buildPlainLyrics(lines);
+  /// Renders the lyrics the user explicitly chose (online pick or uploaded LRC).
+  Widget _buildManualLyrics(LyricsData data) {
+    if (data.isInstrumental) {
+      return _buildMessageState(
+        icon: Icons.piano_rounded,
+        message: 'Instrumental',
+        subtitle: 'This track has no vocals.',
+      );
     }
+    final lines = _linesOf(data);
+    if (lines.isEmpty) {
+      return _buildMessageState(
+        icon: Icons.lyrics_outlined,
+        message: 'No lyrics found',
+        subtitle: 'We couldn\'t find lyrics for this track yet.',
+        onRetry: _retry,
+        actions: const [LyricsActionsPanel(compact: true)],
+      );
+    }
+    if (data.hasSyncedLines) {
+      return _buildSyncedLyrics(lines);
+    }
+    return _buildPlainLyrics(lines);
   }
 
   Widget _buildSyncedLyrics(List<LyricsLine> lines) {
@@ -576,35 +566,6 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildLoadingState() {
-    // A short region (landscape) cannot fit the fixed spinner+label column;
-    // scroll it like _buildMessageState does so nothing overflows.
-    return Center(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-            const SizedBox(height: AppTokens.s3),
-            Text(
-              'Finding lyrics…',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

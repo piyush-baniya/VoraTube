@@ -34,8 +34,75 @@ class FullPlayerScreen extends ConsumerStatefulWidget {
   ConsumerState<FullPlayerScreen> createState() => _FullPlayerScreenState();
 }
 
-class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
+class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
+    with SingleTickerProviderStateMixin {
   bool _showLyrics = false;
+
+  /// Controls-region height: drags that start inside the playback controls
+  /// (bottom strip) are treated as button taps, not dismiss attempts.
+  static const double _controlsRegionHeight = 140;
+  static const double _dismissThreshold = 100;
+  static const double _maxDrag = 260;
+
+  late final AnimationController _dismissAnim;
+  double _dragOffset = 0;
+  bool _dragActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _dismissAnim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    )..addListener(() {
+        if (_dismissAnim.value > 0) {
+          setState(() {
+            _dragOffset *= 1.0 - Curves.linear.transform(_dismissAnim.value);
+          });
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _dismissAnim.dispose();
+    super.dispose();
+  }
+
+  bool _startsOnControls(DragStartDetails details) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    return details.globalPosition.dy >= screenHeight - _controlsRegionHeight;
+  }
+
+  void _onVerticalDragStart(DragStartDetails details) {
+    _dragActive = !_startsOnControls(details);
+    if (!_dragActive) {
+      return;
+    }
+    _dismissAnim.stop();
+    _dragOffset = 0;
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails details) {
+    if (!_dragActive || _dismissAnim.isAnimating) {
+      return;
+    }
+    _dragOffset = (_dragOffset + details.delta.dy).clamp(0.0, _maxDrag);
+    setState(() {});
+  }
+
+  void _onVerticalDragEnd(DragEndDetails details) {
+    if (!_dragActive) {
+      return;
+    }
+    _dragActive = false;
+    final fling = details.primaryVelocity ?? 0;
+    if (_dragOffset >= _dismissThreshold || fling > 1100) {
+      Navigator.of(context).pop();
+      return;
+    }
+    _dismissAnim.forward(from: 0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,7 +132,19 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
       child: Scaffold(
         backgroundColor: colorScheme.surface,
         extendBodyBehindAppBar: true,
-        body: Stack(
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onVerticalDragStart: _onVerticalDragStart,
+          onVerticalDragUpdate: _onVerticalDragUpdate,
+          onVerticalDragEnd: _onVerticalDragEnd,
+          child: Transform.translate(
+            offset: Offset(0, _dragOffset * 0.65),
+            child: Transform.scale(
+              scale: 1.0 - _dragOffset / _maxDrag * 0.06,
+              child: Opacity(
+                opacity:
+                    (1.0 - _dragOffset / _maxDrag * 0.55).clamp(0.35, 1.0),
+                child: Stack(
           children: [
             // Immersive purple-atmosphere background. No Hero here: the
             // artwork Hero tag belongs to exactly one widget per route.
@@ -76,27 +155,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
               child: Column(
                 children: [
                   // Top bar
-                  GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onVerticalDragEnd: (details) {
-                      final velocity = details.primaryVelocity ?? 0;
-                      // A deliberate quick downward fling collapses the full
-                      // player back into the Mini Player.
-                      if (velocity > 1100) {
-                        Navigator.of(context).pop();
-                      }
-                    },
-                    child: _TopBar(
-                      identityKey: current.identityKey,
-                      onQueueTap: () => QueueSheet.show(context),
-                      onPlaylistTap: () =>
-                          _openPlaylistPicker(current.identityKey),
-                      onLyricsTap: () =>
-                          setState(() => _showLyrics = !_showLyrics),
-                      onSleepTimerTap: () => showSleepTimerSheet(context),
-                      showLyricsActive: _showLyrics,
-                      isDark: isDark,
-                    ),
+                  _TopBar(
+                    identityKey: current.identityKey,
+                    onQueueTap: () => QueueSheet.show(context),
+                    onPlaylistTap: () =>
+                        _openPlaylistPicker(current.identityKey),
+                    onLyricsTap: () =>
+                        setState(() => _showLyrics = !_showLyrics),
+                    onSleepTimerTap: () => showSleepTimerSheet(context),
+                    showLyricsActive: _showLyrics,
+                    isDark: isDark,
                   ),
                   // Player content (middle region swaps; the playback
                   // controls below it stay in a fixed visual position).
@@ -126,6 +194,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
             ),
           ],
         ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -154,8 +226,14 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> {
 
         // Progress and controls live in the fixed bottom region of the parent
         // Column; this scrollable area only contains the artwork and metadata.
+        // When it fits on screen, scrolling is disabled so the body-level
+        // swipe-down dismiss can reach the artwork area; on short viewports the
+        // area stays scrollable with a bouncing feel.
+        final fitsOnScreen = constraints.maxHeight > 400.0;
         return SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
+          physics: fitsOnScreen
+              ? const NeverScrollableScrollPhysics()
+              : const BouncingScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
           child: Column(
             mainAxisSize: MainAxisSize.min,

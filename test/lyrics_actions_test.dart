@@ -251,35 +251,40 @@ void main() {
       expect(find.text('Show online lyrics'), findsOneWidget);
       expect(find.text('Search lyrics online'), findsOneWidget);
       expect(find.text('Upload .lrc file'), findsOneWidget);
-      expect(find.text('Show lyrics from uploaded LRC file'), findsNothing);
+      expect(find.text('Show uploaded lyrics'), findsNothing);
+      expect(find.text('Remove .LRC File'), findsNothing);
     });
 
-    testWidgets('a saved LRC adds the fourth action, which shows the lyrics', (
-      tester,
-    ) async {
-      final container = await pumpActions(tester);
+    testWidgets(
+      'a saved LRC swaps Upload to Remove and adds Show uploaded, '
+      'which displays the lyrics',
+      (tester) async {
+        final container = await pumpActions(tester);
 
-      await service.userLrc.save(
-        identityKey: 'ms:1',
-        lrc: '[00:01.00] uploaded line',
-      );
-      container.invalidate(uploadedLrcProvider);
-      await tester.pumpAndSettle();
+        await service.userLrc.save(
+          identityKey: 'ms:1',
+          lrc: '[00:01.00] uploaded line',
+        );
+        container.invalidate(uploadedLrcProvider);
+        await tester.pumpAndSettle();
 
-      expect(find.text('Show lyrics from uploaded LRC file'), findsOneWidget);
+        expect(find.text('Show uploaded lyrics'), findsOneWidget);
+        expect(find.text('Remove .LRC File'), findsOneWidget);
+        expect(find.text('Upload .lrc file'), findsNothing);
 
-      await tester.tap(find.text('Show lyrics from uploaded LRC file'));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('Show uploaded lyrics'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('uploaded line'), findsOneWidget);
-      expect(
-        find.text('Show online'),
-        findsOneWidget,
-        reason:
-            'BUG 1: the lyrics actions stay visible even once lyrics load, '
-            'as a compact row instead of disappearing.',
-      );
-      expect(find.text('Show uploaded'), findsOneWidget);
-    });
+        expect(find.text('uploaded line'), findsOneWidget);
+        expect(
+          find.text('Show online'),
+          findsOneWidget,
+          reason:
+              'BUG 1: the lyrics actions stay visible even once lyrics load, '
+              'as a compact row instead of disappearing.',
+        );
+        expect(find.text('Show uploaded'), findsOneWidget);
+      },
+    );
   });
 }

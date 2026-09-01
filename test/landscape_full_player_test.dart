@@ -12,8 +12,8 @@ import 'package:vora_tube/features/library/presentation/providers/library_provid
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
 import 'package:vora_tube/features/player/presentation/screens/full_player_screen.dart';
 import 'package:vora_tube/features/player/presentation/widgets/compact_lyrics_panel.dart';
+import 'package:vora_tube/features/player/presentation/widgets/player_progress.dart';
 import 'package:vora_tube/features/player/presentation/widgets/rotating_artwork.dart';
-
 import 'fakes/fake_player.dart';
 
 SongRef _testSong({
@@ -38,6 +38,7 @@ void main() {
   setUpAll(() {
     disableBackgroundPulseForTesting();
     disableRotatingArtworkForTesting();
+    disableWaveTimelineForTesting();
   });
 
   setUp(() {
@@ -208,6 +209,7 @@ void main() {
               currentLyricLineIndexProvider.overrideWith(
                 (ref) => Stream.value(0),
               ),
+              manualLyricsProvider.overrideWith((ref) => synced.data),
             ],
           ),
         );

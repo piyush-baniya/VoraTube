@@ -240,8 +240,6 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
     return metrics;
   }
 
-  void _retry() => ref.invalidate(currentLyricsProvider);
-
   void _seekTo(int milliseconds) =>
       ref.read(playerProvider).seek(Duration(milliseconds: milliseconds));
 
@@ -260,17 +258,8 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
     final isDark = theme.brightness == Brightness.dark;
 
     final content = manual != null
-        ? _buildResult(LyricsResult.loaded(manual, LyricsSource.userLrc))
-        : lyricsAsync.when(
-            loading: _buildLoadingState,
-            error: (_, _) => _buildMessageState(
-              icon: Icons.error_outline_rounded,
-              message: 'Lyrics unavailable',
-              subtitle: 'Something went wrong while loading lyrics.',
-              onRetry: _retry,
-            ),
-            data: _buildResult,
-          );
+        ? _buildManualLyrics(manual)
+        : _buildActionsIntro(lyricsAsync);
 
     if (!widget.decorated) {
       return SizedBox(height: widget.height, child: content);
@@ -309,77 +298,86 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
     );
   }
 
-  Widget _buildResult(LyricsResult result) {
-    switch (result.status) {
-      case LyricsStatus.loading:
-        return _buildLoadingState();
-      case LyricsStatus.notFound:
-        return _buildMessageState(
-          icon: Icons.lyrics_outlined,
-          message: 'No lyrics found',
-          subtitle: 'We could not find lyrics for this track yet.',
-          onRetry: _retry,
-          actions: const [LyricsActionsPanel()],
-        );
-      case LyricsStatus.error:
-        return _buildMessageState(
-          icon: Icons.cloud_off_rounded,
-          message: 'Lyrics unavailable',
-          subtitle: 'Fetching lyrics failed. Check your connection.',
-          onRetry: _retry,
-          actions: const [LyricsActionsPanel()],
-        );
+  /// The buttons-first entry surface: three centred actions (two per row) with
+  /// a short contextual hint drawn from the auto pipeline result.
+  Widget _buildActionsIntro(AsyncValue<LyricsResult> lyricsAsync) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final result = lyricsAsync.valueOrNull;
+    final status = result?.status;
+
+    String hint;
+    IconData icon;
+    switch (status) {
       case LyricsStatus.offline:
-        return _buildMessageState(
-          icon: Icons.wifi_off_rounded,
-          message: 'No internet connection available.',
-          subtitle: 'You are offline. Connect to the internet to fetch lyrics.',
-          onRetry: _retry,
-          actions: const [LyricsActionsPanel()],
-        );
+        hint = 'You\'re offline. Add lyrics for this track from a saved list.';
+        icon = Icons.wifi_off_rounded;
+      case LyricsStatus.error:
+        hint = 'Fetching lyrics failed. Choose how you\'d like to add them.';
+        icon = Icons.cloud_off_rounded;
       case LyricsStatus.loaded:
-        final data = result.data;
-        if (data == null) {
-          return _buildMessageState(
-            icon: Icons.lyrics_outlined,
-            message: 'No lyrics found',
-            subtitle: 'We could not find lyrics for this track yet.',
-            onRetry: _retry,
-            actions: const [LyricsActionsPanel()],
-          );
-        }
-        if (data.isInstrumental) {
-          return _buildMessageState(
-            icon: Icons.piano_rounded,
-            message: 'Instrumental',
-            subtitle: 'This track has no vocals.',
-          );
-        }
-        final lines = _linesOf(data);
-        if (lines.isEmpty) {
-          return _buildMessageState(
-            icon: Icons.lyrics_outlined,
-            message: 'No lyrics found',
-            subtitle: 'We could not find lyrics for this track yet.',
-            onRetry: _retry,
-            actions: const [LyricsActionsPanel()],
-          );
-        }
-        if (data.hasSyncedLines) {
-          return Column(
-            children: [
-              Expanded(child: _buildSyncedLyrics(lines)),
-              const LyricsActionsPanel(row: true),
-            ],
-          );
-        }
-        return Column(
-          children: [
-            Expanded(child: _buildPlainLyrics(lines)),
-            const LyricsActionsPanel(row: true),
-          ],
-        );
+        hint = 'Lyrics are ready — pick how to open them.';
+        icon = Icons.lyrics_outlined;
+      default:
+        hint = 'No lyrics for this track yet — choose how to add them.';
+        icon = Icons.lyrics_outlined;
     }
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppTokens.s5),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 28, color: colorScheme.onSurfaceVariant),
+            const SizedBox(height: AppTokens.s3),
+            Text(
+              hint,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: AppTokens.s4),
+            const LyricsActionsPanel(grid: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Renders the lyrics the user explicitly chose (online pick or uploaded LRC).
+  Widget _buildManualLyrics(LyricsData data) {
+    if (data.isInstrumental) {
+      return _buildMessageState(
+        icon: Icons.piano_rounded,
+        message: 'Instrumental',
+        subtitle: 'This track has no vocals.',
+      );
+    }
+    final lines = _linesOf(data);
+    if (lines.isEmpty) {
+      return _buildMessageState(
+        icon: Icons.lyrics_outlined,
+        message: 'No lyrics found',
+        subtitle: 'We could not find lyrics for this track yet.',
+        actions: const [LyricsActionsPanel()],
+      );
+    }
+    if (data.hasSyncedLines) {
+      return Column(
+        children: [
+          Expanded(child: _buildSyncedLyrics(lines)),
+          const LyricsActionsPanel(row: true),
+        ],
+      );
+    }
+    return Column(
+      children: [
+        Expanded(child: _buildPlainLyrics(lines)),
+        const LyricsActionsPanel(row: true),
+      ],
+    );
   }
 
   /// Falls back to splitting [LyricsData.plainText] when a provider returned
@@ -526,32 +524,6 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildLoadingState() {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 26,
-            height: 26,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.5,
-              color: theme.colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: AppTokens.s4),
-          Text(
-            'Finding lyrics…',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
       ),
     );
   }

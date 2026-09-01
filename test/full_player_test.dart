@@ -40,6 +40,7 @@ void main() {
     // Disable background pulse animation for tests to prevent pumpAndSettle timeout.
     disableBackgroundPulseForTesting();
     disableRotatingArtworkForTesting();
+    disableWaveTimelineForTesting();
   });
 
   setUp(() {
@@ -176,7 +177,75 @@ void main() {
       await tester.pumpWidget(_wrap(const FullPlayerScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.byType(Slider), findsOneWidget);
+      expect(find.byKey(const Key('player_progress_wave')), findsOneWidget);
+    });
+
+    testWidgets('tapping the wave timeline seeks to tapped position', (
+      tester,
+    ) async {
+      final player = _TestablePlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: false,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 2,
+          currentIndex: 0,
+          durationMs: 200000,
+          current: _testSong(),
+        ),
+        queue: [_testSong(id: 1), _testSong(id: 2, title: 'Song 2')],
+      );
+      await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
+      await tester.pumpAndSettle();
+
+      final wave = find.byKey(const Key('player_progress_wave'));
+      final center = tester.getTopLeft(wave);
+      final width = tester.getSize(wave).width;
+
+      // Tap at ~75% across the bar.
+      await tester.tapAt(Offset(center.dx + width * 0.75, center.dy + 15));
+      await tester.pumpAndSettle();
+
+      expect(player.seekEvents.length, 1, reason: '${player.seekEvents}');
+      final seeked = player.seekEvents.single.inMilliseconds;
+      expect(seeked, inInclusiveRange(150000 - 16000, 150000 + 16000),
+          reason: '${player.seekEvents}');
+    });
+
+    testWidgets('dragging the wave timeline seeks to the release position', (
+      tester,
+    ) async {
+      final player = _TestablePlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: false,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 2,
+          currentIndex: 0,
+          durationMs: 200000,
+          current: _testSong(),
+        ),
+        queue: [_testSong(id: 1), _testSong(id: 2, title: 'Song 2')],
+      );
+      await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
+      await tester.pumpAndSettle();
+
+      final wave = find.byKey(const Key('player_progress_wave'));
+      final topLeft = tester.getTopLeft(wave);
+      final size = tester.getSize(wave);
+
+      // Drag from 10% across the bar to ~50%.
+      final start = Offset(topLeft.dx + size.width * 0.1, topLeft.dy + 15);
+      final end = Offset(topLeft.dx + size.width * 0.5, topLeft.dy + 15);
+      await tester.timedDragFrom(start, end - start, const Duration(milliseconds: 150));
+      await tester.pumpAndSettle();
+
+      expect(player.seekEvents.length, 1, reason: '${player.seekEvents}');
+      final seeked = player.seekEvents.single.inMilliseconds;
+      expect(seeked, inInclusiveRange(100000 - 16000, 100000 + 16000),
+          reason: '${player.seekEvents}');
     });
   });
 
@@ -632,6 +701,101 @@ void main() {
       );
     });
   });
+
+  group('swipe-down dismiss', () {
+    Future<void> pumpPushedPlayer(WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(400, 800);
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _wrap(
+          Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const FullPlayerScreen(),
+                    ),
+                  ),
+                  child: const Text('open player'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open player'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FullPlayerScreen), findsOneWidget);
+    }
+
+    testWidgets('a downward drag on the top bar dismisses the player', (
+      tester,
+    ) async {
+      await pumpPushedPlayer(tester);
+
+      // Start the drag in the top-bar region (x=200, y=40).
+      await tester.timedDragFrom(
+        const Offset(200, 40),
+        const Offset(0, 180),
+        const Duration(milliseconds: 150),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FullPlayerScreen), findsNothing);
+      expect(find.text('open player'), findsOneWidget);
+    });
+
+    testWidgets('a sub-threshold drag snaps back without dismissing', (
+      tester,
+    ) async {
+      await pumpPushedPlayer(tester);
+
+      await tester.timedDragFrom(
+        const Offset(200, 40),
+        const Offset(0, 50),
+        const Duration(milliseconds: 150),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FullPlayerScreen), findsOneWidget);
+      expect(find.text('Test Song'), findsOneWidget);
+    });
+
+    testWidgets('a drag starting on the playback controls does not dismiss', (
+      tester,
+    ) async {
+      await pumpPushedPlayer(tester);
+
+      final playCenter = tester.getCenter(find.byIcon(Icons.play_arrow_rounded));
+      await tester.timedDragFrom(
+        playCenter,
+        const Offset(0, 180),
+        const Duration(milliseconds: 150),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FullPlayerScreen), findsOneWidget);
+    });
+
+    testWidgets('a drag on the artwork area dismisses the player', (
+      tester,
+    ) async {
+      await pumpPushedPlayer(tester);
+
+      final artCenter = tester.getCenter(find.byType(RotatingArtwork));
+      await tester.timedDragFrom(
+        artCenter,
+        const Offset(0, 180),
+        const Duration(milliseconds: 150),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FullPlayerScreen), findsNothing);
+      expect(find.text('open player'), findsOneWidget);
+    });
+  });
 }
 
 /// A FakePlayer that counts method calls for verification.
@@ -645,6 +809,12 @@ class _TestablePlayer extends FakePlayerController {
   int shuffleCount = 0;
   int repeatCount = 0;
   final List<Duration> seekByEvents = [];
+  final List<Duration> seekEvents = [];
+
+  @override
+  Future<void> seek(Duration position) async {
+    seekEvents.add(position);
+  }
 
   @override
   Future<void> seekBy(Duration offset) async {
