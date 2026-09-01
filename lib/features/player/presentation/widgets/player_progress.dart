@@ -122,11 +122,12 @@ class _PlayerProgressState extends State<PlayerProgress>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final totalMs = _duration.inMilliseconds;
-    // Compact-height screens (landscape phones) get a slimmer wave so the
-    // fixed control region never overflows.
+    // BUG #3: the wave is a subtle ripple on top of a thin progress line, so
+    // the painted band is now a few logical pixels tall instead of a large
+    // oscillation. The outer box keeps a comfortable seek hit-target.
     final compactHeight = MediaQuery.sizeOf(context).height < 480;
-    final waveHeight = compactHeight ? 30.0 : 44.0;
-    final wavePaintHeight = compactHeight ? 22.0 : 36.0;
+    final waveHeight = compactHeight ? 20.0 : 26.0;
+    final wavePaintHeight = compactHeight ? 10.0 : 12.0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -255,12 +256,18 @@ class _WaveTimeline extends StatelessWidget {
   }
 }
 
-/// Paints the smooth flowing wave.
+/// Paints the thin progress line with a subtle ripple on the played portion.
 ///
-/// Geometry: a height envelope (a slow sine over x) modulates the amplitude so
-/// the silhouette varies like a real waveform, while two phase-shifted sine
-/// curves provide the flowing motion. The played portion is clipped and
-/// re-stroked in the active color so seeking stays pixel-accurate.
+/// BUG #3 redesign (visual only — seeking/progress semantics unchanged):
+/// - The UNPLAYED portion is a straight line: a brand-new song shows a plain
+///   purple line, never an animated wave.
+/// - The PLAYED portion develops a very low-amplitude, continuous sine ripple
+///   whose size grows with the fraction of the song already played (so the
+///   wave "belongs" to that song's accumulated playback and follows the
+///   persisted position after a restart — no separate storage).
+/// - Only the wave PHASE animates while playing; pausing freezes it and the
+///   accumulated ripple stays exactly where it is (no reset, no motion).
+/// - Amplitude no longer depends on [isPlaying], so pausing no longer jumps.
 class _WavePainter extends CustomPainter {
   const _WavePainter({
     required this.progress,
@@ -292,7 +299,8 @@ class _WavePainter extends CustomPainter {
       final envelope =
           0.55 + 0.45 * math.sin(x * envelopeFrequency + envelopePhase);
       final y =
-          midY + math.sin(x * frequency + wave * 2 * math.pi + phaseShift) *
+          midY +
+          math.sin(x * frequency + wave * 2 * math.pi + phaseShift) *
               amplitude *
               envelope;
       if (first) {
@@ -305,58 +313,54 @@ class _WavePainter extends CustomPainter {
     return path;
   }
 
-  void _paintSplit(Canvas canvas, Path path, double strokeWidth, Size size) {
-    final playedWidth = size.width * progress.clamp(0.0, 1.0);
-
-    final activePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..color = activeColor;
-    final inactivePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..color = inactiveColor;
-
-    if (playedWidth > 0) {
-      canvas.save();
-      canvas.clipRect(Offset.zero & Size(playedWidth, size.height));
-      canvas.drawPath(path, activePaint);
-      canvas.restore();
-    }
-    if (playedWidth < size.width) {
-      canvas.save();
-      canvas.clipRect(
-        Offset(playedWidth, 0) & Size(size.width - playedWidth, size.height),
-      );
-      canvas.drawPath(path, inactivePaint);
-      canvas.restore();
-    }
-  }
-
   @override
   void paint(Canvas canvas, Size size) {
     final midY = size.height / 2;
-    // Flow amplitude: gently larger while playing, settled when paused.
-    final amplitude = isPlaying ? size.height * 0.36 : size.height * 0.28;
-    // The envelope is static so the silhouette stays consistent frame to
-    // frame; only the wave phase advances, which keeps the animation smooth
-    // and free of visual jumps.
+    final playedWidth = size.width * progress.clamp(0.0, 1.0);
 
-    final main = _wavePath(
-      width: size.width,
-      midY: midY,
-      amplitude: amplitude,
-      frequency: 2 * math.pi / 95,
-      phaseShift: 0,
-      envelopeFrequency: 2 * math.pi / 300,
-      envelopePhase: 0,
+    // BUG #3: max ripple is a small fraction of the (already slim) paint band
+    // — a gentle ±~1.5 logical px at full playback, not a large oscillation —
+    // and it scales with the played fraction so an unstarted song paints a
+    // perfectly straight line.
+    final maxAmplitude = size.height * 0.25;
+    final amplitude = maxAmplitude * progress.clamp(0.0, 1.0);
+
+    // Played portion: the subtle flowing ripple (phase advances only while
+    // playing via the pulse controller; paused it freezes in place).
+    if (playedWidth > 0 && amplitude > 0) {
+      final played = _wavePath(
+        width: playedWidth,
+        midY: midY,
+        amplitude: amplitude,
+        frequency: 2 * math.pi / 95,
+        phaseShift: 0,
+        envelopeFrequency: 2 * math.pi / 300,
+        envelopePhase: 0,
+      );
+      final activePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round
+        ..color = activeColor;
+      canvas.save();
+      canvas.clipRect(Offset.zero & Size(playedWidth, size.height));
+      canvas.drawPath(played, activePaint);
+      canvas.restore();
+    }
+
+    // Unplayed portion: a plain straight line. This keeps the widget a
+    // recognizable progress bar and gives new songs a straight purple line.
+    final inactivePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round
+      ..color = inactiveColor;
+    canvas.drawLine(
+      Offset(playedWidth, midY),
+      Offset(size.width, midY),
+      inactivePaint,
     );
-
-    _paintSplit(canvas, main, 3.0, size);
   }
 
   @override
