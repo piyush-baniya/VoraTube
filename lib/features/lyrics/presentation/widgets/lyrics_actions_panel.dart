@@ -298,16 +298,26 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    return ActionChip(
-      onPressed: enabled ? () => onTap() : null,
-      avatar: Icon(icon, size: 16, color: colorScheme.primary),
-      label: Text(label),
-      labelStyle: theme.textTheme.labelMedium?.copyWith(
-        color: colorScheme.onSurfaceVariant,
+    // Fixed width so the three action chips form a balanced row, and the label
+    // is centered inside each one instead of hugging the avatar.
+    return SizedBox(
+      width: 132,
+      child: ActionChip(
+        onPressed: enabled ? () => onTap() : null,
+        avatar: Icon(icon, size: 16, color: colorScheme.primary),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelMedium,
+        ),
+        labelStyle: theme.textTheme.labelMedium?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: AppTokens.s1),
       ),
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s2),
     );
   }
 

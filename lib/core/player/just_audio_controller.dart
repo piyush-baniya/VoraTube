@@ -168,6 +168,20 @@ class JustAudioController extends BaseAudioHandler
   /// finishes.
   bool _queueTransition = false;
 
+  /// True from when a persisted session is restored until the next explicit
+  /// [playQueue] starts a brand-new session.
+  ///
+  /// At cold start the restored engine's single source can transiently land in
+  /// `idle` (media URI not yet resolvable, permission check pending, a
+  /// momentary platform re-init) before it becomes `ready`. Without this guard
+  /// [_skipBrokenSource] would treat that transient idle as a broken file,
+  /// drop the current-first song and — if it keeps happening — empty the queue
+  /// and persist an empty snapshot, which is exactly the "queue cleared after
+  /// restart" symptom this prevents. While a restored session is protected we
+  /// never auto-advance or clear; we only idle the engine, keeping the
+  /// persisted snapshot intact until the user explicitly acts.
+  bool _protectingRestoredSession = false;
+
   Future<void> _init() async {
     if (Platform.isAndroid) {
       // Remove artwork rows previously copied into MediaStore Downloads by the
@@ -356,6 +370,16 @@ class JustAudioController extends BaseAudioHandler
     if (_disposed || _skipInFlight) {
       return;
     }
+    // A freshly-restored session is not "broken" — it just landed in `idle`
+    // during cold start (URI not yet resolvable, permission pending). Never
+    // auto-advance past or clear it; otherwise a transient idle would wipe the
+    // persisted queue the moment the app relaunches. The user must explicitly
+    // start playback (or clear) to move on.
+    if (_protectingRestoredSession) {
+      _wantPlayback = false;
+      _emit();
+      return;
+    }
     _skipInFlight = true;
     try {
       _consecutiveFailures++;
@@ -431,6 +455,9 @@ class JustAudioController extends BaseAudioHandler
     final safeIndex = startIndex.clamp(0, songs.length - 1);
     _queueTransition = true;
     _wantPlayback = true;
+    // A new explicit session: stop protecting the previously restored one so
+    // genuinely broken tracks auto-skip as normal from here on.
+    _protectingRestoredSession = false;
     // Rotate so the selected song is at the front (it becomes the current
     // song at #1). If shuffle is on, keep the current first and shuffle the
     // rest — the display, the Dart state and the engine all share this one
@@ -1307,6 +1334,9 @@ class JustAudioController extends BaseAudioHandler
       // restored progress was never actually applied (and the position stream
       // never reported it) — progress appeared to reset to 0 on every restart.
       _queueRefs = List.unmodifiable(rotated);
+      // Protect the restored session from transient cold-start idle failures
+      // clearing it. Cleared on the next explicit [playQueue].
+      _protectingRestoredSession = true;
       _shuffleEnabled = saved.shuffleEnabled;
       _repeatMode = saved.repeatMode;
       await _player.setAudioSource(
