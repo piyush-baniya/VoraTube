@@ -18,9 +18,17 @@ import '../../../player/presentation/providers/player_providers.dart';
 ///
 /// Height is constrained to 180-260 dp with a dark glass surface.
 class CompactLyricsPanel extends ConsumerStatefulWidget {
-  const CompactLyricsPanel({super.key, this.height = 220});
+  const CompactLyricsPanel({
+    super.key,
+    this.height = 220,
+    this.onExpandedChanged,
+  });
 
   final double height;
+
+  /// Called when the expand/collapse state changes.
+  /// `true` = expanded, `false` = collapsed.
+  final ValueChanged<bool>? onExpandedChanged;
 
   @override
   ConsumerState<CompactLyricsPanel> createState() => _CompactLyricsPanelState();
@@ -123,6 +131,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   void _toggleExpanded() {
     if (_disposed || !mounted) return;
     setState(() => _expanded = !_expanded);
+    widget.onExpandedChanged?.call(_expanded);
   }
 
   void _resumeAutoFollow() {
@@ -900,6 +909,7 @@ class _LyricsPanelHeader extends StatelessWidget {
             const SizedBox(width: AppTokens.s3),
             Expanded(
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [

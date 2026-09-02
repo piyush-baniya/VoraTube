@@ -262,6 +262,18 @@ class JustAudioController extends BaseAudioHandler
     }
   }
 
+  /// Called by audio_service when the app task is removed from recents.
+  ///
+  /// The process may be killed immediately after this callback returns, so the
+  /// persist **must** complete before we yield control back to the native side.
+  /// Unlike [didChangeAppLifecycleState] (which uses [unawaited] because the
+  /// framework expects synchronous lifecycle callbacks), here we can safely
+  /// await the database write.
+  @override
+  Future<void> onTaskRemoved() async {
+    await _persistNow();
+  }
+
   /// Reacts to source-lifecycle changes.
   ///
   /// The engine always holds exactly one source (the current-first song), so:
