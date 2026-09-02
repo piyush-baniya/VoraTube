@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../core/privacy/privacy_config.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../features/player/presentation/providers/sleep_timer_provider.dart';
@@ -443,6 +445,29 @@ class _AboutSection extends ConsumerWidget {
               .push(MaterialPageRoute(builder: (_) => const PrivacyScreen())),
         ),
         SettingsTile(
+          title: 'Privacy Policy',
+          subtitle: 'Read the full policy online',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.tertiary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.description_rounded,
+              size: 20,
+              color: colorScheme.tertiary,
+            ),
+          ),
+          trailing: Icon(
+            Icons.open_in_new_rounded,
+            size: 18,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () => _openPrivacyPolicy(context),
+        ),
+        SettingsTile(
           title: 'Open Source Licenses',
           subtitle: 'View third-party licenses',
           leading: Container(
@@ -501,6 +526,30 @@ class _AboutSection extends ConsumerWidget {
 
   String _getVersion() {
     return '1.0.0';
+  }
+
+  /// Opens the public privacy policy in an external browser.
+  ///
+  /// Gracefully degrades to a snackbar when the URL cannot be opened
+  /// (no browser available, invalid URL, launcher failure) — never crashes.
+  Future<void> _openPrivacyPolicy(BuildContext context) async {
+    try {
+      final launched = await launchUrl(
+        Uri.parse(kPrivacyPolicyUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the privacy policy')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the privacy policy')),
+        );
+      }
+    }
   }
 }
 
