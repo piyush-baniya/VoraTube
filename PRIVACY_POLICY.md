@@ -1,8 +1,8 @@
 # VoraTube Privacy Policy
 
-**Effective date:** [EFFECTIVE DATE]
+**Effective date:** September 3, 2026
 
-VoraTube is an Android music player application ("the App") developed by [DEVELOPER NAME] ("we", "us", "our"). This Privacy Policy explains what information the App accesses, what it stores on your device, what it transmits over the internet, and which third-party services are involved.
+VoraTube is an Android music player application ("the App") developed by Piyush Das ("we", "us", "our"). This Privacy Policy explains what information the App accesses, what it stores on your device, what it transmits over the internet, and which third-party services are involved.
 
 The short version: **your music files and your listening data stay on your device.** VoraTube has no user accounts, no cloud music storage, and no server-side user profiles. The App does send small, non-identifying song details (such as a song title and artist name) to third-party lookup services so it can show lyrics and genres, and it displays ads unless you activate Premium. Everything else is described below.
 
@@ -127,10 +127,11 @@ We may update this privacy policy as VoraTube evolves (for example when producti
 
 If you have questions about this privacy policy or about VoraTube's data practices, contact:
 
-- **Developer:** [DEVELOPER NAME]
-- **Privacy contact:** [PRIVACY CONTACT EMAIL]
+- **App:** VoraTube
+- **Developer:** Piyush Das
+- **Privacy contact:** baniyapiyushwork@gmail.com
 
 ---
 
-*This policy describes the current version of VoraTube. Placeholders in brackets are to be completed by the developer before publication; no legal or identity information has been invented on their behalf.*
+*This policy describes the current version of VoraTube. The published version is available at https://voratube.vercel.app/privacy-policy.*
 
