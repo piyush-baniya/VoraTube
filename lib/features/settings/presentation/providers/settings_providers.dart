@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/storage/device_storage_service.dart';
@@ -196,6 +197,21 @@ final themeModeProvider = Provider<ThemeMode>((ref) {
     AppThemeMode.light => ThemeMode.light,
     AppThemeMode.system => ThemeMode.system,
   };
+});
+
+// ── App version ─────────────────────────────────────────────────────────
+
+/// Reads the installed application version from the platform (e.g. `1.1.6`)
+/// so the Settings About section always matches `pubspec.yaml` / the built
+/// artifact. Falls back to an empty string (never a hardcoded version) if the
+/// platform reports nothing.
+final appVersionProvider = FutureProvider<String>((ref) async {
+  try {
+    final info = await PackageInfo.fromPlatform();
+    return info.version;
+  } catch (_) {
+    return '';
+  }
 });
 
 // ── Storage ─────────────────────────────────────────────────────────────

@@ -405,7 +405,7 @@ class _AboutSection extends ConsumerWidget {
         ),
         SettingsTile(
           title: 'Version',
-          subtitle: _getVersion(),
+          subtitle: ref.watch(appVersionProvider).value ?? '',
           leading: Container(
             width: 44,
             height: 44,
@@ -522,10 +522,6 @@ class _AboutSection extends ConsumerWidget {
         ),
       ],
     );
-  }
-
-  String _getVersion() {
-    return '1.0.0';
   }
 
   /// Opens the public privacy policy in an external browser.
