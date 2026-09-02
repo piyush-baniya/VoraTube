@@ -466,6 +466,16 @@ class JustAudioController extends BaseAudioHandler
       await _player.pause();
     } else {
       _wantPlayback = true;
+      // The engine must be holding the exact song the UI reports as current.
+      // If the engine dropped to `idle` while paused (released source, failed
+      // load, platform reclaim) a bare play() would resume whatever stale
+      // source the engine last had — a different song than the MiniPlayer
+      // shows. Reload the current-first ref so Play always resumes the paused
+      // song, then dispatch (never await; see playQueue).
+      if (_player.processingState == ProcessingState.idle &&
+          _queueRefs.isNotEmpty) {
+        await _loadCurrent();
+      }
       // play() is dispatched, never awaited: its future can hang even though
       // the engine starts (see playQueue). Awaiting here stalled the resume
       // path used by Continue Listening, the MiniPlayer and the full player.
@@ -507,11 +517,23 @@ class JustAudioController extends BaseAudioHandler
   Future<void> pause() {
     _wantPlayback = false;
     _flushCurrentHeard();
-    return _player.pause();
+    final p = _player.pause();
+    // A pause is a deliberate restore point: persist immediately so the saved
+    // position matches what the user just heard, instead of waiting for the
+    // next debounced tick (which never comes while paused).
+    _schedulePersist(immediate: true);
+    return p;
   }
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) {
+    final s = _player.seek(position);
+    // A seek redefines the meaningful playback position. Schedule (debounced)
+    // rather than immediate: rapid scrubbing must not hammer storage, and the
+    // pending timer always fires with the final position.
+    _schedulePersist();
+    return s;
+  }
 
   @override
   Future<void> seekBy(Duration offset) async {

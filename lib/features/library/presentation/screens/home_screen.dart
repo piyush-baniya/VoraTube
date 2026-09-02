@@ -570,12 +570,7 @@ class _EmptyStateHero extends ConsumerWidget {
                   ref.watch(homeSongsProvider).valueOrNull ?? const [];
               if (tiles.isEmpty) return const SizedBox.shrink();
               return PressableScale(
-                onTap: () {
-                  final ctx = playContextFromTiles(tiles, 0);
-                  ref
-                      .read(playerProvider)
-                      .playQueue(ctx.refs, startIndex: ctx.startIndex);
-                },
+                onTap: () => startPlaybackOfWholeLibrary(ref),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppTokens.s5,
