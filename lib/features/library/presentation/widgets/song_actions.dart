@@ -11,6 +11,7 @@ import '../../../../core/genre/genre_enrichment_service.dart';
 import '../../../../core/genre/genre_providers.dart';
 import '../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../core/player/player_controller.dart';
+import '../../../../core/storage/media_delete_service.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../core/db/app_database.dart';
@@ -404,23 +405,54 @@ class SongActions {
       ),
     );
     if (confirmed != true) return;
-    try {
-      // Try to delete file if we have a path.
-      if (song.path != null && song.path!.isNotEmpty) {
-        final f = File(song.path!);
-        if (await f.exists()) {
-          try {
-            await f.delete();
-          } catch (_) {}
-        }
+
+    // Determine the source of this song. MediaStore-sourced tracks are
+    // deleted through the platform bridge so Android can launch its system
+    // confirmation dialog (Android 11+/API 30+ scoped storage). Imported
+    // files owned by VoraTube are deleted directly from the filesystem.
+    final isMediaStore = song.source == 'mediastore';
+
+    var deleteSucceeded = false;
+    var deleteCancelled = false;
+
+    if (isMediaStore) {
+      final contentUri = song.contentUri;
+      if (contentUri.isNotEmpty) {
+        final result = await MediaDeleteService().deleteMediaFile(contentUri);
+        deleteSucceeded = result.deleted;
+        deleteCancelled = result.cancelled;
       }
+    } else if (song.path != null && song.path!.isNotEmpty) {
+      final f = File(song.path!);
+      try {
+        if (await f.exists()) {
+          await f.delete();
+          deleteSucceeded = true;
+        } else {
+          deleteSucceeded = true;
+        }
+      } catch (_) {
+        deleteSucceeded = false;
+      }
+    }
+
+    if (deleteCancelled) {
+      // The user cancelled the Android system confirmation dialog — not an
+      // error.  Keep the song in place.
+      return;
+    }
+
+    // Only remove from the local database when the file was actually deleted
+    // (or the MediaStore row is unreachable/stale, in which case the library
+    // should be reconciled).
+    if (deleteSucceeded) {
       await repo.deleteSongsByRowIds({song.id});
       ref.invalidate(pagedSongsProvider);
       _refreshLibrary(ref);
       ref.invalidate(albumsOverviewProvider);
       ref.invalidate(artistsOverviewProvider);
       if (context.mounted) _snack(context, 'Song deleted');
-    } catch (_) {
+    } else {
       if (context.mounted) _snack(context, 'Failed to delete song');
     }
   }
