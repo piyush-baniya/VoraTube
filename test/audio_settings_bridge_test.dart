@@ -44,6 +44,8 @@ class SpyPlayerController implements PlayerController {
   @override
   Future<void> stop() async {}
   @override
+  Future<void> clearSession() async {}
+  @override
   Future<void> seek(Duration position) async {}
   @override
   Future<void> seekBy(Duration offset) async {}

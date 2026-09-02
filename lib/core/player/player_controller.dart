@@ -311,9 +311,16 @@ abstract class PlayerController {
 
   Future<void> pause();
 
-  /// Stops playback and clears the current track and queue, so the player
-  /// returns to a fully idle state (e.g. dismissing the Mini Player).
+  /// Stops the audio engine without discarding the resume session. Used by the
+  /// audio_service teardown path (app removed from recents / notification
+  /// removed): the queue and its persisted snapshot are preserved so reopening
+  /// the app resumes where the user left off.
   Future<void> stop();
+
+  /// Ends the current listening session entirely: clears the queue and wipes
+  /// the persisted snapshot so a restart does not resurrect it. Only triggered
+  /// by an explicit user action (e.g. dismissing the Mini Player).
+  Future<void> clearSession();
 
   Future<void> seek(Duration position);
 

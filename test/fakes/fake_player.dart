@@ -33,7 +33,10 @@ class FakePlayerController implements PlayerController {
   Future<void> pause() async {}
 
   @override
-  Future<void> stop() async {
+  Future<void> stop() async {}
+
+  @override
+  Future<void> clearSession() async {
     current = PlayerSnapshot.initial;
   }
 

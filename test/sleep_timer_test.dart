@@ -86,7 +86,10 @@ class _RecordingPlayer implements PlayerController {
   Future<void> togglePlay() async {}
 
   @override
-  Future<void> stop() async {
+  Future<void> stop() async {}
+
+  @override
+  Future<void> clearSession() async {
     current = PlayerSnapshot.initial;
   }
 

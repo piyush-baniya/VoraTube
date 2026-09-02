@@ -62,6 +62,17 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     ref.read(manualLyricsProvider.notifier).state = data;
   }
 
+  /// Displays the lyrics the user uploaded for this song so they stay reachable
+  /// even after the shared pipeline would have resolved them.
+  Future<void> _showUploadedLyrics() async {
+    final uploaded = ref.read(uploadedLrcProvider).valueOrNull;
+    if (uploaded == null) return;
+    final data = ref.read(lyricsServiceProvider).lyricsFromUserLrc(uploaded);
+    if (data == null || data.isEmpty) return;
+    if (mounted) setState(() => _onlinePick = null);
+    _useLyrics(data);
+  }
+
   void _snack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.maybeOf(context)
@@ -298,37 +309,56 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    // Fixed width so the three action chips form a balanced row, and the label
-    // is centered inside each one instead of hugging the avatar.
+    // Fixed width so the three action chips form a balanced row. A custom
+    // label (icon + text centred in one row) keeps the text genuinely centred
+    // inside each chip — an ActionChip nexts its avatar beside the label, so
+    // the text hugs the icon and reads as off-centre.
     return SizedBox(
       width: 132,
-      child: ActionChip(
-        onPressed: enabled ? () => onTap() : null,
-        avatar: Icon(icon, size: 16, color: colorScheme.primary),
-        label: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.labelMedium,
+      child: Material(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(AppTokens.rFull),
+        child: InkWell(
+          onTap: enabled ? () => onTap() : null,
+          borderRadius: BorderRadius.circular(AppTokens.rFull),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s1,
+              vertical: AppTokens.s2,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 16, color: colorScheme.primary),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        labelStyle: theme.textTheme.labelMedium?.copyWith(
-          color: colorScheme.onSurfaceVariant,
-        ),
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        padding: const EdgeInsets.symmetric(horizontal: AppTokens.s1),
       ),
     );
   }
 
   /// The primary actions: "Show online lyrics", "Search lyrics online", plus
-  /// the third slot that swaps between "Upload .lrc file" and (once a file is
-  /// saved) "Remove .lrc file".
+  /// the upload slot that swaps between "Upload .lrc file" and (once a file is
+  /// saved) "Remove .LRC File". When an LRC is already saved a "Show uploaded
+  /// lyrics" action is added so those lyrics stay reachable.
   List<Widget> _actionTiles() {
     final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
     final uploadAction = uploaded != null
         ? _button(
-            'Remove .lrc file',
+            'Remove .LRC File',
             Icons.delete_outline_rounded,
             _removeUploadedLrc,
             destructive: true,
@@ -347,6 +377,12 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         Icons.travel_explore_rounded,
         _searchLyricsOnWeb,
       ),
+      if (uploaded != null)
+        _button(
+          'Show uploaded lyrics',
+          Icons.lyrics_outlined,
+          _showUploadedLyrics,
+        ),
       uploadAction,
     ];
   }
@@ -514,6 +550,14 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
               Icons.travel_explore_rounded,
               _searchLyricsOnWeb,
             ),
+            if (uploaded != null) ...[
+              const SizedBox(width: AppTokens.s1),
+              _chip(
+                'Show uploaded',
+                Icons.lyrics_outlined,
+                _showUploadedLyrics,
+              ),
+            ],
             const SizedBox(width: AppTokens.s1),
             if (uploaded != null)
               _chip('Remove .lrc', Icons.delete_outline_rounded, _removeUploadedLrc)

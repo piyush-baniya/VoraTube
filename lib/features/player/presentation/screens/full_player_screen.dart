@@ -316,7 +316,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               RotatingArtwork(
                 path: current.artPath,
                 heroTag: null,
-                size: 120,
+                size: _collapsedArtworkSize(constraints, compact),
               ),
               const SizedBox(height: AppTokens.s3),
             ],
@@ -330,6 +330,22 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         );
       },
     );
+  }
+
+  /// Size of the artwork revealed when the lyrics card is collapsed.
+  ///
+  /// Grows to fill the space the lyrics list vacated (capped at the hero-size
+  /// ceiling) so the album art becomes the visual focus again, instead of a
+  /// small thumb. On very short (landscape) viewports it stays small so the
+  /// collapsed card, artwork and metadata never overflow the region.
+  double _collapsedArtworkSize(BoxConstraints constraints, bool compact) {
+    if (compact) {
+      return 140.0;
+    }
+    final byHeight = constraints.maxHeight * 0.40;
+    final byWidth = constraints.maxWidth * 0.45;
+    final target = byWidth < byHeight ? byWidth : byHeight;
+    return target.clamp(160.0, AppTokens.artworkHeroMax);
   }
 }
 

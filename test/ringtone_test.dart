@@ -107,6 +107,8 @@ class _FakePlayer implements PlayerController {
   @override
   Future<void> stop() async {}
   @override
+  Future<void> clearSession() async {}
+  @override
   Future<void> seekBy(Duration offset) async {}
   @override
   Future<void> next() async {}

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -34,6 +36,13 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
   bool _loaded = false;
   bool _loadFailed = false;
   bool _disposed = false;
+  Timer? _loadTimeout;
+
+  /// How long to keep the loading placeholder before collapsing the banner to
+  /// nothing. An ad should report loaded or failed within this window; if the
+  /// SDK is uninitialized or the load never resolves, an indefinite spinner
+  /// would otherwise sit in the UI (and never let animations settle).
+  static const Duration _loadTimeoutDuration = Duration(seconds: 8);
 
   bool get _premiumActive => ref.read(isPremiumProvider);
 
@@ -54,6 +63,8 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
 
   void _handlePremiumChange(bool premium) {
     if (premium) {
+      _loadTimeout?.cancel();
+      _loadTimeout = null;
       _disposeAd();
       if (mounted) {
         setState(() {
@@ -76,6 +87,8 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (_) {
+          _loadTimeout?.cancel();
+          _loadTimeout = null;
           if (_disposed || _premiumActive) {
             ad.dispose();
             return;
@@ -89,6 +102,8 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
           }
         },
         onAdFailedToLoad: (Ad failedAd, LoadAdError error) {
+          _loadTimeout?.cancel();
+          _loadTimeout = null;
           failedAd.dispose();
           if (!_disposed && mounted) {
             setState(() => _loadFailed = true);
@@ -97,6 +112,20 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
       ),
     );
     ad.load();
+    _loadTimeout = Timer(_loadTimeoutDuration, _onLoadTimeout);
+  }
+
+  /// The ad neither loaded nor reported a failure within [_loadTimeoutDuration]
+  /// (e.g. the ad SDK is uninitialized). Collapse gracefully to nothing rather
+  /// than leaving an indeterminate spinner up indefinitely.
+  void _onLoadTimeout() {
+    if (_disposed || _premiumActive || _loaded) return;
+    _disposeAd();
+    if (mounted) {
+      setState(() {
+        _loadFailed = true;
+      });
+    }
   }
 
   void _disposeAd() {
@@ -108,6 +137,8 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
   @override
   void dispose() {
     _disposed = true;
+    _loadTimeout?.cancel();
+    _loadTimeout = null;
     _disposeAd();
     super.dispose();
   }

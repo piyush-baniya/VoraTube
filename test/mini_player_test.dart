@@ -52,6 +52,11 @@ class _RecordingPlayer extends FakePlayerController {
   @override
   Future<void> stop() async {
     calls.add('stop');
+  }
+
+  @override
+  Future<void> clearSession() async {
+    calls.add('clearSession');
     current = PlayerSnapshot.initial;
   }
 
@@ -229,7 +234,7 @@ void main() {
     await tester.fling(find.byType(MiniPlayer), const Offset(0, 120), 2500);
     await tester.pumpAndSettle();
 
-    expect(player.calls, contains('stop'));
+    expect(player.calls, contains('clearSession'));
   });
 
   testWidgets('tapping the progress bar seeks', (tester) async {

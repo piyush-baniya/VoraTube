@@ -342,23 +342,60 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   /// The expanded panel shows the buttons-first entry until the user has
   /// actively chosen lyrics (via an online pick or an .lrc upload/saved file).
   /// Only then does it render the actual lyrics list.
+  /// Fixed height of the expanded card's header bar.
+  static const double _expandedHeaderHeight = 44;
+
+  /// Smallest card-body height (header + a sliver) that can still render the
+  /// expanded card in its normal non-scrolling layout.
+  static const double _expandedHeaderMinFit = _expandedHeaderHeight + 40;
+
   Widget _buildExpanded(
     AsyncValue<LyricsResult> lyricsAsync,
     LyricsData? manual,
   ) {
-    final body = Column(
-      children: [
-        _LyricsPanelHeader(expanded: true, onToggle: _toggleExpanded),
-        Expanded(
-          child: manual != null
-              // The buttons are rendered OUTSIDE the card by [build]; the
-              // card body here is lyrics-only.
-              ? _buildManualLyrics(manual)
-              : _buildActionsIntro(lyricsAsync),
-        ),
-      ],
+    final lyrics = manual != null
+        // The buttons are rendered OUTSIDE the card by [build]; the
+        // card body here is lyrics-only.
+        ? _buildManualLyrics(manual)
+        : _buildActionsIntro(lyricsAsync);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // On very short (landscape) viewports the card body can be squeezed to
+        // well below the header's height. A normal `Column` with a fixed
+        // 44px-header then overflows its box (RenderFlex overflow). Instead,
+        // render the whole card scrollable so the header and lyrics stay
+        // reachable and nothing overflows.
+        if (constraints.hasBoundedHeight &&
+            constraints.maxHeight < _expandedHeaderMinFit) {
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _LyricsPanelHeader(expanded: true, onToggle: _toggleExpanded),
+                SizedBox(
+                  height: _expandedScrollBodyHeight(constraints.maxHeight),
+                  child: lyrics,
+                ),
+              ],
+            ),
+          );
+        }
+        return Column(
+          children: [
+            _LyricsPanelHeader(expanded: true, onToggle: _toggleExpanded),
+            Expanded(child: lyrics),
+          ],
+        );
+      },
     );
-    return body;
+  }
+
+  /// Height given to the lyrics region inside the scrollable short-height form
+  /// of the expanded card, so there is always enough room to reach the lyrics
+  /// even when the visible card body is only a few pixels tall.
+  double _expandedScrollBodyHeight(double available) {
+    return math.max(_expandedHeaderHeight, available);
   }
 
   /// The buttons-first entry surface: three centred actions (two per row) with

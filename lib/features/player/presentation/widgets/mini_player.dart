@@ -47,7 +47,7 @@ class MiniPlayer extends ConsumerWidget {
         if (velocity < -1200) {
           _openFullPlayer(context);
         } else if (velocity > 1500) {
-          ref.read(playerProvider).stop();
+          ref.read(playerProvider).clearSession();
         }
       },
       child: Padding(

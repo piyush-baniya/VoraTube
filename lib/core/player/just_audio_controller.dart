@@ -73,7 +73,12 @@ class JustAudioController extends BaseAudioHandler
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'voratube.playback',
         androidNotificationChannelName: 'VoraTube playback',
-        androidNotificationOngoing: true,
+        // Not ongoing so the media notification is user-dismissible: an
+        // `ongoing` notification is flagged NO_CLEAR and the user literally
+        // cannot swipe it away (it reappears), which the user reported as
+        // "can't remove the notification". Background playback still persists
+        // regardless, because the service is a foreground service.
+        androidNotificationOngoing: false,
         androidStopForegroundOnPause: true,
       ),
     );
@@ -274,6 +279,11 @@ class JustAudioController extends BaseAudioHandler
         state == AppLifecycleState.hidden) {
       unawaited(_persistNow());
     }
+  }
+
+  @override
+  Future<void> onNotificationDeleted() async {
+    await super.onNotificationDeleted();
   }
 
   /// Called by audio_service when the app task is removed from recents.
@@ -796,6 +806,59 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> stop() async {
+    // System-initiated teardown (app removed from recents, notification
+    // removed): stop the audio engine but DO NOT clear the session. The queue
+    // and its persisted snapshot stay intact so reopening the app resumes
+    // where the user left off. Only an explicit user action via
+    // [clearSession] ends the listening session.
+    if (_queueRefs.isEmpty) {
+      _wantPlayback = false;
+      await _clearEngine();
+      _wantPlayback = false;
+      await _clearEngine();
+      await _teardownSystemState();
+      _emit();
+      return;
+    }
+    // Persist the real snapshot so the latest position survives the teardown
+    // (recents removal / notification removal may race the process death with
+    // onTaskRemoved; this keeps the source of truth current).
+    _wantPlayback = false;
+    await _persistNow();
+    await _clearEngine();
+    // Post-stop, report a genuinely idle, not-playing state so the native
+    // audio_service layer removes the foreground media notification for good.
+    // A preserved queue alone maps to `ready`, which (unlike `idle`) keeps the
+    // ongoing media notification posted and makes it reappear after the user
+    // swipes it away.
+    await _teardownSystemState();
+    _emit();
+  }
+
+  /// Drives the native side into a stopped, idle state so the foreground media
+  /// notification is dismissed permanently, without disturbing the in-memory
+  /// queue or its persisted snapshot. Reporting `idle` makes native
+  /// audio_service tear the service down (stopForeground REMOVE), which is the
+  /// only path that permanently clears the ongoing media notification.
+  Future<void> _teardownSystemState() async {
+    try {
+      playbackState.add(
+        playbackState.value.copyWith(
+          playing: false,
+          processingState: AudioProcessingState.idle,
+        ),
+      );
+      await super.stop();
+    } catch (_) {
+      // Best-effort; the snapshot is authoritative.
+    }
+  }
+
+  /// Explicitly ends the listening session (user dismissed the Mini Player):
+  /// clears the queue and wipes the persisted snapshot so a restart does not
+  /// resurrect a session the user cleared.
+  @override
+  Future<void> clearSession() async {
     _wantPlayback = false;
     _statLastKey = null;
     _queueRefs = const [];
