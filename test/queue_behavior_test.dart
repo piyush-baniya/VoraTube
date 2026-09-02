@@ -68,6 +68,26 @@ void main() {
       final queue = [_song(1), _song(2)];
       expect(_keys(applyRepeatFinish(queue, RepeatMode.one)), ['ms:1', 'ms:2']);
     });
+
+    test('Repeat All never drops songs across many transitions', () {
+      // A long background queue must survive an arbitrary number of natural
+      // completions without items being removed or the queue being cleared —
+      // this is the invariant the auto-advance fix relies on (a 20-30 song
+      // queue playing continuously in the background).
+      final queue = [
+        for (var i = 1; i <= 30; i++) _song(i),
+      ];
+      final sortedKeys = (List<String>.of(_keys(queue))..sort());
+      var rotated = queue;
+      for (var t = 0; t < 50; t++) {
+        final wasFirst = _keys(rotated).first;
+        rotated = applyRepeatFinish(rotated, RepeatMode.all);
+        // Every track is still present, just reordered.
+        expect((List<String>.of(_keys(rotated))..sort()), sortedKeys);
+        // The just-finished current track wraps to the end (current-first).
+        expect(_keys(rotated).last, wasFirst);
+      }
+    });
   });
 
   group('moveCurrentFirst', () {

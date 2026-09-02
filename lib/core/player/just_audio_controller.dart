@@ -258,8 +258,12 @@ class JustAudioController extends BaseAudioHandler
         if (event.begin) {
           _pausedByInterruption = _player.playing;
           _player.pause();
-        } else if (_pausedByInterruption &&
-            event.type == AudioInterruptionType.pause) {
+        } else if (_pausedByInterruption) {
+          // Resume on ANY interrupted-while-playing end, not just the `pause`
+          // type. Some Android sources report a transient focus interruption as
+          // `unknown`, and previously the resume branch was gated on
+          // `event.type == pause`, so such an interruption left the player
+          // silently paused in the background until the user pressed Play.
           _pausedByInterruption = false;
           _player.play();
         } else {
@@ -363,6 +367,18 @@ class JustAudioController extends BaseAudioHandler
         return;
       }
       await _loadCurrent();
+      // Explicitly re-issue play on a natural completion. Until this point the
+      // next source only auto-plays because the engine's `playing` flag stayed
+      // true across setAudioSource. In the background that flag can be dropped
+      // by the time a track finishes (a transient interruption, a momentary
+      // STATE_IDLE while the platform re-arms, ExoPlayer recycling) — in which
+      // case the next song loads but never starts, leaving playback silently
+      // paused until the user reopens the app and presses Play. Re-issuing
+      // play() here (matching _advance/jumpTo/_skipBrokenSource) makes the
+      // auto-advance resilient: it is a no-op if already playing.
+      if (_wantPlayback && _queueRefs.isNotEmpty) {
+        unawaited(_player.play());
+      }
     } finally {
       if (!_disposed) {
         _queueTransition = false;
