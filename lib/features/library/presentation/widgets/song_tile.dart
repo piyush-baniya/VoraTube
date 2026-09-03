@@ -8,8 +8,10 @@ import '../../data/song_ref_mapper.dart'
     show OnPlaySong, PlayContext, songTileToRef;
 import '../../../search/data/search_rank.dart' show highlightOccurrences;
 import '../../../player/presentation/providers/player_providers.dart';
+import '../../../player/presentation/screens/full_player_screen.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../../shared/widgets/transitions.dart' show pushHero;
 import '../../../../app/theme/app_tokens.dart';
 import '../../data/library_models.dart';
 import '../providers/library_view_providers.dart';
@@ -231,9 +233,7 @@ class _SongTileState extends ConsumerState<SongTile> {
       return ReorderableDelayedDragStartListener(
         index: widget.index,
         child: PressableScale(
-          onTap: () => widget.onPlay(
-            PlayContext(refs: [songTileToRef(widget.tile)], startIndex: 0),
-          ),
+          onTap: () => _handleTap(context, currentTrackKey),
           child: cardBody,
         ),
       );
@@ -242,11 +242,31 @@ class _SongTileState extends ConsumerState<SongTile> {
     // Non-reorderable lists: keep the previous long-press-to-open-menu
     // behavior.
     return PressableScale(
-      onTap: () => widget.onPlay(
-        PlayContext(refs: [songTileToRef(widget.tile)], startIndex: 0),
-      ),
+      onTap: () => _handleTap(context, currentTrackKey),
       onLongPress: () => _showMenu(context),
       child: cardBody,
+    );
+  }
+
+  /// Distinguishes "tap the already-playing song" from "tap a different song".
+  ///
+  /// When the tapped row is the exact song the player currently has loaded
+  /// (compared by the stable MediaStore/content-hash identity key, never by
+  /// title), the card must NOT restart, seek, pause, toggle or rebuild the
+  /// queue. Playing or paused, it simply opens the Full Player and leaves every
+  /// bit of playback state untouched. Any other row keeps the existing
+  /// behaviour of letting the screen decide what to play through
+  /// [widget.onPlay].
+  void _handleTap(BuildContext context, String? currentTrackKey) {
+    if (currentTrackKey != null && currentTrackKey == _tileKey) {
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).push(pushHero<void>(context, const FullPlayerScreen()));
+      return;
+    }
+    widget.onPlay(
+      PlayContext(refs: [songTileToRef(widget.tile)], startIndex: 0),
     );
   }
 

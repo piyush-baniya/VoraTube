@@ -14,8 +14,10 @@ import '../../../ads/premium_models.dart';
 import '../../../ads/premium_providers.dart';
 import '../../../ads/premium_sheets.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
+import 'faq_screen.dart';
 import 'hidden_songs_screen.dart';
-import 'privacy_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'terms_screen.dart';
 import '../../data/settings_models.dart';
 import '../providers/settings_providers.dart';
 import '../widgets/settings_section.dart';
@@ -62,6 +64,10 @@ class SettingsScreen extends ConsumerWidget {
           SliverToBoxAdapter(child: _StorageSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _AboutSection()),
+          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
+          const SliverToBoxAdapter(child: _SupportSection()),
+          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
+          const SliverToBoxAdapter(child: _LegalSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _PremiumSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s8)),
@@ -421,53 +427,6 @@ class _AboutSection extends ConsumerWidget {
           ),
         ),
         SettingsTile(
-          title: 'Privacy',
-          subtitle: 'All data stays on your device',
-          leading: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: colorScheme.tertiary.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(AppTokens.rMd),
-            ),
-            child: Icon(
-              Icons.privacy_tip_rounded,
-              size: 20,
-              color: colorScheme.tertiary,
-            ),
-          ),
-          trailing: Icon(
-            Icons.chevron_right_rounded,
-            size: 18,
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-          ),
-          onTap: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const PrivacyScreen())),
-        ),
-        SettingsTile(
-          title: 'Privacy Policy',
-          subtitle: 'Read the full policy online',
-          leading: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: colorScheme.tertiary.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(AppTokens.rMd),
-            ),
-            child: Icon(
-              Icons.description_rounded,
-              size: 20,
-              color: colorScheme.tertiary,
-            ),
-          ),
-          trailing: Icon(
-            Icons.open_in_new_rounded,
-            size: 18,
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-          ),
-          onTap: () => _openPrivacyPolicy(context),
-        ),
-        SettingsTile(
           title: 'Open Source Licenses',
           subtitle: 'View third-party licenses',
           leading: Container(
@@ -524,28 +483,167 @@ class _AboutSection extends ConsumerWidget {
     );
   }
 
-  /// Opens the public privacy policy in an external browser.
+}
+
+/// Support section: help and feedback entries.
+class _SupportSection extends StatelessWidget {
+  const _SupportSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SettingsSection(
+      title: 'Support',
+      children: [
+        SettingsTile(
+          title: 'FAQ',
+          subtitle: 'Answers to common questions',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.tertiary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.help_outline_rounded,
+              size: 20,
+              color: colorScheme.tertiary,
+            ),
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const FaqScreen())),
+        ),
+        SettingsTile(
+          title: 'Feedback',
+          subtitle: 'Share feedback on Instagram',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.rate_review_outlined,
+              size: 20,
+              color: colorScheme.primary,
+            ),
+          ),
+          trailing: Icon(
+            Icons.open_in_new_rounded,
+            size: 18,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () => _openFeedback(context),
+          isLastInSection: true,
+        ),
+      ],
+    );
+  }
+
+  /// Opens VoraTube's feedback page on Instagram in an external app/browser.
   ///
-  /// Gracefully degrades to a snackbar when the URL cannot be opened
-  /// (no browser available, invalid URL, launcher failure) — never crashes.
-  Future<void> _openPrivacyPolicy(BuildContext context) async {
+  /// The UI clearly redirects the user to Instagram rather than submitting
+  /// feedback in-app. Gracefully degrades to a snackbar when the URL cannot be
+  /// opened (no browser/app available, invalid URL, launcher failure) — it
+  /// never crashes.
+  Future<void> _openFeedback(BuildContext context) async {
     try {
       final launched = await launchUrl(
-        Uri.parse(kPrivacyPolicyUrl),
+        Uri.parse(kFeedbackInstagramUrl),
         mode: LaunchMode.externalApplication,
       );
       if (!launched && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the privacy policy')),
+          const SnackBar(
+            content: Text('Could not open Instagram for feedback'),
+          ),
         );
       }
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the privacy policy')),
+          const SnackBar(
+            content: Text('Could not open Instagram for feedback'),
+          ),
         );
       }
     }
+  }
+}
+
+/// Legal section: policy and terms entries, opened in-app.
+class _LegalSection extends StatelessWidget {
+  const _LegalSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SettingsSection(
+      title: 'Legal',
+      children: [
+        SettingsTile(
+          title: 'Privacy Policy',
+          subtitle: 'How VoraTube handles your data',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.tertiary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.privacy_tip_rounded,
+              size: 20,
+              color: colorScheme.tertiary,
+            ),
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+          ),
+        ),
+        SettingsTile(
+          title: 'Terms of Use',
+          subtitle: 'Agreement for using VoraTube',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.secondary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.description_rounded,
+              size: 20,
+              color: colorScheme.secondary,
+            ),
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const TermsScreen())),
+          isLastInSection: true,
+        ),
+      ],
+    );
   }
 }
 
