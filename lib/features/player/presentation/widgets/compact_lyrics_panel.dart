@@ -77,6 +77,11 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   /// Last index auto-follow asked the list to centre on.
   int _lastRequestedIndex = -1;
 
+  /// The synced-lines list the scroll position currently belongs to. When the
+  /// song (or its lyrics) changes, the new list must start at the top instead
+  /// of inheriting the previous track's scroll offset.
+  List<LyricsLine>? _lastSyncedLines;
+
   /// Latest index reported by the provider, used to re-arm auto-follow after
   /// the user stops scrolling without waiting for the next line change.
   int _lastKnownIndex = -1;
@@ -270,13 +275,19 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         // - expanded + lyrics shown (+ enough room) → visible below the card;
         // - collapsed, no lyrics, or a tight panel → hidden completely.
         final showActionsBelow = _expanded && manual != null && !tightPanel;
-        final double cardHeight;
-        if (!_expanded) {
-          cardHeight = _previewHeight;
-        } else if (showActionsBelow) {
-          cardHeight = math.max(200.0, widget.height - _actionsReserve);
-        } else {
-          cardHeight = widget.height;
+        var cardHeight = _desiredCardHeight(showActionsBelow);
+        if (constraints.hasBoundedHeight && constraints.maxHeight.isFinite) {
+          // Clamp to the space the parent actually offers. The desired height
+          // is tuned for portrait; on short (landscape) viewports it is larger
+          // than the region, and a fixed-height child inside the Flexible
+          // below overflows the flex (RenderFlex overflow). Reserve the
+          // actions row's height first so card + row always fit together.
+          final actionsH =
+              showActionsBelow ? _actionsReserve + AppTokens.s2 : 0;
+          cardHeight = math.min(
+            cardHeight,
+            math.max(0.0, constraints.maxHeight - actionsH),
+          );
         }
 
         final container = AnimatedSize(
@@ -292,9 +303,20 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
               AppTokens.s4,
             ),
             decoration: BoxDecoration(
-              color: isDark
-                  ? AppColors.surfaceDark.withValues(alpha: 0.85)
-                  : AppColors.surfaceLight.withValues(alpha: 0.85),
+              // Subtle vertical gradient over the glass surface for depth: a
+              // breath of accent at the top melting into the base surface.
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  accent.withValues(alpha: isDark ? 0.10 : 0.07),
+                  (isDark
+                          ? AppColors.surfaceDark
+                          : AppColors.surfaceLight)
+                      .withValues(alpha: 0.85),
+                ],
+                stops: const [0.0, 0.45],
+              ),
               borderRadius: BorderRadius.circular(AppTokens.rXl),
               border: Border.all(
                 color: accent.withValues(alpha: 0.2),
@@ -347,6 +369,18 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         );
       },
     );
+  }
+
+  /// Desired (unclamped) card height for the current expand/actions state.
+  /// Callers clamp this to the available space; see [build].
+  double _desiredCardHeight(bool showActionsBelow) {
+    if (!_expanded) {
+      return _previewHeight;
+    }
+    if (showActionsBelow) {
+      return math.max(200.0, widget.height - _actionsReserve);
+    }
+    return widget.height;
   }
 
   /// The expanded panel shows the buttons-first entry until the user has
@@ -532,6 +566,19 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   }
 
   Widget _buildSyncedLyrics(List<LyricsLine> lines) {
+    // A new song (or new lyrics for the same song) brings a new lines list.
+    // Restart at the top instead of inheriting the previous track's scroll
+    // offset; the active-line auto-follow takes over from there.
+    if (!identical(_lastSyncedLines, lines)) {
+      _lastSyncedLines = lines;
+      _lastRequestedIndex = -1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_disposed || !_scrollController.hasClients) return;
+        _scrollController.jumpTo(
+          _scrollController.position.minScrollExtent,
+        );
+      });
+    }
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final currentIndex =
@@ -823,21 +870,42 @@ class _SyncedLyricLine extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                 child: Center(
-                  child: Text(
-                    text,
-                    textAlign: TextAlign.center,
-                    style: style.copyWith(
-                      color: color,
-                      shadows: t < 0.02
-                          ? null
-                          : [
-                              Shadow(
-                                color: AppColors.accent.withValues(
-                                  alpha: 0.3 * t,
+                  // The active line earns a soft accent pill behind the text
+                  // so it reads as selected at a glance; inactive lines stay
+                  // plain text, secondary by comparison.
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppTokens.s3,
+                      vertical: 4,
+                    ),
+                    decoration: t < 0.02
+                        ? null
+                        : BoxDecoration(
+                            color: glowColor.withValues(alpha: 0.12 * t),
+                            borderRadius: BorderRadius.circular(
+                              AppTokens.rFull,
+                            ),
+                            border: Border.all(
+                              color: glowColor.withValues(alpha: 0.18 * t),
+                              width: AppTokens.borderHairline,
+                            ),
+                          ),
+                    child: Text(
+                      text,
+                      textAlign: TextAlign.center,
+                      style: style.copyWith(
+                        color: color,
+                        shadows: t < 0.02
+                            ? null
+                            : [
+                                Shadow(
+                                  color: AppColors.accent.withValues(
+                                    alpha: 0.3 * t,
+                                  ),
+                                  blurRadius: 14 * t,
                                 ),
-                                blurRadius: 14 * t,
-                              ),
-                            ],
+                              ],
+                      ),
                     ),
                   ),
                 ),
@@ -937,6 +1005,15 @@ class _LyricsPanelHeader extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: colorScheme.onSurface.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(AppTokens.rFull),
+                ),
+              ),
+              const SizedBox(width: AppTokens.s3),
+              Text(
+                'LYRICS',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: accent,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
                 ),
               ),
               const Spacer(),

@@ -27,6 +27,37 @@ import '../widgets/settings_tile.dart';
 import '../widgets/storage_info_card.dart';
 import '../../../../shared/widgets/empty_state.dart' show ScreenHeader;
 
+/// Snackbar copy for a finished missing-file cleanup, derived from the REAL
+/// removed-entry count returned by `reconcileMissingFiles`.
+///
+/// [removed] is that count; `null` means the cleanup itself threw. Kept as a
+/// pure top-level helper (and unit-tested) so the screen can never drift into
+/// reporting scanned rows, estimates or hard-coded numbers.
+({String title, String message, bool isError}) missingFileCleanupResult(
+  int? removed,
+) {
+  if (removed == null) {
+    return (
+      title: 'Cleanup failed',
+      message: "We couldn't complete missing file cleanup.",
+      isError: true,
+    );
+  }
+  if (removed > 0) {
+    return (
+      title: 'Cleanup complete',
+      message:
+          'Successfully cleaned $removed missing file${removed == 1 ? '' : 's'}.',
+      isError: false,
+    );
+  }
+  return (
+    title: 'Cleanup complete',
+    message: 'No missing files needed to be cleaned.',
+    isError: false,
+  );
+}
+
 /// Redesigned Settings screen with organized sections.
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -313,12 +344,24 @@ class _LibrarySection extends ConsumerWidget {
 
     if (confirmed == true && context.mounted) {
       final controller = ref.read(importControllerProvider.notifier);
-      await controller.reconcileMissingFiles();
-      VoraSnackbar.success(
-        context,
-        'Missing file cleanup complete',
-        title: 'Cleanup complete',
-      );
+      try {
+        final removed = await controller.reconcileMissingFiles();
+        if (!context.mounted) return;
+        final result = missingFileCleanupResult(removed);
+        VoraSnackbar.success(
+          context,
+          result.message,
+          title: result.title,
+        );
+      } catch (_) {
+        if (!context.mounted) return;
+        final result = missingFileCleanupResult(null);
+        VoraSnackbar.error(
+          context,
+          result.message,
+          title: result.title,
+        );
+      }
     }
   }
 }

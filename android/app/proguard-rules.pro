@@ -1,7 +1,19 @@
-# VoraTube R8 rules. Flutter's Gradle plugin injects its own default rules;
-# plugins used here (just_audio, audio_service, webview_flutter, share_plus,
-# url_launcher, file_picker, permission_handler, drift) keep their
-# Manifest-referenced entry points automatically via AAPT keep rules.
+# ── audio_service / just_audio / ExoPlayer ───────────────────────────────
+# The media notification + background playback path reaches these classes
+# through the manifest-declared AudioService/MediaButtonReceiver and through
+# platform channels, not through direct Dart references R8 can trace. Release
+# minification (isMinifyEnabled = true) must not strip or rename them, or the
+# release build loses its playback notification/service while debug keeps
+# working. The string-referenced notification drawables are additionally
+# pinned in res/values/keep.xml so resource shrinking keeps them too.
+-keep class com.ryanheise.** { *; }
+-dontwarn com.ryanheise.**
+-keep class androidx.media.** { *; }
+-dontwarn androidx.media.**
+-keep class androidx.media3.** { *; }
+-dontwarn androidx.media3.**
+-keep class com.google.android.exoplayer2.** { *; }
+-dontwarn com.google.android.exoplayer2.**
 
 # ── AdMob / google_mobile_ads ────────────────────────────────────────────
 # The Mobile Ads SDK uses reflection. Keep all of its classes and their

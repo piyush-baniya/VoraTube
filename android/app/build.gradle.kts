@@ -57,8 +57,10 @@ android {
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("release")
             // Shrink Java/Kotlin plugin code and strip unused Android resources.
-            // Flutter/just_audio/audio_service need no extra keep rules: all
-            // reflective entry points are Manifest-referenced and kept by AAPT.
+            // audio_service/just_audio/ExoPlayer entry points plus the
+            // string-referenced notification drawables need explicit keeps:
+            // see proguard-rules.pro and res/values/keep.xml. Shrinking itself
+            // stays enabled.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

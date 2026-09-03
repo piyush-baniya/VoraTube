@@ -1841,6 +1841,7 @@ extension CollectionQueries on LibraryRepository {
       reference.month,
       reference.day,
     );
+    final referenceDayKey = _dayKey(referenceDay);
     // Local-midnight Monday so the week boundary and its 7 daily bars use the
     // same local-date keys as [dayMs]/[dayKey] below. (A UTC-midnight week-start
     // drifted from the local day buckets, so early local-hours plays on the
@@ -1848,6 +1849,11 @@ extension CollectionQueries on LibraryRepository {
     final weekStart = referenceDay.subtract(
       Duration(days: reference.weekday - 1),
     );
+    // Exclusive end of the current week (next Monday at local midnight). The
+    // week window is [weekStart, weekEnd): without the upper bound,
+    // future-dated rows (clock skew, restored timestamps) would leak into
+    // "This Week", and the window would never be a true calendar week.
+    final weekEnd = weekStart.add(const Duration(days: 7));
 
     // One bounded pass over the joined history so all bucketing happens in
     // Dart with correct local-date handling, rather than many SQL passes.
@@ -1886,8 +1892,7 @@ extension CollectionQueries on LibraryRepository {
       final title = (row.data['title'] as String?) ?? '';
       final artist = (row.data['artist'] as String?) ?? '';
       final day = DateTime.fromMillisecondsSinceEpoch(playedAtMs);
-      final dayKey =
-          '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+      final dayKey = _dayKey(day);
       final monthKey = '${day.year}-${day.month.toString().padLeft(2, '0')}';
 
       totalListenedMs += listenedMs;
@@ -1901,7 +1906,7 @@ extension CollectionQueries on LibraryRepository {
         ifAbsent: () => listenedMs,
       );
 
-      final inWeek = !day.isBefore(weekStart);
+      final inWeek = !day.isBefore(weekStart) && day.isBefore(weekEnd);
       final songKey = _songHistoryKey(title, artist);
       final artistKey = artist.isEmpty ? '(Unknown)' : artist.toLowerCase();
 
@@ -1924,8 +1929,7 @@ extension CollectionQueries on LibraryRepository {
     var weekPlays = 0;
     for (var i = 0; i < 7; i++) {
       final d = weekStart.add(Duration(days: i));
-      final key =
-          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final key = _dayKey(d);
       weekMs += dayMs[key] ?? 0;
       weekPlays += dayPlays[key] ?? 0;
     }
@@ -1999,9 +2003,10 @@ extension CollectionQueries on LibraryRepository {
     final weekDaily = <DayListen>[];
     for (var i = 0; i < 7; i++) {
       final d = weekStart.add(Duration(days: i));
-      final key =
-          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-      weekDaily.add(DayListen(day: d, listenedMs: dayMs[key] ?? 0));
+      final key = _dayKey(d);
+      weekDaily.add(
+        DayListen(day: d, listenedMs: dayMs[key] ?? 0, plays: dayPlays[key] ?? 0),
+      );
     }
     final yearMonthly = <DayListen>[];
     for (var m = 1; m <= 12; m++) {
@@ -2018,6 +2023,14 @@ extension CollectionQueries on LibraryRepository {
       totalListenedMs: totalListenedMs,
       totalPlays: totalPlays,
       totalUniqueSongs: uniqueSongs.length,
+      // Today is just a window onto the same persisted history: crossing
+      // midnight moves the window without touching the stored rows, so Top
+      // Day / This Week / This Year keep their historical values.
+      today: DayListen(
+        day: referenceDay,
+        listenedMs: dayMs[referenceDayKey] ?? 0,
+        plays: dayPlays[referenceDayKey] ?? 0,
+      ),
       peakDay: peakDay,
       topArtist: topArtist(allTimeArtistPlays),
       week: PeriodStats(
@@ -2042,6 +2055,15 @@ extension CollectionQueries on LibraryRepository {
 
 String _songHistoryKey(String title, String artist) =>
     '${title.toLowerCase()}|${artist.toLowerCase()}';
+
+/// Single consistent calendar-day bucket key (local time): `yyyy-mm-dd`.
+///
+/// Every daily aggregation in [LibraryRepository.listeningBreakdown] — the
+/// today window, the weekly bars and the peak-day map — goes through this one
+/// helper so midnight rollover, week boundaries and DST transitions bucket
+/// identically. Raw timestamps are never compared directly.
+String _dayKey(DateTime day) =>
+    '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
 
 extension LibrarySongActions on LibraryRepository {
   Future<String?> setCustomArtworkForSongWithBytes(

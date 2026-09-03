@@ -7,8 +7,6 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
-import '../../../../app/theme/app_tokens.dart';
-import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
@@ -305,12 +303,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxHeight < 200;
+        // Desired card height follows the available region instead of a fixed
+        // constant: most of the region in portrait, tightened on short
+        // (landscape) viewports. The panel itself clamps to its incoming
+        // constraints as a second line of defence, so this can never overflow
+        // the flex even if the estimate is generous.
+        final panelHeight = (constraints.maxHeight * 0.62).clamp(
+          180.0,
+          300.0,
+        );
         return Column(
           children: [
             if (!compact) const SizedBox(height: AppTokens.s3),
             Flexible(
               child: CompactLyricsPanel(
-                height: 280,
+                height: panelHeight,
                 onExpandedChanged: (expanded) {
                   setState(() => _lyricsExpanded = expanded);
                 },

@@ -197,10 +197,14 @@ final class PeakDayStats {
 
 /// A day-of-listening bar used by the lightweight weekly chart.
 final class DayListen {
-  const DayListen({required this.day, required this.listenedMs});
+  const DayListen({required this.day, required this.listenedMs, this.plays = 0});
 
   final DateTime day;
   final int listenedMs;
+
+  /// Number of plays that contributed to [listenedMs] on this day.
+  /// Zero for bars where only the duration is tracked.
+  final int plays;
 }
 
 /// Complete, time-series-backed listening breakdown for the statistics screen.
@@ -213,6 +217,7 @@ final class ListeningBreakdown {
     required this.totalListenedMs,
     required this.totalPlays,
     required this.totalUniqueSongs,
+    required this.today,
     this.peakDay,
     this.topArtist,
     required this.week,
@@ -224,6 +229,17 @@ final class ListeningBreakdown {
   final int totalListenedMs;
   final int totalPlays;
   final int totalUniqueSongs;
+
+  /// Listening for the current calendar day only.
+  ///
+  /// Unlike [week]/[year]/[peakDay], this value is *supposed* to reset at
+  /// midnight: it is bucketed from the same persisted `play_history` rows as
+  /// everything else, so a new day never erases the underlying history — it
+  /// only moves the "today" window.
+  final DayListen today;
+
+  /// Best historical day across all stored history. Never resets: it is
+  /// recomputed from every persisted `play_history` row on each read.
   final PeakDayStats? peakDay;
   final HistoryTopEntry? topArtist;
   final PeriodStats week;

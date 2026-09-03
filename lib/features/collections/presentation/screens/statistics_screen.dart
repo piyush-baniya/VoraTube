@@ -68,6 +68,7 @@ class StatisticsScreen extends ConsumerWidget {
                   const _TopArtistOverview(),
                   const _TopPlayedSection(),
                   const _RecentlyPlayedSection(),
+                  const _TodaySection(),
                   const _PeakDaySection(),
                   const _WeeklyReportSection(),
                   const _YearlyReportSection(),
@@ -422,9 +423,45 @@ class _SongListSection extends ConsumerWidget {
   }
 }
 
+/// Today's listening: the current calendar day only, read from the same
+/// persisted `play_history` rows as every other figure. Resets at midnight by
+/// definition (the window moves), without erasing any stored history.
+class _TodaySection extends ConsumerWidget {
+  const _TodaySection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final today = ref.watch(listeningBreakdownProvider).valueOrNull?.today;
+    return SliverToBoxAdapter(
+      child: _SectionCard(
+        title: 'Today',
+        icon: Icons.today_rounded,
+        child: today == null || (today.listenedMs == 0 && today.plays == 0)
+            ? const _SectionEmpty(
+                message: 'Nothing listened today yet.',
+              )
+            : Row(
+                children: [
+                  _MiniStat(
+                    icon: Icons.schedule_rounded,
+                    value: formatListeningDuration(today.listenedMs),
+                    label: 'listened',
+                  ),
+                  const SizedBox(width: AppTokens.s3),
+                  _MiniStat(
+                    icon: Icons.play_circle_outline_rounded,
+                    value: '${today.plays}',
+                    label: 'plays',
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
 class _PeakDaySection extends ConsumerWidget {
   const _PeakDaySection();
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final peak = ref.watch(listeningBreakdownProvider).valueOrNull?.peakDay;
