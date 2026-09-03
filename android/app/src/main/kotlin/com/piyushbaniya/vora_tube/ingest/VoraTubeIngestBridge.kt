@@ -52,6 +52,7 @@ class VoraTubeIngestBridge(context: Context) {
                         "cleanupPublishedArtwork" -> {
                             succeed(result, cleanupPublishedArtwork())
                         }
+
                         else -> fail(result, "unsupported_method", call.method)
                     }
                 } catch (e: Exception) {
@@ -66,16 +67,15 @@ class VoraTubeIngestBridge(context: Context) {
      *  displayed them. Only rows this app itself owns are deleted, so no
      *  storage permission is required. Returns the number of rows removed. */
     private fun cleanupPublishedArtwork(): Int {
-        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        return try {
-            resolver.delete(
-                collection,
-                "${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
-                arrayOf("voratu\\_% ESCAPE '\\'"),
-            )
-        } catch (_: Exception) {
-            0
-        }
+        // `MediaStore.Downloads` is an API 29+ class that does not exist on
+        // Android 9 / API 28. Referencing it here directly caused
+        // NoClassDefFoundError on release builds. Guard on the SDK level and
+        // keep the API-29-only references inside [DownloadsArtworkCleanup],
+        // a dedicated class that is loaded only when this guard passes.
+        // On API < 29 the Downloads collection does not exist, so there is
+        // nothing to clean up — the old publish flow could never have run.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return 0
+        return DownloadsArtworkCleanup.run(resolver)
     }
 
 
@@ -572,3 +572,34 @@ class VoraTubeIngestBridge(context: Context) {
 
     }
 }
+
+/**
+ * API 29+ (Android 10) only helper for cleaning up the artwork rows the old
+ * publish flow copied into the MediaStore Downloads collection.
+ *
+ * IMPORTANT: this class references `MediaStore.Downloads`, which does not
+ * exist on Android 9 / API 28. It must therefore only ever be loaded (and its
+ * [run] method invoked) after the caller has verified
+ * `Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q` — see
+ * [VoraTubeIngestBridge.cleanupPublishedArtwork]. Keeping the reference in
+ * this separate class guarantees the DEX class is never resolved on older
+ * devices, fixing the release-build NoClassDefFoundError crash without
+ * disabling R8 or raising minSdk.
+ */
+private object DownloadsArtworkCleanup {
+    /** Deletes the app-owned `voratu_…` rows from the Downloads collection.
+     *  Returns the number of rows removed, or 0 on any failure. */
+    fun run(resolver: android.content.ContentResolver): Int {
+        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        return try {
+            resolver.delete(
+                collection,
+                "${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
+                arrayOf("voratu\\_% ESCAPE '\\'"),
+            )
+        } catch (_: Exception) {
+            0
+        }
+    }
+}
+
