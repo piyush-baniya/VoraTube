@@ -229,5 +229,74 @@ void main() {
         expect(find.text('First line'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'collapsing the lyrics card in landscape shows one synced lyric line '
+      'above the artwork',
+      (tester) async {
+        final synced = LyricsResult.loaded(
+          const LyricsData(
+            plainText: 'First line\nSecond line\nThird line',
+            lines: [
+              LyricsLine(text: 'First line', startTimeMs: 0),
+              LyricsLine(text: 'Second line', startTimeMs: 3000),
+              LyricsLine(text: 'Third line', startTimeMs: 6000),
+            ],
+          ),
+          LyricsSource.lrclib,
+        );
+        tester.view.devicePixelRatio = 1.0;
+        tester.view.physicalSize = const Size(640, 320);
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          wrap(
+            const FullPlayerScreen(),
+            extra: [
+              currentLyricsProvider.overrideWith((ref) async => synced),
+              currentLyricLineIndexProvider.overrideWith(
+                (ref) => Stream.value(1),
+              ),
+              manualLyricsProvider.overrideWith((ref) => synced.data),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.lyrics_rounded));
+        await tester.pumpAndSettle();
+
+        // Collapse the lyrics card by tapping the top strip of the panel
+        // header (the whole header is a tap target that toggles collapse).
+        final panelRect = tester.getRect(find.byType(CompactLyricsPanel));
+        debugPrint('MTEST panel: $panelRect');
+        final headerTap = Offset(
+          panelRect.left + panelRect.width / 2,
+          panelRect.top + 22,
+        );
+        await tester.tapAt(headerTap);
+        await tester.pumpAndSettle();
+        debugPrint('MTEST art after: ${find.byType(RotatingArtwork).evaluate().length}');
+        debugPrint('MTEST up after: ${find.byIcon(Icons.keyboard_arrow_up_rounded).evaluate().length}');
+
+        expect(tester.takeException(), isNull);
+
+        // The artwork is revealed when collapsed. The active synced line
+        // (index 1) renders as a single line above it; the other lines of the
+        // full list are gone. (The collapsed card preview also shows the active
+        // line, so it may appear more than once - check one sits above art.)
+        expect(find.byType(RotatingArtwork), findsOneWidget);
+        expect(find.text('Second line'), findsWidgets);
+        expect(find.text('Third line'), findsNothing);
+
+        final artTop = tester
+            .getTopLeft(find.byType(RotatingArtwork))
+            .dy;
+        final hasLineAboveArt = find.text('Second line').evaluate().any((el) {
+          final box = el.renderObject! as RenderBox;
+          return box.localToGlobal(Offset.zero).dy < artTop;
+        });
+        expect(hasLineAboveArt, isTrue);
+      },
+    );
   });
 }

@@ -256,8 +256,8 @@ void main() {
     });
 
     testWidgets(
-      'a saved LRC swaps Upload to Remove and adds Show uploaded, '
-      'which displays the lyrics',
+      'a saved LRC swaps Upload to Remove but does not add Show uploaded, '
+      'since the pipeline already loads it as the active lyrics',
       (tester) async {
         final container = await pumpActions(tester);
 
@@ -268,22 +268,9 @@ void main() {
         container.invalidate(uploadedLrcProvider);
         await tester.pumpAndSettle();
 
-        expect(find.text('Show uploaded lyrics'), findsOneWidget);
+        expect(find.text('Show uploaded lyrics'), findsNothing);
         expect(find.text('Remove .LRC File'), findsOneWidget);
         expect(find.text('Upload .lrc file'), findsNothing);
-
-        await tester.tap(find.text('Show uploaded lyrics'));
-        await tester.pumpAndSettle();
-
-        expect(find.text('uploaded line'), findsOneWidget);
-        expect(
-          find.text('Show online'),
-          findsOneWidget,
-          reason:
-              'BUG 1: the lyrics actions stay visible even once lyrics load, '
-              'as a compact row instead of disappearing.',
-        );
-        expect(find.text('Show uploaded'), findsOneWidget);
       },
     );
   });

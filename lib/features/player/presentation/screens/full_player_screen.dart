@@ -7,6 +7,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
+import '../../../lyrics/presentation/providers/lyrics_providers.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../../../player/presentation/widgets/compact_lyrics_panel.dart';
 import '../../../player/presentation/widgets/rotating_artwork.dart';
@@ -313,6 +314,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             ),
             SizedBox(height: compact ? AppTokens.s1 : AppTokens.s4),
             if (!_lyricsExpanded) ...[
+              // On tight (landscape) viewports a single live synced lyric line
+              // sits above the revealed artwork, so the current lyric stays
+              // visible while the card is collapsed. Falls back to nothing when
+              // there are no synced lyrics.
+              if (compact) const _CurrentLyricLine(),
+              if (compact) const SizedBox(height: AppTokens.s2),
               RotatingArtwork(
                 path: current.artPath,
                 heroTag: null,
@@ -337,15 +344,57 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   /// Grows to fill the space the lyrics list vacated (capped at the hero-size
   /// ceiling) so the album art becomes the visual focus again, instead of a
   /// small thumb. On very short (landscape) viewports it stays small so the
-  /// collapsed card, artwork and metadata never overflow the region.
+  /// collapsed card, current lyric line, artwork and metadata never overflow
+  /// the region.
   double _collapsedArtworkSize(BoxConstraints constraints, bool compact) {
     if (compact) {
-      return 140.0;
+      return 120.0;
     }
-    final byHeight = constraints.maxHeight * 0.40;
-    final byWidth = constraints.maxWidth * 0.45;
+    final byHeight = constraints.maxHeight * 0.55;
+    final byWidth = constraints.maxWidth * 0.55;
     final target = byWidth < byHeight ? byWidth : byHeight;
-    return target.clamp(160.0, AppTokens.artworkHeroMax);
+    return target.clamp(200.0, AppTokens.artworkHeroMax);
+  }
+}
+
+/// A single, currently-playing synced lyric line.
+///
+/// Shown above the artwork when the full player's lyrics card is collapsed on a
+/// tight (landscape) viewport, so the live lyric stays on screen without the
+/// full list. Renders nothing when there are no synced lyrics available.
+class _CurrentLyricLine extends ConsumerWidget {
+  const _CurrentLyricLine();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final lyrics = ref.watch(activeLyricsProvider);
+    if (lyrics == null || !lyrics.hasSyncedLines) {
+      return const SizedBox.shrink();
+    }
+    final index = ref.watch(currentLyricLineIndexProvider).valueOrNull ?? -1;
+    final current =
+        (index >= 0 && index < lyrics.lines.length)
+            ? lyrics.lines[index].text
+            : null;
+    final text =
+        current ??
+        (lyrics.lines.isNotEmpty ? lyrics.lines.first.text : null);
+    if (text == null) {
+      return const SizedBox.shrink();
+    }
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
+      style: theme.textTheme.titleMedium?.copyWith(
+        color: colorScheme.onSurface,
+        fontWeight: FontWeight.w600,
+        height: 1.3,
+      ),
+    );
   }
 }
 

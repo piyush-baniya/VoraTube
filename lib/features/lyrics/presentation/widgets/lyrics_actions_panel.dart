@@ -16,9 +16,7 @@ import '../providers/lyrics_providers.dart';
 ///
 /// Provides the three primary ways to obtain lyrics for the current song —
 /// fetch online (with an inline options list), search the web, and upload a
-/// `.lrc` file (which then swaps to a "Remove .LRC File" action). When the
-/// user has already uploaded an LRC for this song, a "Show uploaded" action
-/// is added so those lyrics stay reachable.
+/// `.lrc` file (which then swaps to a "Remove .LRC File" action).
 ///
 /// Shared between the standalone [LyricsView] and the full player's compact
 /// lyrics panel so the actions are reachable in both places.
@@ -60,17 +58,6 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
 
   void _useLyrics(LyricsData data) {
     ref.read(manualLyricsProvider.notifier).state = data;
-  }
-
-  /// Displays the lyrics the user uploaded for this song so they stay reachable
-  /// even after the shared pipeline would have resolved them.
-  Future<void> _showUploadedLyrics() async {
-    final uploaded = ref.read(uploadedLrcProvider).valueOrNull;
-    if (uploaded == null) return;
-    final data = ref.read(lyricsServiceProvider).lyricsFromUserLrc(uploaded);
-    if (data == null || data.isEmpty) return;
-    if (mounted) setState(() => _onlinePick = null);
-    _useLyrics(data);
   }
 
   void _snack(String message) {
@@ -277,17 +264,9 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDestructive = destructive == true;
-    return FilledButton.tonalIcon(
+    final iconColor = isDestructive ? colorScheme.error : colorScheme.primary;
+    return FilledButton.tonal(
       onPressed: enabled ? () => onTap() : null,
-      icon: Icon(
-        icon,
-        size: widget.grid ? 20 : 18,
-        color: isDestructive ? colorScheme.error : colorScheme.primary,
-      ),
-      label: Text(
-        label,
-        style: isDestructive ? TextStyle(color: colorScheme.error) : null,
-      ),
       style: FilledButton.styleFrom(
         foregroundColor: isDestructive ? colorScheme.error : null,
         backgroundColor: isDestructive
@@ -297,6 +276,28 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
           vertical: widget.compact ? AppTokens.s2 : AppTokens.s3,
         ),
         visualDensity: widget.compact ? VisualDensity.compact : null,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: widget.grid ? 20 : 18,
+            color: iconColor,
+          ),
+          const SizedBox(width: AppTokens.s1),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: isDestructive
+                  ? TextStyle(color: colorScheme.error)
+                  : null,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -352,8 +353,9 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
 
   /// The primary actions: "Show online lyrics", "Search lyrics online", plus
   /// the upload slot that swaps between "Upload .lrc file" and (once a file is
-  /// saved) "Remove .LRC File". When an LRC is already saved a "Show uploaded
-  /// lyrics" action is added so those lyrics stay reachable.
+  /// saved) "Remove .LRC File". A "Show uploaded lyrics" action is intentionally
+  /// NOT offered: the shared pipeline already loads a saved LRC as the active
+  /// lyrics for the song, so such a button would be redundant.
   List<Widget> _actionTiles() {
     final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
     final uploadAction = uploaded != null
@@ -377,12 +379,6 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         Icons.travel_explore_rounded,
         _searchLyricsOnWeb,
       ),
-      if (uploaded != null)
-        _button(
-          'Show uploaded lyrics',
-          Icons.lyrics_outlined,
-          _showUploadedLyrics,
-        ),
       uploadAction,
     ];
   }
@@ -550,14 +546,6 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
               Icons.travel_explore_rounded,
               _searchLyricsOnWeb,
             ),
-            if (uploaded != null) ...[
-              const SizedBox(width: AppTokens.s1),
-              _chip(
-                'Show uploaded',
-                Icons.lyrics_outlined,
-                _showUploadedLyrics,
-              ),
-            ],
             const SizedBox(width: AppTokens.s1),
             if (uploaded != null)
               _chip('Remove .lrc', Icons.delete_outline_rounded, _removeUploadedLrc)
