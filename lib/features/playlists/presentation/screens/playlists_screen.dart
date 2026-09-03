@@ -411,17 +411,30 @@ class _PlaylistCard extends ConsumerWidget {
     );
   }
 
-  void _playPlaylist(BuildContext context, WidgetRef ref) {
-    final player = ref.read(playerProvider);
+  Future<void> _queueSongs(
+    BuildContext context,
+    WidgetRef ref,
+    bool shuffle,
+  ) async {
     final repository = ref.read(playlistRepositoryProvider);
-    final songsFuture = repository.songsOf(playlist.id);
-    songsFuture.then((songs) {
-      if (songs.isNotEmpty && context.mounted) {
-        player.playQueue([
-          for (final s in songs) songTileToRef(s),
-        ], startIndex: 0);
-      }
-    });
+    final songs = await repository.songsOf(playlist.id);
+    if (songs.isEmpty || !context.mounted) return;
+    var playSongs = songs;
+    if (shuffle) {
+      playSongs = List.of(songs)..shuffle();
+    }
+    ref.read(playerProvider).playQueue(
+          [for (final s in playSongs) songTileToRef(s)],
+          startIndex: 0,
+        );
+  }
+
+  void _playPlaylist(BuildContext context, WidgetRef ref) {
+    _queueSongs(context, ref, false);
+  }
+
+  void _shufflePlaylist(BuildContext context, WidgetRef ref) {
+    _queueSongs(context, ref, true);
   }
 
   void _showContextMenu(BuildContext context, WidgetRef ref) {
@@ -508,7 +521,7 @@ class _PlaylistCard extends ConsumerWidget {
                   label: 'Shuffle play',
                   onTap: () {
                     Navigator.pop(sheetContext);
-                    _playPlaylist(context, ref);
+                    _shufflePlaylist(context, ref);
                   },
                 ),
                 _ContextMenuTile(

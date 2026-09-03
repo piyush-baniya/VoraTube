@@ -336,10 +336,11 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
         ],
         const SizedBox(height: AppTokens.s5),
         FilledButton.icon(
-          onPressed: () {
-            if (_isCustom && _customDuration == null) return;
-            _start(_chosen);
-          },
+          onPressed: _isCustom && _customDuration == null
+              ? null
+              : () {
+                  _start(_chosen);
+                },
           icon: const Icon(Icons.bedtime_rounded),
           label: const Text('Start timer'),
         ),
