@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 enum MediaPermissionStatus { granted, denied, permanentlyDenied }
@@ -29,14 +30,21 @@ Permission androidMusicPermissionFor(int apiLevel) {
 }
 
 class PermissionService {
-  const PermissionService();
+  const PermissionService({MethodChannel? androidSdkChannel})
+      : _androidSdkChannel =
+            androidSdkChannel ??
+            const MethodChannel('voratube/android_version_v1');
+
+  /// Reads the real Android API level via a native `Build.VERSION.SDK_INT`
+  /// lookup. Used only on Android; on other platforms no channel is consulted.
+  final MethodChannel _androidSdkChannel;
 
   Future<MediaPermissionStatus> audioStatus() async {
-    return _map(await _musicPermission().status);
+    return _map(await (await _musicPermission()).status);
   }
 
   Future<MediaPermissionStatus> requestAudio() async {
-    return _map(await _musicPermission().request());
+    return _map(await (await _musicPermission()).request());
   }
 
   Future<void> openAppSettingsPage() => openAppSettings();
@@ -44,19 +52,31 @@ class PermissionService {
   /// The permission group used to read the music library on the current
   /// platform. Android is version-aware (see [androidMusicPermissionFor]);
   /// other platforms keep the previous behaviour.
-  Permission _musicPermission() {
+  Future<Permission> _musicPermission() async {
     if (defaultTargetPlatform == TargetPlatform.android) {
-      return androidMusicPermissionFor(_currentAndroidApiLevel());
+      return androidMusicPermissionFor(await currentAndroidApiLevel());
     }
     return Permission.audio;
   }
 
   /// Reads the Android API level the app is running on.
   ///
-  /// [Platform.operatingSystemVersion] reports the Android framework release
-  /// string, e.g. `"10"`, `"13"` or `"8.1.0"`; the leading integer is the API
-  /// level we branch on.
-  int _currentAndroidApiLevel() {
+  /// Prefers the native `Build.VERSION.SDK_INT` value (via a MethodChannel),
+  /// which is reliable on every device. `Platform.operatingSystemVersion` is
+  /// NOT a dependable source: it reports `Build.VERSION.RELEASE` (e.g. "15")
+  /// on some devices but a build fingerprint (e.g. "AP3A.240905...") on
+  /// others, so it cannot be parsed into an API level. The native lookup fails
+  /// over to that parse only as a last resort so non-Android (test) flows can
+  /// still branch sanely.
+  Future<int> currentAndroidApiLevel() async {
+    try {
+      final value = await _androidSdkChannel.invokeMethod<int>('sdkInt');
+      if (value != null) return value;
+    } on MissingPluginException {
+      // Native bridge absent (e.g. running a pure Dart test) — fall through.
+    } on PlatformException {
+      // Bridge failed to answer — fall through to the best-effort parse.
+    }
     final match = RegExp(r'^(\d+)').firstMatch(Platform.operatingSystemVersion);
     return match == null ? 0 : int.parse(match.group(1)!);
   }

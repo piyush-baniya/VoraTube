@@ -8,6 +8,7 @@ import com.piyushbaniya.vora_tube.audio.VoraTubeVolumeBoosterBridge
 import com.piyushbaniya.vora_tube.ingest.VoraTubeIngestBridge
 import com.piyushbaniya.vora_tube.storage.VoraTubeDeviceStorageBridge
 import com.piyushbaniya.vora_tube.storage.VoraTubeMediaDeleteBridge
+import com.piyushbaniya.vora_tube.system.VoraTubeAndroidVersionBridge
 
 class MainActivity : AudioServiceActivity() {
 
@@ -25,6 +26,8 @@ class MainActivity : AudioServiceActivity() {
             .register(flutterEngine.dartExecutor.binaryMessenger)
         mediaDeleteBridge = VoraTubeMediaDeleteBridge(applicationContext)
         mediaDeleteBridge.register(flutterEngine.dartExecutor.binaryMessenger)
+        VoraTubeAndroidVersionBridge(flutterEngine.dartExecutor.binaryMessenger)
+            .register()
     }
 
     override fun onResume() {
