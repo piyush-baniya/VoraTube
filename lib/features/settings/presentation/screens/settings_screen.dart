@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
+import '../../../../core/ingest/ingest_service.dart';
 import '../../../../core/privacy/privacy_config.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../features/player/presentation/providers/player_providers.dart';
@@ -53,6 +55,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s2)),
+          const SliverToBoxAdapter(child: _ScanSnackBarListener()),
           SliverToBoxAdapter(child: _AppearanceSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _PlaybackSection()),
@@ -63,11 +66,11 @@ class SettingsScreen extends ConsumerWidget {
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _StorageSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
-          SliverToBoxAdapter(child: _AboutSection()),
-          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           const SliverToBoxAdapter(child: _SupportSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           const SliverToBoxAdapter(child: _LegalSection()),
+          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
+          SliverToBoxAdapter(child: _AboutSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _PremiumSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s8)),
@@ -311,8 +314,10 @@ class _LibrarySection extends ConsumerWidget {
     if (confirmed == true && context.mounted) {
       final controller = ref.read(importControllerProvider.notifier);
       await controller.reconcileMissingFiles();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Missing file cleanup complete')),
+      VoraSnackbar.success(
+        context,
+        'Missing file cleanup complete',
+        title: 'Cleanup complete',
       );
     }
   }
@@ -427,31 +432,6 @@ class _AboutSection extends ConsumerWidget {
           ),
         ),
         SettingsTile(
-          title: 'Open Source Licenses',
-          subtitle: 'View third-party licenses',
-          leading: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.15,
-              ),
-              borderRadius: BorderRadius.circular(AppTokens.rMd),
-            ),
-            child: Icon(
-              Icons.article_rounded,
-              size: 20,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          trailing: Icon(
-            Icons.chevron_right_rounded,
-            size: 18,
-            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-          ),
-          onTap: () => showLicensePage(context: context),
-        ),
-        SettingsTile(
           title: 'Support the Developer',
           subtitle: 'Buy Me a Momo donation',
           leading: Container(
@@ -482,7 +462,6 @@ class _AboutSection extends ConsumerWidget {
       ],
     );
   }
-
 }
 
 /// Support section: help and feedback entries.
@@ -517,9 +496,9 @@ class _SupportSection extends StatelessWidget {
             size: 18,
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const FaqScreen())),
+          onTap: () =>
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const FaqScreen())),
         ),
         SettingsTile(
           title: 'Feedback',
@@ -562,18 +541,18 @@ class _SupportSection extends StatelessWidget {
         mode: LaunchMode.externalApplication,
       );
       if (!launched && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open Instagram for feedback'),
-          ),
+        VoraSnackbar.error(
+          context,
+          'Could not open Instagram for feedback.',
+          title: 'Error',
         );
       }
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open Instagram for feedback'),
-          ),
+        VoraSnackbar.error(
+          context,
+          'Could not open Instagram for feedback.',
+          title: 'Error',
         );
       }
     }
@@ -637,9 +616,9 @@ class _LegalSection extends StatelessWidget {
             size: 18,
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
-          onTap: () => Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (_) => const TermsScreen())),
+          onTap: () =>
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const TermsScreen())),
           isLastInSection: true,
         ),
       ],
@@ -728,5 +707,68 @@ class _PremiumLeading extends StatelessWidget {
       ),
       child: Icon(Icons.workspace_premium_rounded, size: 20, color: color),
     );
+  }
+}
+
+/// Listens for scan state changes and shows appropriate snackbars.
+///
+/// Placed in the Settings screen so that scan progress and completion are
+/// communicated via the unified [VoraSnackbar] system. The scan itself
+/// continues regardless of navigation — this widget only surfaces feedback.
+class _ScanSnackBarListener extends ConsumerStatefulWidget {
+  const _ScanSnackBarListener();
+
+  @override
+  ConsumerState<_ScanSnackBarListener> createState() =>
+      _ScanSnackBarListenerState();
+}
+
+class _ScanSnackBarListenerState extends ConsumerState<_ScanSnackBarListener> {
+  @override
+  Widget build(BuildContext context) {
+    ref.listenManual<ScanUiState>(scanControllerProvider, (previous, next) {
+      _handleStateChange(previous, next);
+    });
+    return const SizedBox.shrink();
+  }
+
+  void _handleStateChange(ScanUiState? previous, ScanUiState next) {
+    if (next is ScanRunning && previous is! ScanRunning) {
+      VoraSnackbar.showProgress(
+        context,
+        'Looking for music on your device…',
+        title: 'Scanning music',
+      );
+    }
+
+    if (next is ScanComplete && previous is! ScanComplete) {
+      _showScanComplete(next.summary);
+    }
+
+    if (next is ScanFailure && previous is! ScanFailure) {
+      VoraSnackbar.error(context, next.message, title: 'Scan failed');
+    }
+  }
+
+  void _showScanComplete(ScanSummary summary) {
+    final total = summary.totalSongs;
+    final added = summary.addedSongs;
+    final updated = summary.updatedSongs;
+    final removed = summary.removedSongs;
+
+    String message;
+    if (total == 0) {
+      message = 'No music files were found.';
+    } else if (added == 0 && updated == 0 && removed == 0) {
+      message = 'Successfully rescanned $total songs.';
+    } else {
+      final parts = <String>[];
+      if (added > 0) parts.add('$added added');
+      if (updated > 0) parts.add('$updated updated');
+      if (removed > 0) parts.add('$removed removed');
+      message = '${parts.join(' • ')} • $total total songs';
+    }
+
+    VoraSnackbar.success(context, message, title: 'Music scan complete');
   }
 }

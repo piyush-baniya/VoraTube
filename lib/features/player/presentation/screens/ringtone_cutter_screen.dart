@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/empty_state.dart';
@@ -78,9 +79,16 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
     if (!mounted) return;
     switch (outcome) {
       case SetRingtoneOutcome.assigned:
-        _snack('Ringtone set successfully.');
+        _snack(
+          'Ringtone set successfully.',
+          variant: VoraSnackbarVariant.success,
+        );
       case SetRingtoneOutcome.failed:
-        _snack(_controller.lastError ?? 'Ringtone could not be set.');
+        _snack(
+          _controller.lastError ?? 'Ringtone could not be set.',
+          variant: VoraSnackbarVariant.error,
+          title: 'Couldn\'t set ringtone',
+        );
     }
   }
 
@@ -90,11 +98,18 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
     return segs.isNotEmpty ? segs.last : path;
   }
 
-  void _snack(String message) {
+  void _snack(
+    String message, {
+    VoraSnackbarVariant variant = VoraSnackbarVariant.info,
+    String? title,
+  }) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    VoraSnackbar.show(
+      context,
+      variant: variant,
+      message: message,
+      title: title,
+    );
   }
 
   @override

@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
@@ -236,8 +239,11 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     }
     final changed = await showAddToPlaylistSheet(context, rowId);
     if (changed && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Playlist updated')));
+      VoraSnackbar.success(
+        context,
+        'Playlist updated',
+        title: 'Success',
+      );
     }
   }
 

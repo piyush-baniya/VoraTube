@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../library/data/library_models.dart';
@@ -122,13 +123,18 @@ class HiddenSongsScreen extends ConsumerWidget {
       ref.invalidate(pagedSongsProvider);
       ref.read(libraryRefreshTickProvider.notifier).state++;
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('"$title" is visible again')));
+        VoraSnackbar.success(
+          context,
+          '"$title" is visible in your library again.',
+          title: 'Song restored',
+        );
       }
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not show this song')),
+        VoraSnackbar.error(
+          context,
+          'Could not show this song.',
+          title: 'Error',
         );
       }
     }
@@ -141,15 +147,19 @@ class HiddenSongsScreen extends ConsumerWidget {
       ref.invalidate(pagedSongsProvider);
       ref.read(libraryRefreshTickProvider.notifier).state++;
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('All hidden songs are visible again')),
+        VoraSnackbar.success(
+          context,
+          'All hidden songs are visible again.',
+          title: 'Songs restored',
         );
       }
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
+        VoraSnackbar.error(
           context,
-        ).showSnackBar(const SnackBar(content: Text('Could not show songs')));
+          'Could not show songs.',
+          title: 'Error',
+        );
       }
     }
   }

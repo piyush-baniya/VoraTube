@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
@@ -73,20 +74,13 @@ class _MoodStripState extends ConsumerState<MoodStrip> {
                     onTap: () {
                       setState(() => _selected = mood);
                       if (!enabled) {
-                        ScaffoldMessenger.of(context)
-                          ..hideCurrentSnackBar()
-                          ..showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                hasSongs
-                                    ? 'No ${mood.label} recommendations '
-                                          'available yet.'
-                                    : 'Add songs to your library to build a '
-                                          '${mood.label} mix.',
-                              ),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
+                        VoraSnackbar.info(
+                          context,
+                          hasSongs
+                              ? 'No ${mood.label} recommendations available yet.'
+                              : 'Add songs to your library to build a ${mood.label} mix.',
+                          title: 'Smart Mix',
+                        );
                         return;
                       }
                       Navigator.of(context).push(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../app/theme/app_tokens.dart';
+import '../../../../../app/widgets/vora_snackbar.dart';
 import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../../core/player/player_controller.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
@@ -310,13 +311,10 @@ class MixCard extends ConsumerWidget {
       player.playQueue(songs);
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          shuffle ? 'Playing ${mix.title} (shuffled)' : 'Playing ${mix.title}',
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    VoraSnackbar.info(
+      context,
+      shuffle ? 'Playing ${mix.title} (shuffled)' : 'Playing ${mix.title}',
+      title: 'Now playing',
     );
   }
 }

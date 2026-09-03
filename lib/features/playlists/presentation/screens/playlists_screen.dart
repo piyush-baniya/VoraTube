@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart'
     show EmptyState, ScreenHeader;
+import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../ads/banner_ad_widget.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -251,9 +252,11 @@ class _PlaylistCard extends ConsumerWidget {
         await repository.deletePlaylist(playlist.id);
         ref.read(playlistRefreshTickProvider.notifier).state++;
         if (context.mounted) {
-          ScaffoldMessenger.of(
+          VoraSnackbar.success(
             context,
-          ).showSnackBar(SnackBar(content: Text('"${playlist.name}" deleted')));
+            '"${playlist.name}" was removed.',
+            title: 'Playlist deleted',
+          );
         }
       },
       child: PressableScale(
@@ -611,8 +614,11 @@ class _PlaylistCard extends ConsumerWidget {
     await repository.deletePlaylist(playlist.id);
     ref.read(playlistRefreshTickProvider.notifier).state++;
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('"${playlist.name}" deleted')));
+      VoraSnackbar.success(
+        context,
+        '"${playlist.name}" was removed.',
+        title: 'Playlist deleted',
+      );
     }
   }
 
@@ -656,10 +662,10 @@ class _PlaylistCard extends ConsumerWidget {
             })
             .catchError((_) {
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('A playlist with that name already exists.'),
-                  ),
+                VoraSnackbar.error(
+                  context,
+                  'A playlist with that name already exists.',
+                  title: 'Couldn\'t rename playlist',
                 );
               }
             });
@@ -678,14 +684,19 @@ class _PlaylistCard extends ConsumerWidget {
       );
       ref.read(playlistRefreshTickProvider.notifier).state++;
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Playlist duplicated as "$newName"')),
+        VoraSnackbar.success(
+          context,
+          'Playlist duplicated as "$newName"',
+          title: 'Playlist duplicated',
         );
       }
     } on DuplicatePlaylistNameException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.toString())));
+        VoraSnackbar.error(
+          context,
+          'A playlist with that name already exists.',
+          title: 'Couldn\'t duplicate playlist',
+        );
       }
     }
   }

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/models/lyrics.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../player/presentation/providers/player_providers.dart';
@@ -60,11 +61,18 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     ref.read(manualLyricsProvider.notifier).state = data;
   }
 
-  void _snack(String message) {
+  void _snack(
+    String message, {
+    VoraSnackbarVariant variant = VoraSnackbarVariant.info,
+    String? title,
+  }) {
     if (!mounted) return;
-    ScaffoldMessenger.maybeOf(context)
-      ?..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    VoraSnackbar.show(
+      context,
+      variant: variant,
+      message: message,
+      title: title,
+    );
   }
 
   /// Opens the online lyric picker. In [grid] mode the options appear inline so
@@ -110,12 +118,18 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     } on LyricsNetworkException {
       if (!mounted) return;
       setState(() => _searchingOnline = false);
-      _snack('You are offline — connect to search online lyrics.');
+      _snack(
+        'You are offline — connect to search online lyrics.',
+        variant: VoraSnackbarVariant.warning,
+      );
       return;
     } catch (_) {
       if (!mounted) return;
       setState(() => _searchingOnline = false);
-      _snack('Searching online lyrics failed. Try again.');
+      _snack(
+        'Searching online lyrics failed. Try again.',
+        variant: VoraSnackbarVariant.error,
+      );
       return;
     }
     if (!mounted) return;
@@ -123,7 +137,10 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
 
     if (!mounted) return;
     if (results.isEmpty) {
-      _snack('No online lyrics found for this song.');
+      _snack(
+        'No online lyrics found for this song.',
+        variant: VoraSnackbarVariant.info,
+      );
       return;
     }
     if (!mounted) return;
@@ -161,7 +178,10 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
                     .read(lyricsServiceProvider)
                     .lyricsFromResult(result);
                 if (data.isEmpty) {
-                  _snack('This result has no usable lyrics.');
+                  _snack(
+                    'This result has no usable lyrics.',
+                    variant: VoraSnackbarVariant.warning,
+                  );
                   return;
                 }
                 Navigator.of(sheetContext).pop();
@@ -183,9 +203,17 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         uri,
         mode: LaunchMode.externalApplication,
       );
-      if (!launched) _snack('Could not open the browser.');
+      if (!launched) {
+        _snack(
+          'Could not open the browser.',
+          variant: VoraSnackbarVariant.error,
+        );
+      }
     } catch (_) {
-      _snack('Could not open the browser.');
+      _snack(
+        'Could not open the browser.',
+        variant: VoraSnackbarVariant.error,
+      );
     }
   }
 
@@ -203,14 +231,20 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     try {
       text = await File(file.path!).readAsString();
     } catch (_) {
-      _snack('Could not read the selected file.');
+      _snack(
+        'Could not read the selected file.',
+        variant: VoraSnackbarVariant.error,
+      );
       return;
     }
 
     final service = ref.read(lyricsServiceProvider);
     final data = service.importUserLrc(song, text);
     if (data == null) {
-      _snack('That file is not a valid lyrics file.');
+      _snack(
+        'That file is not a valid lyrics file.',
+        variant: VoraSnackbarVariant.error,
+      );
       return;
     }
 
@@ -226,13 +260,19 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
       saved = sentinel;
     }
     if (identical(saved, sentinel) || saved == false) {
-      _snack('Could not save the lyrics file.');
+      _snack(
+        'Could not save the lyrics file.',
+        variant: VoraSnackbarVariant.error,
+      );
       return;
     }
 
     ref.invalidate(uploadedLrcProvider);
     _useLyrics(data);
-    _snack('Lyrics from "${file.name}" saved for this song.');
+    _snack(
+      'Lyrics from "${file.name}" saved for this song.',
+      variant: VoraSnackbarVariant.success,
+    );
   }
 
   /// Removes the persisted LRC for the current song, clears any displayed
@@ -244,7 +284,10 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     try {
       await service.userLrc.delete(song.identityKey);
     } catch (_) {
-      _snack('Could not remove the lyrics file.');
+      _snack(
+        'Could not remove the lyrics file.',
+        variant: VoraSnackbarVariant.error,
+      );
       return;
     }
     if (!mounted) return;
@@ -252,7 +295,10 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
       ..invalidate(uploadedLrcProvider)
       ..read(manualLyricsProvider.notifier).state = null;
     setState(() => _onlinePick = null);
-    _snack('Removed the uploaded lyrics file.');
+    _snack(
+      'Removed the uploaded lyrics file.',
+      variant: VoraSnackbarVariant.success,
+    );
   }
 
   Widget _button(
@@ -265,6 +311,11 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     final colorScheme = Theme.of(context).colorScheme;
     final isDestructive = destructive == true;
     final iconColor = isDestructive ? colorScheme.error : colorScheme.primary;
+    // Icon footprint used to keep the label centred: the leading side holds
+    // the icon + gap, so an equal spacer on the trailing side means the label
+    // (in the Expanded middle) is centred within the whole button instead of
+    // being pushed to the right by the icon.
+    final double iconSize = widget.grid ? 20 : 18;
     return FilledButton.tonal(
       onPressed: enabled ? () => onTap() : null,
       style: FilledButton.styleFrom(
@@ -278,18 +329,17 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         visualDensity: widget.compact ? VisualDensity.compact : null,
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             icon,
-            size: widget.grid ? 20 : 18,
+            size: iconSize,
             color: iconColor,
           ),
           const SizedBox(width: AppTokens.s1),
-          Flexible(
+          Expanded(
             child: Text(
               label,
+              textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: isDestructive
@@ -297,6 +347,8 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
                   : null,
             ),
           ),
+          // Balance the icon + gap on the leading side so the label centres.
+          SizedBox(width: AppTokens.s1 + iconSize),
         ],
       ),
     );
@@ -310,12 +362,11 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    // Fixed width so the three action chips form a balanced row. A custom
-    // label (icon + text centred in one row) keeps the text genuinely centred
-    // inside each chip — an ActionChip nexts its avatar beside the label, so
-    // the text hugs the icon and reads as off-centre.
+    // Fixed width so the three action chips form a balanced row that is wide
+    // enough to centre the icon + label (label kept genuinely centred, matching
+    // the grid buttons) without truncating the label.
     return SizedBox(
-      width: 132,
+      width: 168,
       child: Material(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(AppTokens.rFull),
@@ -328,14 +379,13 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
               vertical: AppTokens.s2,
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(icon, size: 16, color: colorScheme.primary),
                 const SizedBox(width: 6),
-                Flexible(
+                Expanded(
                   child: Text(
                     label,
+                    textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelMedium?.copyWith(
@@ -343,6 +393,8 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
                     ),
                   ),
                 ),
+                // Balance the icon + gap so the label is centred in the chip.
+                const SizedBox(width: 22),
               ],
             ),
           ),
@@ -484,7 +536,10 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
                     .read(lyricsServiceProvider)
                     .lyricsFromResult(results[i]);
                 if (data.isEmpty) {
-                  _snack('This result has no usable lyrics.');
+                  _snack(
+                    'This result has no usable lyrics.',
+                    variant: VoraSnackbarVariant.warning,
+                  );
                   return;
                 }
                 _useLyrics(data);

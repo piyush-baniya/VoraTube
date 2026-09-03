@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../../app/widgets/vora_snackbar.dart';
+import '../../../library/data/library_models.dart';
 
 import '../../../library/data/library_models.dart';
 import '../../../library/presentation/providers/library_providers.dart';
@@ -167,8 +171,11 @@ Future<({int id, String name})?> promptCreatePlaylist(
     return (id: id, name: result);
   } on DuplicatePlaylistNameException catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.toString())));
+      VoraSnackbar.error(
+        context,
+        'A playlist with that name already exists.',
+        title: 'Couldn\'t create playlist',
+      );
     }
     return null;
   }

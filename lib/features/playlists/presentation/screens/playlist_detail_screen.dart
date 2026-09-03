@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/empty_state.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../ads/banner_ad_widget.dart';
 import '../../../library/data/library_models.dart';
@@ -211,18 +212,58 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   }
 
   Future<void> _addSongs() async {
-    final picked = await showAddSongsSheet(
+    final result = await showAddSongsSheet(
       context,
       playlistId: widget.playlistId,
     );
-    if (picked == null || picked.isEmpty || !mounted) {
+    if (result == null || !mounted) {
       return;
     }
     final notifier = ref.read(
       playlistDetailProvider(widget.playlistId).notifier,
     );
-    await notifier.appendSongs(picked);
+    // Remove marked songs first (by their current index in the list).
+    if (result.toRemove.isNotEmpty) {
+      final songs = await ref.read(
+        playlistDetailProvider(widget.playlistId).future,
+      );
+      final indices = <int>[];
+      for (final id in result.toRemove) {
+        final idx = songs.indexWhere((s) => s.song.id == id);
+        if (idx >= 0) indices.add(idx);
+      }
+      // Remove from highest index first so earlier indices stay valid.
+      indices.sort((a, b) => b.compareTo(a));
+      for (final idx in indices) {
+        await notifier.removeAt(idx);
+      }
+    }
+    if (result.toAdd.isNotEmpty) {
+      await notifier.appendSongs(result.toAdd);
+    }
     ref.read(playlistRefreshTickProvider.notifier).state++;
+    if (!mounted) return;
+    final added = result.toAdd.length;
+    final removed = result.toRemove.length;
+    if (added > 0 && removed > 0) {
+      VoraSnackbar.success(
+        context,
+        '$added song${added == 1 ? '' : 's'} added, $removed removed.',
+        title: 'Playlist updated',
+      );
+    } else if (added > 0) {
+      VoraSnackbar.success(
+        context,
+        '$added song${added == 1 ? '' : 's'} added to "${widget.name}".',
+        title: 'Added to playlist',
+      );
+    } else if (removed > 0) {
+      VoraSnackbar.success(
+        context,
+        "$removed song${removed == 1 ? "" : "s"} removed.",
+        title: 'Removed from playlist',
+      );
+    }
   }
 }
 
@@ -428,8 +469,11 @@ class _PlaylistMenuButton extends ConsumerWidget {
         ref.read(playlistRefreshTickProvider.notifier).state++;
       } on DuplicatePlaylistNameException catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(e.toString())));
+          VoraSnackbar.error(
+            context,
+            'A playlist with this name already exists.',
+            title: 'Couldn\'t rename playlist',
+          );
         }
       }
     }

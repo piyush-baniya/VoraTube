@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
+import '../../data/playlist_models.dart';
+import '../../../../app/theme/app_tokens.dart';
 import '../../data/playlist_models.dart';
 import '../../data/playlist_repository.dart';
 import '../providers/playlist_providers.dart';
@@ -153,8 +156,11 @@ class _AddToPlaylistBodyState extends ConsumerState<_AddToPlaylistBody> {
         ref.read(playlistRefreshTickProvider.notifier).state++;
       } on DuplicatePlaylistNameException catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(e.toString())));
+          VoraSnackbar.error(
+            context,
+            'A playlist with that name already exists.',
+            title: 'Couldn\'t create playlist',
+          );
         }
       }
     }
@@ -252,14 +258,12 @@ class _MembershipListState extends ConsumerState<_MembershipList> {
       ref.invalidate(playlistMembershipProvider(playlist.id));
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isMember
-                  ? 'Could not remove from ${playlist.name}'
-                  : 'Could not add to ${playlist.name}',
-            ),
-          ),
+        VoraSnackbar.error(
+          context,
+          isMember
+              ? 'Could not remove from ${playlist.name}'
+              : 'Could not add to ${playlist.name}',
+          title: 'Playlist error',
         );
       }
     }

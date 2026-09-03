@@ -7,16 +7,26 @@ import '../../../library/data/library_models.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../providers/playlist_providers.dart';
 
-/// Opens a full-screen multi-select picker that adds songs to a playlist.
+/// Result of the add/remove songs picker.
+class PickerResult {
+  const PickerResult({this.toAdd = const [], this.toRemove = const []});
+
+  final List<SongTileData> toAdd;
+  final List<int> toRemove;
+}
+
+/// Opens a full-screen multi-select picker that adds/removes songs in a
+/// playlist.
 ///
 /// Reuses the paginated [pagedSongsProvider] so it streams the whole library a
-/// page at a time. Songs already in the playlist are disabled. Returns the list
-/// of newly selected [SongTileData] to append, or null if cancelled.
-Future<List<SongTileData>?> showAddSongsSheet(
+/// page at a time. Songs already in the playlist can be tapped to mark them for
+/// removal. Returns a [PickerResult] with songs to add and song IDs to remove,
+/// or null if cancelled.
+Future<PickerResult?> showAddSongsSheet(
   BuildContext context, {
   required int playlistId,
 }) {
-  return Navigator.of(context).push<List<SongTileData>>(
+  return Navigator.of(context).push<PickerResult>(
     MaterialPageRoute(
       builder: (_) => AddSongsPickerScreen(playlistId: playlistId),
       fullscreenDialog: true,
@@ -37,6 +47,7 @@ class AddSongsPickerScreen extends ConsumerStatefulWidget {
 class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
   final ScrollController _controller = ScrollController();
   final Set<int> _selected = <int>{};
+  final Set<int> _toRemove = <int>{};
   Set<int> _members = const <int>{};
 
   @override
@@ -68,17 +79,25 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
   }
 
   void _toggle(SongTileData tile) {
-    if (_members.contains(tile.song.id)) {
-      return;
-    }
     setState(() {
-      if (!_selected.remove(tile.song.id)) {
-        _selected.add(tile.song.id);
+      if (_members.contains(tile.song.id)) {
+        // Toggle removal of an existing member
+        if (!_toRemove.remove(tile.song.id)) {
+          _toRemove.add(tile.song.id);
+        }
+      } else {
+        // Toggle selection of a new song to add
+        if (!_selected.remove(tile.song.id)) {
+          _selected.add(tile.song.id);
+        }
       }
     });
   }
 
-  void _add() {
+  bool get _hasChanges => _selected.isNotEmpty || _toRemove.isNotEmpty;
+
+  void _apply() {
+    if (!_hasChanges) return;
     final byId = <int, SongTileData>{};
     final tiles = ref.read(pagedSongsProvider).value;
     if (tiles != null) {
@@ -86,9 +105,23 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
         byId[t.song.id] = t;
       }
     }
-    Navigator.of(
-      context,
-    ).pop(_selected.map((id) => byId[id]).whereType<SongTileData>().toList());
+    Navigator.of(context).pop(PickerResult(
+      toAdd: _selected.map((id) => byId[id]).whereType<SongTileData>().toList(),
+      toRemove: _toRemove.toList(),
+    ));
+  }
+
+  String get _buttonLabel {
+    final add = _selected.length;
+    final rem = _toRemove.length;
+    if (add == 0 && rem == 0) return 'Select songs';
+    if (add == 0) {
+      return 'Remove $rem ${rem == 1 ? 'song' : 'songs'}';
+    }
+    if (rem == 0) {
+      return 'Add $add ${add == 1 ? 'song' : 'songs'}';
+    }
+    return 'Add $add, remove $rem';
   }
 
   @override
@@ -167,6 +200,7 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
                 tile: tile,
                 isMember: isMember,
                 selected: _selected.contains(tile.song.id),
+                markedForRemoval: _toRemove.contains(tile.song.id),
                 onTap: () => _toggle(tile),
               );
             },
@@ -177,14 +211,16 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
         child: Padding(
           padding: const EdgeInsets.all(AppTokens.s4),
           child: FilledButton.icon(
-            onPressed: _selected.isEmpty ? null : _add,
-            icon: const Icon(Icons.add_rounded, size: 20),
-            label: Text(
-              _selected.isEmpty
-                  ? 'Select songs'
-                  : 'Add ${_selected.length} '
-                        '${_selected.length == 1 ? 'song' : 'songs'}',
+            onPressed: _hasChanges ? _apply : null,
+            icon: Icon(
+              _toRemove.isEmpty
+                  ? Icons.add_rounded
+                  : _selected.isEmpty
+                      ? Icons.remove_circle_outline_rounded
+                      : Icons.check_rounded,
+              size: 20,
             ),
+            label: Text(_buttonLabel),
           ),
         ),
       ),
@@ -197,12 +233,14 @@ class _PickerTile extends StatelessWidget {
     required this.tile,
     required this.isMember,
     required this.selected,
+    required this.markedForRemoval,
     required this.onTap,
   });
 
   final SongTileData tile;
   final bool isMember;
   final bool selected;
+  final bool markedForRemoval;
   final VoidCallback onTap;
 
   @override
@@ -211,8 +249,16 @@ class _PickerTile extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final song = tile.song;
 
+    // When marked for removal, show a dimmed/strikethrough style.
+    final dimmed = markedForRemoval;
+    final titleColor = dimmed
+        ? colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
+        : isMember
+            ? colorScheme.onSurfaceVariant
+            : colorScheme.onSurface;
+
     return InkWell(
-      onTap: isMember ? null : onTap,
+      onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s4,
@@ -242,9 +288,9 @@ class _PickerTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyLarge?.copyWith(
                         fontWeight: FontWeight.w600,
-                        color: isMember
-                            ? colorScheme.onSurfaceVariant
-                            : colorScheme.onSurface,
+                        color: titleColor,
+                        decoration:
+                            dimmed ? TextDecoration.lineThrough : null,
                       ),
                     ),
                     if (song.artist != null) ...[
@@ -254,7 +300,9 @@ class _PickerTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                          color: colorScheme.onSurfaceVariant.withValues(
+                            alpha: dimmed ? 0.5 : 1.0,
+                          ),
                         ),
                       ),
                     ],
@@ -263,17 +311,23 @@ class _PickerTile extends StatelessWidget {
               ),
               const SizedBox(width: AppTokens.s2),
               Icon(
-                isMember
-                    ? Icons.check_circle_rounded
-                    : selected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
+                markedForRemoval
+                    ? Icons.remove_circle_outline_rounded
+                    : isMember
+                        ? Icons.check_circle_rounded
+                        : selected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
                 size: 22,
-                color: isMember
-                    ? Colors.grey
-                    : selected
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                color: markedForRemoval
+                    ? colorScheme.error
+                    : isMember
+                        ? Colors.grey
+                        : selected
+                            ? colorScheme.primary
+                            : colorScheme.onSurfaceVariant.withValues(
+                                alpha: 0.5,
+                              ),
               ),
             ],
           ),

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/genre/genre_enrichment_service.dart';
 import '../../../../core/genre/genre_providers.dart';
 import '../../../../core/ingest/artwork/artwork_file_cache.dart';
@@ -125,11 +126,19 @@ class SongActions {
     switch (action) {
       case SongAction.playNext:
         player.playNext(songRef);
-        _snack(context, 'Playing next: ${song.title}');
+        _snack(
+          context,
+          'Playing next: ${song.title}',
+          variant: VoraSnackbarVariant.info,
+        );
         break;
       case SongAction.addToQueue:
         player.enqueue(songRef);
-        _snack(context, 'Added to queue: ${song.title}');
+        _snack(
+          context,
+          'Added to queue: ${song.title}',
+          variant: VoraSnackbarVariant.info,
+        );
         break;
       case SongAction.addToPlaylist:
         if (!context.mounted) return;
@@ -139,18 +148,28 @@ class SongActions {
         await ref.read(favoriteIdsProvider.notifier).toggle(song.id);
         _snack(
           context,
-          isFavorite ? 'Removed from favorites' : 'Added to favorites',
+          '"${song.title}"',
+          variant: VoraSnackbarVariant.success,
+          title: isFavorite ? 'Removed from favorites' : 'Added to favorites',
         );
         break;
       case SongAction.goToAlbum:
         if (song.albumRowId == null) {
-          _snack(context, 'No album information');
+          _snack(
+            context,
+            'No album information',
+            variant: VoraSnackbarVariant.warning,
+          );
           return;
         }
         final album = await _resolveAlbum(repo, song.albumRowId!);
         if (!context.mounted) return;
         if (album == null) {
-          _snack(context, 'Album not found');
+          _snack(
+            context,
+            'Album not found',
+            variant: VoraSnackbarVariant.warning,
+          );
           return;
         }
         Navigator.of(context).push(
@@ -159,13 +178,21 @@ class SongActions {
         break;
       case SongAction.goToArtist:
         if (song.artistRowId == null) {
-          _snack(context, 'No artist information');
+          _snack(
+            context,
+            'No artist information',
+            variant: VoraSnackbarVariant.warning,
+          );
           return;
         }
         final artist = await _resolveArtist(repo, song.artistRowId!);
         if (!context.mounted) return;
         if (artist == null) {
-          _snack(context, 'Artist not found');
+          _snack(
+            context,
+            'Artist not found',
+            variant: VoraSnackbarVariant.warning,
+          );
           return;
         }
         Navigator.of(context).push(
@@ -205,13 +232,13 @@ class SongActions {
         await showSleepTimerSheet(context);
         break;
       case SongAction.removeFromPlaylist:
-        await _removeFromPlaylist(context, ref, song, removeFromPlaylistId);
+        await removeFromPlaylist(context, ref, song, removeFromPlaylistId);
         break;
     }
   }
 
   /// Removes a song from a specific playlist (playlist detail context).
-  static Future<void> _removeFromPlaylist(
+  static Future<void> removeFromPlaylist(
     BuildContext context,
     WidgetRef ref,
     Song song,
@@ -224,7 +251,11 @@ class SongActions {
       final index = songs.indexWhere((s) => s.song.id == song.id);
       if (index < 0) {
         if (context.mounted) {
-          _snack(context, 'Song is no longer in this playlist');
+          _snack(
+            context,
+            'Song is no longer in this playlist',
+            variant: VoraSnackbarVariant.warning,
+          );
         }
         return;
       }
@@ -233,10 +264,22 @@ class SongActions {
       ref.read(playlistRefreshTickProvider.notifier).state++;
       ref.invalidate(playlistMembershipProvider(playlistId));
       if (context.mounted) {
-        _snack(context, 'Removed from playlist');
+        _snack(
+          context,
+          '"${song.title}" was removed.',
+          variant: VoraSnackbarVariant.success,
+          title: 'Removed from playlist',
+        );
       }
     } catch (_) {
-      if (context.mounted) _snack(context, 'Could not remove from playlist');
+      if (context.mounted) {
+        _snack(
+          context,
+          'The song could not be removed from the playlist.',
+          variant: VoraSnackbarVariant.error,
+          title: 'Couldn\'t remove song',
+        );
+      }
     }
   }
 
@@ -272,7 +315,13 @@ class SongActions {
     final pickedPath = file.path!;
     final pickedFile = File(pickedPath);
     if (!await pickedFile.exists()) {
-      if (context.mounted) _snack(context, 'Selected file not found');
+      if (context.mounted) {
+        _snack(
+          context,
+          'Selected file not found',
+          variant: VoraSnackbarVariant.error,
+        );
+      }
       return;
     }
     try {
@@ -284,13 +333,31 @@ class SongActions {
         bytes,
       );
       if (storedPath == null) {
-        if (context.mounted) _snack(context, 'Failed to save cover');
+        if (context.mounted) {
+          _snack(
+            context,
+            'Failed to save cover',
+            variant: VoraSnackbarVariant.error,
+          );
+        }
         return;
       }
       ArtworkFileCache.invalidate();
-      if (context.mounted) _snack(context, 'Cover updated');
+      if (context.mounted) {
+        _snack(
+          context,
+          'Cover updated',
+          variant: VoraSnackbarVariant.success,
+        );
+      }
     } catch (_) {
-      if (context.mounted) _snack(context, 'Failed to update cover');
+      if (context.mounted) {
+        _snack(
+          context,
+          'Failed to update cover',
+          variant: VoraSnackbarVariant.error,
+        );
+      }
     }
   }
 
@@ -320,7 +387,13 @@ class SongActions {
 
     if (saved == null || !saved.confirmed) return;
     if (saved.title.isEmpty) {
-      if (context.mounted) _snack(context, 'Title cannot be empty');
+      if (context.mounted) {
+        _snack(
+          context,
+          'Title cannot be empty',
+          variant: VoraSnackbarVariant.warning,
+        );
+      }
       return;
     }
     try {
@@ -334,9 +407,21 @@ class SongActions {
       );
       ref.invalidate(pagedSongsProvider);
       _refreshLibrary(ref);
-      if (context.mounted) _snack(context, 'Tags updated');
+      if (context.mounted) {
+        _snack(
+          context,
+          'Tags updated',
+          variant: VoraSnackbarVariant.success,
+        );
+      }
     } catch (_) {
-      if (context.mounted) _snack(context, 'Failed to update tags');
+      if (context.mounted) {
+        _snack(
+          context,
+          'Failed to update tags',
+          variant: VoraSnackbarVariant.error,
+        );
+      }
     }
   }
 
@@ -370,9 +455,23 @@ class SongActions {
       await repo.setHidden(song.id, true);
       ref.invalidate(pagedSongsProvider);
       _refreshLibrary(ref);
-      if (context.mounted) _snack(context, 'Song hidden');
+      if (context.mounted) {
+        _snack(
+          context,
+          '"${song.title}" was hidden from your library.',
+          variant: VoraSnackbarVariant.success,
+          title: 'Song hidden',
+        );
+      }
     } catch (_) {
-      if (context.mounted) _snack(context, 'Failed to hide song');
+      if (context.mounted) {
+        _snack(
+          context,
+          'The song could not be hidden.',
+          variant: VoraSnackbarVariant.error,
+          title: 'Couldn\'t hide song',
+        );
+      }
     }
   }
 
@@ -451,9 +550,23 @@ class SongActions {
       _refreshLibrary(ref);
       ref.invalidate(albumsOverviewProvider);
       ref.invalidate(artistsOverviewProvider);
-      if (context.mounted) _snack(context, 'Song deleted');
+      if (context.mounted) {
+        _snack(
+          context,
+          '"${song.title}" was removed from your library.',
+          variant: VoraSnackbarVariant.success,
+          title: 'Song deleted',
+        );
+      }
     } else {
-      if (context.mounted) _snack(context, 'Failed to delete song');
+      if (context.mounted) {
+        _snack(
+          context,
+          'The song could not be removed.',
+          variant: VoraSnackbarVariant.error,
+          title: 'Couldn\'t delete song',
+        );
+      }
     }
   }
 
@@ -472,10 +585,20 @@ class SongActions {
         mode: LaunchMode.externalApplication,
       );
       if (!launched && context.mounted) {
-        _snack(context, 'Could not open YouTube');
+        _snack(
+          context,
+          'Could not open YouTube',
+          variant: VoraSnackbarVariant.error,
+        );
       }
     } catch (_) {
-      if (context.mounted) _snack(context, 'Could not open YouTube');
+      if (context.mounted) {
+        _snack(
+          context,
+          'Could not open YouTube',
+          variant: VoraSnackbarVariant.error,
+        );
+      }
     }
   }
 
@@ -506,7 +629,13 @@ class SongActions {
         ),
       );
     } catch (_) {
-      if (context.mounted) _snack(context, 'Sharing not available');
+      if (context.mounted) {
+        _snack(
+          context,
+          'Sharing not available',
+          variant: VoraSnackbarVariant.error,
+        );
+      }
     }
   }
 
@@ -578,10 +707,18 @@ class SongActions {
     final repo = ref.read(libraryRepositoryProvider);
     if (chosen == SongMood.unknown) {
       await repo.setSongMood(song.id, '');
-      _snack(ctx, 'Mood cleared');
+      _snack(
+        ctx,
+        'Mood cleared',
+        variant: VoraSnackbarVariant.success,
+      );
     } else {
       await repo.setSongMood(song.id, chosen.name);
-      _snack(ctx, 'Mood set to ${chosen.label}');
+      _snack(
+        ctx,
+        'Mood set to ${chosen.label}',
+        variant: VoraSnackbarVariant.success,
+      );
     }
     _refreshLibrary(ref);
   }
@@ -800,10 +937,15 @@ class SongActions {
   static void _snack(
     BuildContext context,
     String message, {
-    Duration duration = const Duration(seconds: 2),
+    VoraSnackbarVariant variant = VoraSnackbarVariant.info,
+    String? title,
   }) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message), duration: duration));
+    VoraSnackbar.show(
+      context,
+      variant: variant,
+      message: message,
+      title: title,
+    );
   }
 }
 

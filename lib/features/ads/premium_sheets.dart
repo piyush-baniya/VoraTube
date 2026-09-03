@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_tokens.dart';
+import '../../../app/widgets/vora_snackbar.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
+import '../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import 'premium_models.dart';
 import 'premium_providers.dart';
@@ -98,12 +101,11 @@ class _PremiumActivationSheetState
     await ref.read(premiumProvider.notifier).activate();
 
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Premium activated\nAds have been disabled.'),
-      ),
+    VoraSnackbar.success(
+      context,
+      'Ads have been disabled.',
+      title: 'Premium activated',
     );
   }
 
