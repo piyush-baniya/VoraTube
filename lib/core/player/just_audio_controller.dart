@@ -720,18 +720,24 @@ class JustAudioController extends BaseAudioHandler
   }
 
   @override
-  Future<void> seek(Duration position) {
-    final s = _player.seek(position);
+  Future<void> seek(Duration position) async {
+    await _player.seek(position);
     // A seek redefines the meaningful playback position. Schedule (debounced)
     // rather than immediate: rapid scrubbing must not hammer storage, and the
     // pending timer always fires with the final position.
     _schedulePersist();
-    return s;
+    // Re-anchor the system playback state: the media notification's seekbar
+    // extrapolates from the last published position/updateTime pair, so
+    // without this broadcast it keeps interpolating from the stale pre-seek
+    // anchor and drifts out of sync with the in-app progress bar.
+    _broadcastSystemState();
   }
 
   @override
   Future<void> seekBy(Duration offset) async {
     await _player.seek(clampSeekBy(_player.position, offset, _player.duration));
+    // See [seek]: keep the notification seekbar in step with the new position.
+    _broadcastSystemState();
   }
 
   @override
@@ -745,6 +751,9 @@ class JustAudioController extends BaseAudioHandler
     // current song or replay from this first-position view.
     if (_player.position > const Duration(seconds: 3)) {
       await _player.seek(Duration.zero);
+      // Re-anchor the system playback state so the notification seekbar
+      // follows the restart (see [seek]).
+      _broadcastSystemState();
       return;
     }
     await _advance(manual: true, backward: true);

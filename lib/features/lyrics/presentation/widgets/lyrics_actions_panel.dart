@@ -328,28 +328,30 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         ),
         visualDensity: widget.compact ? VisualDensity.compact : null,
       ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: iconSize,
-            color: iconColor,
-          ),
-          const SizedBox(width: AppTokens.s1),
-          Expanded(
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: isDestructive
-                  ? TextStyle(color: colorScheme.error)
-                  : null,
+      child: Center(
+        // Icon + label centred as a group inside the button.
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: iconSize,
+              color: iconColor,
             ),
-          ),
-          // Balance the icon + gap on the leading side so the label centres.
-          SizedBox(width: AppTokens.s1 + iconSize),
-        ],
+            const SizedBox(width: AppTokens.s1),
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: isDestructive
+                    ? TextStyle(color: colorScheme.error)
+                    : null,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -378,24 +380,26 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
               horizontal: AppTokens.s1,
               vertical: AppTokens.s2,
             ),
-            child: Row(
-              children: [
-                Icon(icon, size: 16, color: colorScheme.primary),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+            child: Center(
+              // Icon + label centred as a group inside the chip.
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 16, color: colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
-                // Balance the icon + gap so the label is centred in the chip.
-                const SizedBox(width: 22),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -403,7 +407,7 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     );
   }
 
-  /// The primary actions: "Show online lyrics", "Search lyrics online", plus
+  /// The primary actions: "Online Lyrics", "Search Lyrics", plus
   /// the upload slot that swaps between "Upload .lrc file" and (once a file is
   /// saved) "Remove .LRC File". A "Show uploaded lyrics" action is intentionally
   /// NOT offered: the shared pipeline already loads a saved LRC as the active
@@ -421,13 +425,13 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
 
     return [
       _button(
-        'Show online lyrics',
+        'Online Lyrics',
         Icons.cloud_download_outlined,
         _showOnlineLyrics,
         enabled: !_searchingOnline,
       ),
       _button(
-        'Search lyrics online',
+        'Search Lyrics',
         Icons.travel_explore_rounded,
         _searchLyricsOnWeb,
       ),

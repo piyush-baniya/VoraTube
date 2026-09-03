@@ -77,8 +77,8 @@ void main() {
     expect(find.text('Line two'), findsNothing);
     expect(find.text('Line three'), findsNothing);
     // The three primary actions are shown as the entry.
-    expect(find.text('Show online lyrics'), findsOneWidget);
-    expect(find.text('Search lyrics online'), findsOneWidget);
+    expect(find.text('Online Lyrics'), findsOneWidget);
+    expect(find.text('Search Lyrics'), findsOneWidget);
     expect(find.text('Upload .lrc file'), findsOneWidget);
   });
 
@@ -99,7 +99,7 @@ void main() {
     await tester.pumpWidget(buildPanel(result: const LyricsResult.offline()));
     await tester.pump();
 
-    expect(find.text('Show online lyrics'), findsOneWidget);
+    expect(find.text('Online Lyrics'), findsOneWidget);
     expect(find.textContaining('offline'), findsOneWidget);
   });
 

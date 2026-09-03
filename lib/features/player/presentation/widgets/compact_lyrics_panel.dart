@@ -22,9 +22,14 @@ class CompactLyricsPanel extends ConsumerStatefulWidget {
     super.key,
     this.height = 220,
     this.onExpandedChanged,
+    this.fillRegion = false,
   });
 
   final double height;
+
+  /// When true (landscape) the card expands to fill the entire available
+  /// player content region instead of using its portrait desired height.
+  final bool fillRegion;
 
   /// Called when the expand/collapse state changes.
   /// `true` = expanded, `false` = collapsed.
@@ -272,10 +277,19 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
             constraints.maxHeight < 200;
 
         // Lyrics action buttons live OUTSIDE the collapsible card:
-        // - expanded + lyrics shown (+ enough room) → visible below the card;
+        // - expanded + lyrics shown (+ enough room) → visible below the card
+        //   (portrait AND landscape);
         // - collapsed, no lyrics, or a tight panel → hidden completely.
         final showActionsBelow = _expanded && manual != null && !tightPanel;
         var cardHeight = _desiredCardHeight(showActionsBelow);
+        if (widget.fillRegion &&
+            constraints.hasBoundedHeight &&
+            constraints.maxHeight.isFinite) {
+          // Landscape: the lyrics card is the primary content view and fills
+          // the entire available region (minus its bottom margin). The clamp
+          // below reserves room for the actions row when it is visible.
+          cardHeight = math.max(0.0, constraints.maxHeight - AppTokens.s4);
+        }
         if (constraints.hasBoundedHeight && constraints.maxHeight.isFinite) {
           // Clamp to the space the parent actually offers. The desired height
           // is tuned for portrait; on short (landscape) viewports it is larger
@@ -303,20 +317,10 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
               AppTokens.s4,
             ),
             decoration: BoxDecoration(
-              // Subtle vertical gradient over the glass surface for depth: a
-              // breath of accent at the top melting into the base surface.
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  accent.withValues(alpha: isDark ? 0.10 : 0.07),
-                  (isDark
-                          ? AppColors.surfaceDark
-                          : AppColors.surfaceLight)
-                      .withValues(alpha: 0.85),
-                ],
-                stops: const [0.0, 0.45],
-              ),
+              // Clean solid surface card — deliberately NO gradient: the
+              // lyrics card keeps the existing VoraTube surface styling.
+              color: (isDark ? AppColors.surfaceDark : AppColors.surfaceLight)
+                  .withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(AppTokens.rXl),
               border: Border.all(
                 color: accent.withValues(alpha: 0.2),
@@ -592,7 +596,9 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
       color: colorScheme.onSurface,
     );
 
-    final activeColor = colorScheme.onSurface;
+    // Typography-only active emphasis: accent colour + scale. No background,
+    // pill or glow is drawn behind the active line.
+    final activeColor = AppColors.accent;
     final pastColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.38);
     final futureColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.62);
 
@@ -650,7 +656,6 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
                 isCurrent: isCurrent,
                 idleColor: isPast ? pastColor : futureColor,
                 activeColor: activeColor,
-                glowColor: AppColors.accent,
                 animate: !MediaQuery.disableAnimationsOf(context),
                 activeScale: _activeScale,
                 horizontalPadding: _linePadH,
@@ -660,9 +665,11 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
           ),
         );
 
+        // No _EdgeFade here: gradient fades inside the lyrics card are not
+        // used. The list renders plainly inside the card's ClipRRect.
         return Stack(
           children: [
-            Positioned.fill(child: _EdgeFade(child: list)),
+            Positioned.fill(child: list),
             if (_isUserScrolling && currentIndex >= 0)
               Positioned(
                 left: 0,
@@ -682,8 +689,8 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return _EdgeFade(
-      child: ListView.builder(
+    // No gradient edge fade — plain scrolling list.
+    return ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s6,
@@ -708,7 +715,6 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
             ),
           );
         },
-      ),
     );
   }
 
@@ -733,18 +739,9 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
               height: 68,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Theme.of(context).colorScheme.primary
-                        .withValues(alpha: 0.16),
-                    Theme.of(context).colorScheme.primary
-                        .withValues(alpha: 0.03),
-                    Colors.transparent,
-                  ],
-                  stops: const [0.0, 0.6, 1.0],
-                ),
+                // Solid tinted circle — no gradient inside the lyrics card.
+                color: Theme.of(context).colorScheme.primary
+                    .withValues(alpha: 0.10),
               ),
               child: Icon(
                 icon,
@@ -797,33 +794,6 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
       ref.read(playerProvider).seek(Duration(milliseconds: milliseconds));
 }
 
-class _EdgeFade extends StatelessWidget {
-  const _EdgeFade({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (bounds) {
-        return const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.transparent,
-            Colors.black,
-            Colors.black,
-            Colors.transparent,
-          ],
-          stops: [0.0, 0.11, 0.86, 1.0],
-        ).createShader(bounds);
-      },
-      child: child,
-    );
-  }
-}
-
 class _SyncedLyricLine extends StatelessWidget {
   const _SyncedLyricLine({
     required this.text,
@@ -832,7 +802,6 @@ class _SyncedLyricLine extends StatelessWidget {
     required this.isCurrent,
     required this.idleColor,
     required this.activeColor,
-    required this.glowColor,
     required this.animate,
     required this.activeScale,
     required this.horizontalPadding,
@@ -845,7 +814,6 @@ class _SyncedLyricLine extends StatelessWidget {
   final bool isCurrent;
   final Color idleColor;
   final Color activeColor;
-  final Color glowColor;
   final bool animate;
   final double activeScale;
   final double horizontalPadding;
@@ -870,43 +838,13 @@ class _SyncedLyricLine extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                 child: Center(
-                  // The active line earns a soft accent pill behind the text
-                  // so it reads as selected at a glance; inactive lines stay
-                  // plain text, secondary by comparison.
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTokens.s3,
-                      vertical: 4,
-                    ),
-                    decoration: t < 0.02
-                        ? null
-                        : BoxDecoration(
-                            color: glowColor.withValues(alpha: 0.12 * t),
-                            borderRadius: BorderRadius.circular(
-                              AppTokens.rFull,
-                            ),
-                            border: Border.all(
-                              color: glowColor.withValues(alpha: 0.18 * t),
-                              width: AppTokens.borderHairline,
-                            ),
-                          ),
-                    child: Text(
-                      text,
-                      textAlign: TextAlign.center,
-                      style: style.copyWith(
-                        color: color,
-                        shadows: t < 0.02
-                            ? null
-                            : [
-                                Shadow(
-                                  color: AppColors.accent.withValues(
-                                    alpha: 0.3 * t,
-                                  ),
-                                  blurRadius: 14 * t,
-                                ),
-                              ],
-                      ),
-                    ),
+                  // Typography-only emphasis: the active line is distinguished
+                  // purely through colour and scale — NO background, pill,
+                  // border or glow behind it.
+                  child: Text(
+                    text,
+                    textAlign: TextAlign.center,
+                    style: style.copyWith(color: color),
                   ),
                 ),
               ),

@@ -302,6 +302,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        // LANDSCAPE: dedicated full-bleed lyrics layout. The lyrics card
+        // occupies the ENTIRE player content region — no artwork beside or
+        // beneath it, no lyric text outside the card. The playback controls
+        // below this region stay in their fixed position.
+        if (constraints.maxWidth > constraints.maxHeight) {
+          return CompactLyricsPanel(
+            height: constraints.maxHeight,
+            fillRegion: true,
+            onExpandedChanged: (expanded) {
+              setState(() => _lyricsExpanded = expanded);
+            },
+          );
+        }
+        // PORTRAIT: existing layout — lyrics card with the collapsible
+        // artwork reveal beneath it when the card is collapsed.
         final compact = constraints.maxHeight < 200;
         // Desired card height follows the available region instead of a fixed
         // constant: most of the region in portrait, tightened on short
@@ -341,10 +356,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                       // synced lyrics.
                       if (compact) const _CurrentLyricLine(),
                       if (compact) const SizedBox(height: AppTokens.s2),
-                      RotatingArtwork(
-                        path: current.artPath,
-                        heroTag: null,
-                        size: _collapsedArtworkSize(constraints, compact),
+                      // Bottom padding reserves room for the artwork's paint
+                      // overflow (drop shadow + playing glow extend ~20px
+                      // beyond the box) so the reveal is never clipped.
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: RotatingArtwork(
+                          path: current.artPath,
+                          heroTag: null,
+                          size: _collapsedArtworkSize(constraints, compact),
+                        ),
                       ),
                     ],
                   ),
@@ -374,10 +395,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     if (compact) {
       return 120.0;
     }
-    final byHeight = constraints.maxHeight * 0.55;
-    final byWidth = constraints.maxWidth * 0.55;
+    final byHeight = constraints.maxHeight * 0.62;
+    final byWidth = constraints.maxWidth * 0.62;
     final target = byWidth < byHeight ? byWidth : byHeight;
-    return target.clamp(200.0, AppTokens.artworkHeroMax);
+    return target.clamp(240.0, AppTokens.artworkHeroMax);
   }
 }
 

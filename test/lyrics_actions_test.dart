@@ -248,8 +248,8 @@ void main() {
     testWidgets('no uploaded LRC shows exactly three actions', (tester) async {
       await pumpActions(tester);
 
-      expect(find.text('Show online lyrics'), findsOneWidget);
-      expect(find.text('Search lyrics online'), findsOneWidget);
+      expect(find.text('Online Lyrics'), findsOneWidget);
+      expect(find.text('Search Lyrics'), findsOneWidget);
       expect(find.text('Upload .lrc file'), findsOneWidget);
       expect(find.text('Show uploaded lyrics'), findsNothing);
       expect(find.text('Remove .LRC File'), findsNothing);
