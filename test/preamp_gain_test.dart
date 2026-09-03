@@ -6,10 +6,9 @@ import 'package:vora_tube/core/player/player_controller.dart';
 /// A positive Preamp is real gain above the 0..1 volume clamp that ExoPlayer
 /// enforces — before this fix `+6 dB` produced `gainMultiplier = 10^(6/20) ≈
 /// 1.995` which was then clamped to `1.0`, so it changed nothing audibly. The
-/// fix routes the positive Preamp through the native loudness enhancer (the
-/// same layer as the Volume Booster). These tests lock in the exact millibel
-/// value handed to that enhancer, so 0 / +3 / +6 dB produce strictly
-/// increasing real gain.
+/// fix routes the positive Preamp through the native loudness enhancer. These
+/// tests lock in the exact millibel value handed to that enhancer, so
+/// 0 / +3 / +6 dB produce strictly increasing real gain.
 void main() {
   group('preampBoostMillibel gain mapping', () {
     test('0 dB = no boost (0 mB)', () {
@@ -49,17 +48,13 @@ void main() {
       },
     );
 
-    test('Preamp and Volume Booster compose additively on one enhancer', () {
-      // Both are >1.0 gain layers sharing the native enhancer; their millibel
-      // values add. +6 dB Preamp + 200% Booster = 600 + 600 = 1200 mB.
-      final combined = preampBoostMillibel(6.0) + volumeBoostMillibel(2.0);
-      expect(combined, 1200);
-      expect(combined, greaterThan(volumeBoostMillibel(2.0)));
-      // Preamp still raises total gain on top of the booster.
-      expect(
-        preampBoostMillibel(6.0) + volumeBoostMillibel(1.5),
-        greaterThan(volumeBoostMillibel(1.5)),
-      );
+    test('positive Preamp maps linearly on the enhancer', () {
+      // Preamp is the only gain layer on the native enhancer; the millibel
+      // value is authoritative for the bridge, which caps at the enhancer's
+      // 1000 mB ceiling.
+      expect(preampBoostMillibel(6.0), 600);
+      expect(preampBoostMillibel(3.0), 300);
+      expect(preampBoostMillibel(6.0), greaterThan(preampBoostMillibel(3.0)));
     });
 
     test('out-of-range Preamp is clamped, never overdrives the enhancer', () {

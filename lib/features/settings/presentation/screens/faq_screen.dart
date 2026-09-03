@@ -61,12 +61,6 @@ class FaqScreen extends StatelessWidget {
           'you choose to do so.',
     ),
     (
-      question: 'How do I use the volume booster?',
-      answer:
-          'Use the volume booster to raise playback above normal volume. '
-          'Boosting is optional and you can set it back to normal at any time.',
-    ),
-    (
       question: 'Where are downloaded/local songs stored?',
       answer:
           'VoraTube plays music that is already on your device \u2014 VoraTube '

@@ -257,85 +257,95 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
     final isDark = theme.brightness == Brightness.dark;
     final accent = AppColors.accent;
 
-    // Lyrics action buttons live OUTSIDE the collapsible card:
-    // - expanded + lyrics shown → visible directly below the card;
-    // - collapsed → hidden completely;
-    // - no lyrics shown → the existing buttons-first intro inside the card
-    //   keeps its original (unchanged) presentation.
-    final showActionsBelow = _expanded && manual != null;
-    final double cardHeight;
-    if (!_expanded) {
-      cardHeight = _previewHeight;
-    } else if (showActionsBelow) {
-      cardHeight = math.max(200.0, widget.height - _actionsReserve);
-    } else {
-      cardHeight = widget.height;
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // On tight (landscape) viewports the action-buttons row would eat most
+        // of the available height and crush the lyrics card into invisibility.
+        // Hide the row there so the card (and its pin-the-header collapse
+        // control) gets the space it needs; the panel then focuses on lyrics.
+        final tightPanel = constraints.hasBoundedHeight &&
+            constraints.maxHeight < 200;
 
-    final container = AnimatedSize(
-      duration: AppTokens.medium,
-      curve: AppTokens.easeOut,
-      alignment: Alignment.topCenter,
-      child: Container(
-        height: cardHeight,
-        margin: const EdgeInsets.fromLTRB(
-          AppTokens.s4,
-          0,
-          AppTokens.s4,
-          AppTokens.s4,
-        ),
-        decoration: BoxDecoration(
-          color: isDark
-              ? AppColors.surfaceDark.withValues(alpha: 0.85)
-              : AppColors.surfaceLight.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(AppTokens.rXl),
-          border: Border.all(
-            color: accent.withValues(alpha: 0.2),
-            width: AppTokens.borderHairline,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.15),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
-              spreadRadius: -2,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppTokens.rXl),
-          child: _expanded
-              ? _buildExpanded(lyricsAsync, manual)
-              : _buildCollapsedPreview(lyricsAsync, manual),
-        ),
-      ),
-    );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Flexible so the card itself absorbs tight landscape constraints —
-        // its fixed desired height is clamped by the region instead of
-        // overflowing now that the buttons row adds height below it.
-        Flexible(child: container),
-        // The three lyrics action buttons are STRUCTURALLY OUTSIDE the card,
-        // directly below it, and appear/disappear with the expand state.
-        AnimatedSize(
+        // Lyrics action buttons live OUTSIDE the collapsible card:
+        // - expanded + lyrics shown (+ enough room) → visible below the card;
+        // - collapsed, no lyrics, or a tight panel → hidden completely.
+        final showActionsBelow = _expanded && manual != null && !tightPanel;
+        final double cardHeight;
+        if (!_expanded) {
+          cardHeight = _previewHeight;
+        } else if (showActionsBelow) {
+          cardHeight = math.max(200.0, widget.height - _actionsReserve);
+        } else {
+          cardHeight = widget.height;
+        }
+
+        final container = AnimatedSize(
           duration: AppTokens.medium,
           curve: AppTokens.easeOut,
           alignment: Alignment.topCenter,
-          child: showActionsBelow
-              ? const Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    AppTokens.s4,
-                    AppTokens.s2,
-                    AppTokens.s4,
-                    0,
-                  ),
-                  child: LyricsActionsPanel(compact: true, row: true),
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-      ],
+          child: Container(
+            height: cardHeight,
+            margin: const EdgeInsets.fromLTRB(
+              AppTokens.s4,
+              0,
+              AppTokens.s4,
+              AppTokens.s4,
+            ),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? AppColors.surfaceDark.withValues(alpha: 0.85)
+                  : AppColors.surfaceLight.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(AppTokens.rXl),
+              border: Border.all(
+                color: accent.withValues(alpha: 0.2),
+                width: AppTokens.borderHairline,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.15),
+                  blurRadius: 20,
+                  offset: const Offset(0, -4),
+                  spreadRadius: -2,
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppTokens.rXl),
+              child: _expanded
+                  ? _buildExpanded(lyricsAsync, manual)
+                  : _buildCollapsedPreview(lyricsAsync, manual),
+            ),
+          ),
+        );
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Flexible so the card itself absorbs tight landscape constraints —
+            // its fixed desired height is clamped by the region instead of
+            // overflowing now that the buttons row adds height below it.
+            Flexible(child: container),
+            // The three lyrics action buttons are STRUCTURALLY OUTSIDE the card,
+            // directly below it, and appear/disappear with the state.
+            AnimatedSize(
+              duration: AppTokens.medium,
+              curve: AppTokens.easeOut,
+              alignment: Alignment.topCenter,
+              child: showActionsBelow
+                  ? const Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        AppTokens.s4,
+                        AppTokens.s2,
+                        AppTokens.s4,
+                        0,
+                      ),
+                      child: LyricsActionsPanel(compact: true, row: true),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -368,17 +378,34 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         // reachable and nothing overflows.
         if (constraints.hasBoundedHeight &&
             constraints.maxHeight < _expandedHeaderMinFit) {
-          return SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _LyricsPanelHeader(expanded: true, onToggle: _toggleExpanded),
-                SizedBox(
-                  height: _expandedScrollBodyHeight(constraints.maxHeight),
-                  child: lyrics,
+          // Landscape / very short viewports: pin the header OUTSIDE the
+          // scrollable so it is always visible and tappable (the auto-follow
+          // scroll of the lyrics list must never push the collapse control out
+          // of reach), and give the lyrics region the rest. The header shrinks
+          // to fit whatever tiny height remains so it never overflows.
+          final headerH = math.min(
+            _expandedHeaderHeight,
+            math.max(0.0, constraints.maxHeight),
+          );
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: headerH,
+                child: _LyricsPanelHeader(
+                  expanded: true,
+                  onToggle: _toggleExpanded,
                 ),
-              ],
-            ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: SizedBox(
+                    height: math.max(constraints.maxHeight, 120.0),
+                    child: lyrics,
+                  ),
+                ),
+              ),
+            ],
           );
         }
         return Column(
@@ -389,13 +416,6 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         );
       },
     );
-  }
-
-  /// Height given to the lyrics region inside the scrollable short-height form
-  /// of the expanded card, so there is always enough room to reach the lyrics
-  /// even when the visible card body is only a few pixels tall.
-  double _expandedScrollBodyHeight(double available) {
-    return math.max(_expandedHeaderHeight, available);
   }
 
   /// The buttons-first entry surface: three centred actions (two per row) with

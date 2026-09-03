@@ -145,9 +145,6 @@ class _RecordingPlayer implements PlayerController {
   Future<void> setVolume(double volume) async {}
 
   @override
-  Future<void> setVolumeBoost(double multiplier) async {}
-
-  @override
   Future<void> dispose() async {}
 }
 

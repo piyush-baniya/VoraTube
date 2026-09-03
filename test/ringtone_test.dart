@@ -141,9 +141,6 @@ class _FakePlayer implements PlayerController {
   ReplayGainMode get replayGainMode => ReplayGainMode.off;
   @override
   Future<void> setVolume(double volume) async {}
-
-  @override
-  Future<void> setVolumeBoost(double multiplier) async {}
 }
 
 void main() {

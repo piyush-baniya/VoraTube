@@ -75,28 +75,6 @@ final playbackIsPlayingProvider = Provider<bool>((ref) {
   return ref.watch(playbackStateProvider).isPlaying;
 });
 
-/// Output volume boost (1.0 = normal, up to 2.0 = maximum boost).
-///
-/// This is the user-facing source of truth for the booster; every change is
-/// pushed straight to the player's volume chain, so the slider and the audio
-/// output never diverge.
-class VolumeBoostController extends StateNotifier<double> {
-  VolumeBoostController(this._player) : super(1.0);
-
-  final PlayerController _player;
-
-  Future<void> setBoost(double multiplier) async {
-    final clamped = multiplier.clamp(1.0, 2.0);
-    state = clamped;
-    await _player.setVolumeBoost(clamped);
-  }
-}
-
-final volumeBoostProvider =
-    StateNotifierProvider<VolumeBoostController, double>((ref) {
-      return VolumeBoostController(ref.watch(playerProvider));
-    });
-
 /// The currently loaded track, or null when nothing is loaded.
 ///
 /// Rebuilds only when the track identity changes, so widgets that render song
