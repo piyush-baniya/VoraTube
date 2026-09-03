@@ -29,10 +29,33 @@ Future<void> main() async {
     onFlushed: () => notifyStatsChanged(),
   );
 
+  // Signals the library favourites providers to re-read after the media
+  // notification's heart button toggles a favourite, so the in-app heart stays
+  // in sync. Late-bound because it must bump a provider that lives on the
+  // container (created below).
+  var notifyFavoritesChanged = () {};
+  Future<bool> notificationIsFavorite(String identityKey) async {
+    final rowId = (await repository.rowIdsByIdentityKeys({identityKey}))[
+        identityKey];
+    if (rowId == null) return false;
+    return repository.isFavorite(rowId);
+  }
+
+  Future<bool> notificationToggleFavorite(String identityKey) async {
+    final rowId = (await repository.rowIdsByIdentityKeys({identityKey}))[
+        identityKey];
+    if (rowId == null) return false;
+    final nowFavorite = await repository.toggleFavorite(rowId) == 1;
+    notifyFavoritesChanged();
+    return nowFavorite;
+  }
+
   final player = await JustAudioController.create(
     persistence: DriftPlayerPersistence(repository),
     resolveSongs: repository.resolveSongsByIdentityKeys,
     onTrackStarted: statsBuffer.add,
+    isFavorite: notificationIsFavorite,
+    toggleFavorite: notificationToggleFavorite,
   );
 
   final container = ProviderContainer(
@@ -48,6 +71,9 @@ Future<void> main() async {
   // lists, which watch the library tick instead.
   notifyStatsChanged = () {
     container.read(statsRefreshTickProvider.notifier).state++;
+  };
+  notifyFavoritesChanged = () {
+    container.read(libraryRefreshTickProvider.notifier).state++;
   };
 
   // Initialize the Mobile Ads SDK without blocking startup. If Premium is

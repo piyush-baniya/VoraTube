@@ -39,6 +39,50 @@ const int positionStreamSteps = 800;
 const Duration positionStreamMinPeriod = Duration(milliseconds: 200);
 const Duration positionStreamMaxPeriod = Duration(milliseconds: 200);
 
+/// Android drawable resource names for the media-notification custom actions.
+const String kFavoriteIconOn = 'drawable/ic_favorite_on';
+const String kFavoriteIconOff = 'drawable/ic_favorite_off';
+const String kCloseIcon = 'drawable/ic_close';
+
+/// The custom-action name for the notification (un)favourite button.
+const String kNotificationFavoriteAction = 'favorite';
+/// The custom-action name for the notification X / close button.
+const String kNotificationCloseAction = 'close';
+
+/// Builds the ordered [MediaControl] list shown on the Android media
+/// notification: Favorite, Previous, Play/Pause, Next, Close (X).
+///
+/// Kept as a pure, top-level helper so button ordering, gating and icon
+/// selection are unit-testable without an audio_service platform. Favorite and
+/// Close dispatch to [AudioHandler.customAction]; the transport controls use
+/// the standard media-session actions. Transport and action buttons are only
+/// offered while a track is loaded ([hasTrack]); Prev/Next require something to
+/// step to ([canStep]).
+List<MediaControl> buildNotificationControls({
+  required bool hasTrack,
+  required bool playing,
+  required bool canStep,
+  required bool isFavorite,
+}) {
+  return [
+    if (hasTrack)
+      MediaControl.custom(
+        androidIcon: isFavorite ? kFavoriteIconOn : kFavoriteIconOff,
+        label: isFavorite ? 'Unfavorite' : 'Favorite',
+        name: kNotificationFavoriteAction,
+      ),
+    if (canStep) MediaControl.skipToPrevious,
+    if (hasTrack) (playing ? MediaControl.pause : MediaControl.play),
+    if (canStep) MediaControl.skipToNext,
+    if (hasTrack)
+      MediaControl.custom(
+        androidIcon: kCloseIcon,
+        label: 'Close',
+        name: kNotificationCloseAction,
+      ),
+  ];
+}
+
 /// Production [PlayerController] backed by just_audio + audio_service.
 ///
 /// Everything engine-specific lives here. Consumers see only
@@ -51,9 +95,13 @@ class JustAudioController extends BaseAudioHandler
     required Future<List<SongRef>> Function(List<String>) songResolver,
     AudioPlayer? player,
     PlaybackStatsSink? onTrackStarted,
+    Future<bool> Function(String identityKey)? isFavorite,
+    Future<bool> Function(String identityKey)? toggleFavorite,
   }) : _persistence = playbackStorage,
        _resolveSongs = songResolver,
        _onTrackStarted = onTrackStarted,
+       _isFavorite = isFavorite,
+       _toggleFavorite = toggleFavorite,
        _player = player ?? AudioPlayer() {
     unawaited(_init());
   }
@@ -63,16 +111,24 @@ class JustAudioController extends BaseAudioHandler
     required PlayerPersistence persistence,
     required Future<List<SongRef>> Function(List<String>) resolveSongs,
     PlaybackStatsSink? onTrackStarted,
+    Future<bool> Function(String identityKey)? isFavorite,
+    Future<bool> Function(String identityKey)? toggleFavorite,
   }) async {
     return AudioService.init(
       builder: () => JustAudioController(
         playbackStorage: persistence,
         songResolver: resolveSongs,
         onTrackStarted: onTrackStarted,
+        isFavorite: isFavorite,
+        toggleFavorite: toggleFavorite,
       ),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'voratube.playback',
         androidNotificationChannelName: 'VoraTube playback',
+        // The status-bar small icon must be a monochrome, alpha-only drawable.
+        // The previous default (the full-colour `mipmap/ic_launcher` PNG) is
+        // rendered as a solid/blank white square on Android 8.0+.
+        androidNotificationIcon: 'drawable/ic_stat_vora',
         // Not ongoing so the media notification is user-dismissible: an
         // `ongoing` notification is flagged NO_CLEAR and the user literally
         // cannot swipe it away (it reappears), which the user reported as
@@ -88,6 +144,22 @@ class JustAudioController extends BaseAudioHandler
   final PlaybackStatsSink? _onTrackStarted;
   final Future<List<SongRef>> Function(List<String>) _resolveSongs;
   final AudioPlayer _player;
+
+  /// Resolves whether a song (by identity key) is currently a favourite, for
+  /// the notification's (un)favourite button state. Reuses the existing
+  /// favourites repository flow; null disables the favourite button state read.
+  final Future<bool> Function(String identityKey)? _isFavorite;
+
+  /// Toggles a song's favourite state (by identity key) and returns the new
+  /// state. Reuses the existing `toggleFavorite` repository flow. Null disables
+  /// the toggle.
+  final Future<bool> Function(String identityKey)? _toggleFavorite;
+
+  /// Cached favourite state for the current track (keyed by identity key), so
+  /// the synchronous system-state broadcast can pick the right heart icon
+  /// without an async read on every emission.
+  String? _favIdentityKey;
+  bool _favState = false;
 
   final _snapshotController = StreamController<PlayerSnapshot>.broadcast();
   final _positionController = StreamController<Duration>.broadcast();
@@ -599,6 +671,42 @@ class JustAudioController extends BaseAudioHandler
   /// buttons).
   @override
   Future<void> skipToPrevious() => previous();
+
+  /// Notification **Favorite** and **X / close** custom actions.
+  ///
+  /// `favorite` toggles the current song's favourite state by reusing the
+  /// existing favourites flow ([_toggleFavorite]) and re-broadcasts so the
+  /// notification heart icon reflects the new state. `close` ends the listening
+  /// session — it clears the queue and stops playback (not a pause) while
+  /// preserving persistent per-song data (favourites/stats) via the normal
+  /// [clearSession] path.
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    switch (name) {
+      case kNotificationFavoriteAction:
+        final ref = _currentRef();
+        if (ref == null || _toggleFavorite == null) return null;
+        try {
+          final nowFavorite = await _toggleFavorite(ref.identityKey);
+          if (ref.identityKey == _currentRef()?.identityKey) {
+            _favIdentityKey = ref.identityKey;
+            _favState = nowFavorite;
+            _broadcastSystemState();
+          }
+        } catch (_) {
+          // Best-effort; a failed toggle must not disturb playback.
+        }
+        return null;
+      case kNotificationCloseAction:
+        await clearSession();
+        return null;
+      default:
+        return super.customAction(name, extras);
+    }
+  }
 
   @override
   Future<void> pause() {
@@ -1279,6 +1387,7 @@ class JustAudioController extends BaseAudioHandler
     _last = next;
     _snapshotController.add(next);
     _broadcastSystemState();
+    unawaited(_refreshFavoriteState());
     if (state == ProcessingState.completed) {
       _schedulePersist(immediate: true);
     } else {
@@ -1313,13 +1422,15 @@ class JustAudioController extends BaseAudioHandler
     // Prev/next on the system transport reflect the current-first queue: a skip
     // is possible whenever there is more than one song (or Repeat All loops).
     final canStep = _queueRefs.length > 1 || _repeatMode == RepeatMode.all;
+    final hasTrack = _queueRefs.isNotEmpty;
     playbackState.add(
       playbackState.value.copyWith(
-        controls: [
-          if (canStep) MediaControl.skipToPrevious,
-          if (_player.playing) MediaControl.pause else MediaControl.play,
-          if (canStep) MediaControl.skipToNext,
-        ],
+        controls: buildNotificationControls(
+          hasTrack: hasTrack,
+          playing: _player.playing,
+          canStep: canStep,
+          isFavorite: _favoriteStateFor(_currentRef()?.identityKey),
+        ),
         systemActions: const {MediaAction.seek},
         processingState: processing,
         playing: _player.playing,
@@ -1329,6 +1440,41 @@ class JustAudioController extends BaseAudioHandler
         queueIndex: _queueRefs.isEmpty ? -1 : 0,
       ),
     );
+  }
+
+  /// Synchronous read of the cached favourite state for [identityKey]. Returns
+  /// the cached value when the key matches the current track, else false (the
+  /// heart renders outlined until the async refresh resolves).
+  bool _favoriteStateFor(String? identityKey) =>
+      identityKey != null && identityKey == _favIdentityKey && _favState;
+
+  /// Keeps [_favState] in sync with the current track's actual favourite state
+  /// so the notification heart reflects reality. Only re-queries the database
+  /// when the track identity changes; deduped re-broadcasts the system state so
+  /// the icon updates after the async read lands.
+  Future<void> _refreshFavoriteState() async {
+    final currentKey = _currentRef()?.identityKey;
+    if (currentKey == null) {
+      if (_favIdentityKey != null) {
+        _favIdentityKey = null;
+        _favState = false;
+      }
+      return;
+    }
+    if (_favIdentityKey == currentKey) {
+      return;
+    }
+    try {
+      final isFav = await (_isFavorite?.call(currentKey) ?? Future.value(false));
+      if (currentKey != _currentRef()?.identityKey) {
+        return;
+      }
+      _favIdentityKey = currentKey;
+      _favState = isFav;
+      _broadcastSystemState();
+    } catch (_) {
+      // Favourite lookup is best-effort; use the outline icon on failure.
+    }
   }
 
   // -------------------------------------------------------------------------

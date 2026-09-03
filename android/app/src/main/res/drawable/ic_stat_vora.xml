@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Monochrome music note used as the status-bar notification small icon.
+         Notification small icons render only their alpha channel, so a solid
+         white-on-transparent path is required (a full-colour launcher PNG here
+         shows up as a blank/white square on Android 8.0+). -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3v10.55A4,4 0 1,0 14,17V7h4V3h-6z" />
+</vector>
