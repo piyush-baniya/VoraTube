@@ -204,7 +204,7 @@ class JustAudioController extends BaseAudioHandler
       session.interruptionEventStream.listen(_handleInterruption),
     );
     _sessionSubs.add(
-      session.becomingNoisyEventStream.listen((_) => _player.pause()),
+      session.becomingNoisyEventStream.listen(_handleBecomingNoisy),
     );
 
     _player.processingStateStream.listen(_handleProcessingState);
@@ -270,6 +270,28 @@ class JustAudioController extends BaseAudioHandler
           _pausedByInterruption = false;
         }
     }
+  }
+
+  /// Handles the audio output route becoming "noisy" — e.g. wired headphones
+  /// unplugged or a Bluetooth headset disconnected while audio is playing.
+  ///
+  /// Android fires `ACTION_AUDIO_BECOMING_NOISY` on this route change to warn
+  /// apps that audio is about to redirect to the (usually unwanted) speaker.
+  /// We pause immediately so music does not burst out of the phone speaker.
+  ///
+  /// This deliberately routes through the controller's [pause] path (the same
+  /// one used for the in-app/system pause) so the play intent is cleared, the
+  /// heard-time accumulator is flushed and the exact track + position are
+  /// persisted right away — surviving a process kill rather than relying on
+  /// the debounced persist. Calling [pause] on an already-paused player is a
+  /// safe no-op, so disconnecting headphones while paused stays paused, the
+  /// current song and position are preserved, and reconnecting never auto-
+  /// resumes (there is no resume-on-quiet logic).
+  void _handleBecomingNoisy(void _) {
+    if (_disposed) {
+      return;
+    }
+    unawaited(pause());
   }
 
   @override
