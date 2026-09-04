@@ -6,6 +6,7 @@ import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
+import '../../../../features/ads/interstitial_ads_provider.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
@@ -1061,8 +1062,14 @@ class _ControlsConsumer extends ConsumerWidget {
         ref.read(playerProvider).setRepeat(next);
       },
       onTogglePlay: () => ref.read(playerProvider).togglePlay(),
-      onPrevious: () => ref.read(playerProvider).previous(),
-      onNext: () => ref.read(playerProvider).next(),
+      onPrevious: () {
+        ref.read(interstitialAdControllerProvider).onSkipClicked();
+        ref.read(playerProvider).previous();
+      },
+      onNext: () {
+        ref.read(interstitialAdControllerProvider).onSkipClicked();
+        ref.read(playerProvider).next();
+      },
       onRewind10: () =>
           ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
       onForward10: () =>

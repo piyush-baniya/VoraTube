@@ -16,7 +16,10 @@ class InterstitialAdController {
     required this.isPremium,
     InterstitialAdService? service,
   }) : _service = service ?? InterstitialAdService() {
-    _service.load();
+    // Premium users must never generate ad traffic: skip the warm-up load
+    // entirely so no request is sent to AdMob at startup (a disposed/hidden
+    // view alone would still have burned the request — and the bandwidth).
+    if (!isPremium()) _service.load();
   }
 
   final bool Function() isPremium;
@@ -26,6 +29,21 @@ class InterstitialAdController {
   late int _threshold = _randomThreshold();
 
   int _randomThreshold() => 10 + _random.nextInt(6); // 10..15 inclusive
+
+  /// Reacts to Premium activation/deactivation.
+  ///
+  /// * Activating Premium disposes any cached interstitial so its resources are
+  ///   released immediately (its request was already spent — it can't be
+  ///   unsent — but it must never be shown).
+  /// * Deactivating Premium re-primes the cache so the next threshold crossing
+  ///   has an ad ready.
+  void onPremiumChanged(bool premium) {
+    if (premium) {
+      _service.dispose();
+    } else if (!_service.hasAdReady) {
+      _service.load();
+    }
+  }
 
   /// Called whenever a distinct track has started playing.
   void onTrackStarted() {
@@ -37,6 +55,35 @@ class InterstitialAdController {
     _count = 0;
     _threshold = _randomThreshold();
     unawaited(_present());
+  }
+
+  /// Manual skip (next/previous) click counter: an interstitial is presented
+  /// every [_skipAdInterval] clicks.
+  int _skipCount = 0;
+  static const int _skipAdInterval = 3;
+
+  /// Called when the user taps next or previous in the player. Every third
+  /// click presents an interstitial (Premium off).
+  void onSkipClicked() {
+    if (isPremium()) return;
+    if (++_skipCount < _skipAdInterval) return;
+    _skipCount = 0;
+    unawaited(showOnTrigger());
+  }
+
+  /// Presents an interstitial for a user-action trigger: opening a playlist or
+  /// a smart mix, opening the ringtone cutter, or successfully setting a
+  /// ringtone. If no ad is cached, warms one up for the next trigger instead of
+  /// blocking the user's action on a load.
+  Future<void> showOnTrigger() async {
+    if (isPremium()) return;
+    if (!_service.hasAdReady) {
+      _service.load();
+      return;
+    }
+    await _service.show();
+    // Prepare the next interstitial for the subsequent trigger.
+    _service.load();
   }
 
   Future<void> _present() async {
@@ -76,6 +123,11 @@ final interstitialAdControllerProvider = Provider<InterstitialAdController>((
     if (next != null && next != previous) {
       controller.onTrackStarted();
     }
+  });
+  // Keep the interstitial cache in sync with Premium: dispose the cached ad on
+  // activation, re-prime on deactivation.
+  ref.listen<bool>(isPremiumProvider, (previous, next) {
+    if (next != previous) controller.onPremiumChanged(next);
   });
   ref.onDispose(controller.dispose);
   return controller;

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../features/ads/interstitial_ads_provider.dart';
 import '../../../ads/banner_ad_widget.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
@@ -60,6 +61,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   @override
   void initState() {
     super.initState();
+    // Interstitial ad trigger: the user opened a playlist.
+    Future.microtask(
+      () => ref.read(interstitialAdControllerProvider).showOnTrigger(),
+    );
   }
 
   void _onScroll(ScrollMetrics metrics) {

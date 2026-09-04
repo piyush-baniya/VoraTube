@@ -10,6 +10,7 @@ import '../../../../../features/library/presentation/widgets/song_actions.dart';
 import '../../../../../features/player/presentation/providers/player_providers.dart';
 
 import 'package:vora_tube/features/ads/banner_ad_widget.dart';
+import 'package:vora_tube/features/ads/interstitial_ads_provider.dart';
 import 'package:vora_tube/features/smart_music/presentation/widgets/recommendation_disclaimer.dart';
 
 import '../../data/smart_mix_service.dart';
@@ -32,6 +33,15 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
   List<SongTileData> get _viewSongs => _shuffled ?? widget.mix.songs;
 
   bool get _shuffling => _shuffled != null;
+
+  @override
+  void initState() {
+    super.initState();
+    // Interstitial ad trigger: the user opened a smart mix.
+    Future.microtask(
+      () => ref.read(interstitialAdControllerProvider).showOnTrigger(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

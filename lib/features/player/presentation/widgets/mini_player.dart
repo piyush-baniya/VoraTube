@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../features/ads/interstitial_ads_provider.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../presentation/screens/full_player_screen.dart';
@@ -164,7 +165,12 @@ class MiniPlayer extends ConsumerWidget {
                     child: _TransportButton(
                       icon: Icons.skip_previous_rounded,
                       enabled: hasPrevious,
-                      onTap: () => ref.read(playerProvider).previous(),
+                      onTap: () {
+                        ref
+                            .read(interstitialAdControllerProvider)
+                            .onSkipClicked();
+                        ref.read(playerProvider).previous();
+                      },
                       colorScheme: colorScheme,
                     ),
                   ),
@@ -217,7 +223,12 @@ class MiniPlayer extends ConsumerWidget {
                     child: _TransportButton(
                       icon: Icons.skip_next_rounded,
                       enabled: hasNext,
-                      onTap: () => ref.read(playerProvider).next(),
+                      onTap: () {
+                        ref
+                            .read(interstitialAdControllerProvider)
+                            .onSkipClicked();
+                        ref.read(playerProvider).next();
+                      },
                       colorScheme: colorScheme,
                     ),
                   ),

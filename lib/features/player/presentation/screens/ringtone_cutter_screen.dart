@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/player/player_controller.dart';
+import '../../../../features/ads/interstitial_ads_provider.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/empty_state.dart';
 import '../../../../features/ringtones/data/audio_util_providers.dart';
@@ -38,6 +39,10 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
   @override
   void initState() {
     super.initState();
+    // Interstitial ad trigger: the user opened the ringtone cutter.
+    Future.microtask(
+      () => ref.read(interstitialAdControllerProvider).showOnTrigger(),
+    );
     final service = ref.read(audioUtilServiceProvider);
     _controller = RingtoneCutterController(
       service: service,
@@ -82,6 +87,10 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
         _snack(
           'Ringtone set successfully.',
           variant: VoraSnackbarVariant.success,
+        );
+        // Interstitial ad trigger: the ringtone was set successfully.
+        unawaited(
+          ref.read(interstitialAdControllerProvider).showOnTrigger(),
         );
       case SetRingtoneOutcome.failed:
         _snack(
