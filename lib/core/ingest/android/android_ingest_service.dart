@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../ingest_service.dart';
@@ -25,17 +26,40 @@ class AndroidIngestService implements IngestService {
     required int afterId,
     required int limit,
   }) async {
-    final Object? raw = await _channel.invokeMethod<Object?>(
-      'getAudioBatch',
-      <String, Object?>{'afterId': afterId, 'limit': limit.clamp(1, 1000)},
-    );
-    if (raw is! List<Object?>) {
-      return const [];
+    final List<IngestTrack> result;
+    try {
+      final Object? raw = await _channel.invokeMethod<Object?>(
+        'getAudioBatch',
+        <String, Object?>{'afterId': afterId, 'limit': limit.clamp(1, 1000)},
+      );
+      if (raw is! List<Object?>) {
+        _scanLog('QUERY_SUCCESS count=0 (non-list payload)');
+        return const [];
+      }
+      result = raw
+          .whereType<Map<Object?, Object?>>()
+          .map(_parseTrack)
+          .toList(growable: false);
+    } catch (e, st) {
+      // A genuine scan failure (e.g. SecurityException on the native query, a
+      // revoked permission, or an unsupported MediaStore column) must surface
+      // as an error, NOT be swallowed and shown as an empty library. The UI
+      // distinguishes an empty success (empty state) from this (retry/error
+      // state) exactly because we keep throwing.
+      _scanLog('QUERY_FAILED exception=$e');
+      Error.throwWithStackTrace(e, st);
     }
-    return raw
-        .whereType<Map<Object?, Object?>>()
-        .map(_parseTrack)
-        .toList(growable: false);
+    // An empty cursor/result is SUCCESS with 0 songs — never an error here.
+    // The scanner breaks out of its pagination loop and finalises the empty
+    // library, which the UI renders as the empty state.
+    _scanLog('QUERY_SUCCESS count=${result.length}');
+    return result;
+  }
+
+  void _scanLog(String message) {
+    if (kDebugMode) {
+      debugPrint('VoraTube scan: $message');
+    }
   }
 
   @override
@@ -75,7 +99,12 @@ class AndroidIngestService implements IngestService {
 
   @override
   Future<Directory?> importedFilesRoot() async {
-    throw UnsupportedError(_unsupported);
+    // Android audio lives in MediaStore (no app-controlled import folder), so
+    // there is never an imported-files root. Returning null (instead of
+    // throwing) lets read-side callers like missing-file reconciliation and
+    // storage measurement treat "no such root" as simply nothing to reconcile —
+    // reporting 0 files cleaned rather than a spurious failure.
+    return null;
   }
 
   IngestTrack _parseTrack(Map<Object?, Object?> row) {

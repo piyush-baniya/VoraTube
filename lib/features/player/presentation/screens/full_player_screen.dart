@@ -340,38 +340,57 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             ),
             SizedBox(height: compact ? AppTokens.s1 : AppTokens.s4),
             if (!_lyricsExpanded)
-              // The revealed artwork (plus, on landscape, the live lyric line)
-              // lives in a scrollable so the collapsed reveal can never
-              // overflow the tight region — it scrolls if the space is too
-              // small for the full artwork.
+              // The revealed artwork when the lyrics card is collapsed.
+              // In portrait (the normal case here) it is deliberately NOT
+              // scrollable: it is sized to fit the available region so it can
+              // never be scrolled or clipped, and the reserved bottom gap
+              // keeps the metadata below clear of the artwork's paint
+              // overflow (drop shadow + playing glow extend ~20px beyond the
+              // box). On short <200px viewports only (unreachable in normal
+              // landscape, which returns earlier via fillRegion) the small
+              // artwork plus a live lyric line still scroll for safety.
               Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // On tight (landscape) viewports a single live synced
-                      // lyric line sits above the revealed artwork, so the
-                      // current lyric stays visible while the card is
-                      // collapsed. Falls back to nothing when there are no
-                      // synced lyrics.
-                      if (compact) const _CurrentLyricLine(),
-                      if (compact) const SizedBox(height: AppTokens.s2),
-                      // Bottom padding reserves room for the artwork's paint
-                      // overflow (drop shadow + playing glow extend ~20px
-                      // beyond the box) so the reveal is never clipped.
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 24),
+                child: LayoutBuilder(
+                  builder: (context, artConstraints) {
+                    if (compact) {
+                      return SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (compact) const _CurrentLyricLine(),
+                            if (compact) const SizedBox(height: AppTokens.s2),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 24),
+                              child: RotatingArtwork(
+                                path: current.artPath,
+                                heroTag: null,
+                                size: _collapsedArtworkSize(
+                                  constraints,
+                                  compact,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    return Padding(
+                      // Reserve room beneath the artwork for the paint
+                      // overflow plus a clear gap so the metadata never
+                      // overlaps or looks like it cuts the artwork.
+                      padding: const EdgeInsets.only(bottom: AppTokens.s4),
+                      child: Center(
                         child: RotatingArtwork(
                           path: current.artPath,
                           heroTag: null,
-                          size: _collapsedArtworkSize(constraints, compact),
+                          size: _fitArtworkSize(artConstraints),
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
-            if (!_lyricsExpanded) const SizedBox(height: AppTokens.s3),
+            if (!_lyricsExpanded) const SizedBox(height: AppTokens.s4),
             _SongMetadata(
               title: current.title,
               artist: compact ? null : current.artist,
@@ -384,13 +403,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     );
   }
 
-  /// Size of the artwork revealed when the lyrics card is collapsed.
-  ///
-  /// Grows to fill the space the lyrics list vacated (capped at the hero-size
-  /// ceiling) so the album art becomes the visual focus again, instead of a
-  /// small thumb. On very short (landscape) viewports it stays small so the
-  /// collapsed card, current lyric line, artwork and metadata never overflow
-  /// the region.
+  /// Size of the artwork revealed when the lyrics card is collapsed on a short
+  /// (<200px) viewport. Stays small so the collapsed card, current lyric line,
+  /// artwork and metadata never overflow the region.
   double _collapsedArtworkSize(BoxConstraints constraints, bool compact) {
     if (compact) {
       return 120.0;
@@ -399,6 +414,24 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final byWidth = constraints.maxWidth * 0.62;
     final target = byWidth < byHeight ? byWidth : byHeight;
     return target.clamp(240.0, AppTokens.artworkHeroMax);
+  }
+
+  /// Size of the artwork revealed when the lyrics card is collapsed in
+  /// portrait, sized to FIT the available [c] region.
+  ///
+  /// Grows to fill the space the lyrics list vacated (capped at the hero-size
+  /// ceiling) so the album art becomes the visual focus again, but never
+  /// exceeds the height actually available in the flex region. Reserving a
+  /// bottom margin for the artwork's ~20px paint overflow plus the gap means
+  /// the reveal is never scrollable and never clipped by the metadata below.
+  double _fitArtworkSize(BoxConstraints c) {
+    final byWidth = c.maxWidth * 0.62;
+    // Reserve bottom room for the drawing overflow and the clear gap so the
+    // artwork is never cut by (or touches) the metadata beneath it.
+    final availableHeight = c.maxHeight - AppTokens.s6;
+    final byHeight = availableHeight < 0 ? 0.0 : availableHeight;
+    final target = byWidth < byHeight ? byWidth : byHeight;
+    return target.clamp(120.0, AppTokens.artworkHeroMax);
   }
 }
 

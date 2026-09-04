@@ -124,6 +124,12 @@ class _PermissionGateState extends ConsumerState<PermissionGate>
         MediaPermissionStatus.denied => _GateStatus.denied,
       };
     });
+    // Debug-only instrumentation so a developer can confirm the gate saw the
+    // OS permission before the automatic scan fires (PERMISSION_GRANTED) or
+    // that a denied/permanent-denied state correctly stopped the scan.
+    if (kDebugMode) {
+      debugPrint('VoraTube permission gate: ${status.name.toUpperCase()}');
+    }
     // Trigger an initial scan the moment audio permission is granted. This
     // fires both on the very first permission check (when the user already
     // had the permission from a prior install) and after the user taps

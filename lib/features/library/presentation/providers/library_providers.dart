@@ -96,6 +96,7 @@ class ScanController extends Notifier<ScanUiState> {
   Future<void> refreshPermission() async {
     try {
       final status = await ref.read(permissionServiceProvider).audioStatus();
+      _logPermission(status);
       state = switch (status) {
         MediaPermissionStatus.granted => const ScanReady(),
         MediaPermissionStatus.permanentlyDenied => const ScanPermissionNeeded(
@@ -114,6 +115,7 @@ class ScanController extends Notifier<ScanUiState> {
     try {
       final service = ref.read(permissionServiceProvider);
       final status = await service.requestAudio();
+      _logPermission(status);
       state = switch (status) {
         MediaPermissionStatus.granted => const ScanReady(),
         MediaPermissionStatus.permanentlyDenied => const ScanPermissionNeeded(
@@ -142,6 +144,7 @@ class ScanController extends Notifier<ScanUiState> {
       processedCount: 0,
       addedCount: 0,
     );
+    _scanLog('SCAN_STARTED');
     try {
       final summary = await ref
           .read(libraryScannerProvider)
@@ -174,6 +177,7 @@ class ScanController extends Notifier<ScanUiState> {
         '-${summary.removedSongs}), art: ${summary.artworksResolved}/'
         '${summary.artworkAttempts}',
       );
+      _scanLog('SCAN_COMPLETE total=${summary.totalSongs}');
       state = ScanComplete(summary: summary);
       // Without this the scan writes rows that nothing ever reads back. Every
       // library, collection and playlist query watches the refresh tick, and
@@ -188,6 +192,7 @@ class ScanController extends Notifier<ScanUiState> {
       ref.read(genreEnrichmentControllerProvider.notifier).enrichPending();
     } catch (error) {
       debugPrint('VoraTube scan failed: $error');
+      _scanLog('SCAN_FAILED exception=$error');
       state = const ScanFailure(
         message:
             'The scan could not be completed. Your existing library is safe.',
@@ -202,6 +207,25 @@ class ScanController extends Notifier<ScanUiState> {
   void _publishLibraryChange() {
     ArtworkFileCache.invalidate();
     notifyLibraryChanged(ref);
+  }
+
+  /// Raw permission state at the moment it is read. Lets a developer watching
+  /// adb logcat confirm the gate saw the OS permission before a scan ran, and
+  /// is a debug-only instrumentation (no-op in release builds).
+  void _logPermission(MediaPermissionStatus status) {
+    _scanLog('PERMISSION_${status.name.toUpperCase()}');
+  }
+
+  /// Scan diagnostic line, emitted only in debug builds.
+  ///
+  /// These lines are the field instrumentation that distinguishes a successful
+  /// but empty scan (SCAN_STARTED → QUERY_SUCCESS count=0 → SCAN_COMPLETE
+  /// total=0) from a genuine scan failure (QUERY_FAILED / SCAN_FAILED). They
+  /// are silenced in release so they add no noise or cost to shipping builds.
+  void _scanLog(String message) {
+    if (kDebugMode) {
+      debugPrint('VoraTube scan: $message');
+    }
   }
 }
 
