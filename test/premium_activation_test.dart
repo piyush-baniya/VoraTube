@@ -95,10 +95,27 @@ void main() {
   });
 
   group('VoraTubeAds configuration', () {
-    test('ships with test ads enabled (safe default)', () {
-      expect(VoraTubeAds.useTestAds, isTrue);
-      expect(VoraTubeAds.appId, VoraTubeAds.testAppId);
-      expect(VoraTubeAds.bannerAndroidId, VoraTubeAds.testBannerAndroidId);
+    test('test and production ad IDs stay internally consistent', () {
+      // The config must never mix a test app id with a production ad unit (or
+      // vice versa) — both layers must select the same cohort. If production
+      // ads are enabled, every resolved ID must be a production ID; when test
+      // ads are enabled, they must all be test IDs.
+      if (VoraTubeAds.useTestAds) {
+        expect(VoraTubeAds.appId, VoraTubeAds.testAppId);
+        expect(VoraTubeAds.bannerAndroidId, VoraTubeAds.testBannerAndroidId);
+        expect(
+          VoraTubeAds.interstitialAndroidId,
+          VoraTubeAds.testInterstitialAndroidId,
+        );
+      } else {
+        expect(VoraTubeAds.appId, VoraTubeAds.productionAppId);
+        expect(VoraTubeAds.bannerAndroidId,
+            VoraTubeAds.productionBannerAndroidId);
+        expect(
+          VoraTubeAds.interstitialAndroidId,
+          VoraTubeAds.productionInterstitialAndroidId,
+        );
+      }
     });
   });
 }

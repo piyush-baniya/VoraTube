@@ -129,13 +129,33 @@ class JustAudioController extends BaseAudioHandler
         // The previous default (the full-colour `mipmap/ic_launcher` PNG) is
         // rendered as a solid/blank white square on Android 8.0+.
         androidNotificationIcon: 'drawable/ic_stat_vora',
-        // Not ongoing so the media notification is user-dismissible: an
-        // `ongoing` notification is flagged NO_CLEAR and the user literally
-        // cannot swipe it away (it reappears), which the user reported as
-        // "can't remove the notification". Background playback still persists
-        // regardless, because the service is a foreground service.
+        // `androidNotificationOngoing` only takes effect in the demoted
+        // (non-foreground) state, so it stays false here — while the service is
+        // in the foreground Android forces the media notification ongoing
+        // anyway (it cannot be swiped away, which is what we want during
+        // playback). audio_service asserts that
+        // `androidNotificationOngoing: true` requires
+        // `androidStopForegroundOnPause: true`, so the two cannot even be
+        // combined differently.
         androidNotificationOngoing: false,
-        androidStopForegroundOnPause: true,
+        // == Root cause of the 2–3-song background failure ==
+        // audio_service's native side demotes the service out of the foreground
+        // (stopForeground(DETACH) + wake-lock release) every time the `playing`
+        // flag flips to false. During continuous background playback the flag
+        // can dip to false at a song boundary, and with the historical default
+        // (stopForegroundOnPause: true) that made the process a plain
+        // background service that the OS is free to kill at any moment — which
+        // is exactly what happened after a couple of tracks.
+        //
+        // Keeping the service foregrounded for the whole session is the
+        // standard approach for every major Android music player: the service
+        // is promoted to the foreground when playback starts and stays there
+        // (notification pinned, wake lock held) until the user deliberately
+        // ends the session via the notification X / Close action (which routes
+        // to [clearSession]) or the queue finishes. Pause no longer demotes the
+        // service, so Android can no longer reap the background process while a
+        // paused-but-active session is waiting to resume.
+        androidStopForegroundOnPause: false,
       ),
     );
   }

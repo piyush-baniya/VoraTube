@@ -17,25 +17,21 @@ abstract final class VoraTubeAds {
   /// When true (the development default), placements use Google's official
   /// test ad units. Flip this (and fill in the production IDs) only when the
   /// real VoraTube AdMob account is ready.
-  static const bool useTestAds = true;
+  static const bool useTestAds = false;
 
-  // ── Production ad-unit IDs (currently the test placeholders) ────────────
-  // Replace only these two values before production release:
-  //   1. Set `useTestAds` to false.
-  //   2. Put VoraTube's real ad-unit IDs in the appId / banner fields below.
-  // No ad-placement code needs to change.
+  // ── Production ad-unit IDs ─────────────────────────────────────────────
 
   /// The AdMob app identifier (from the AdMob console).
   static const String productionAppId =
-      'ca-app-pub-3940256099942544~3347511713';
+      'ca-app-pub-5203454754912425~2417374767';
 
   /// The production banner ad-unit ID.
   static const String productionBannerAndroidId =
-      'ca-app-pub-3940256099942544/9214589741';
+      'ca-app-pub-5203454754912425/3420921518';
 
-  /// The production interstitial ad-unit ID (currently a test placeholder).
+  /// The production interstitial ad-unit ID.
   static const String productionInterstitialAndroidId =
-      'ca-app-pub-3940256099942544/1033173712';
+      'ca-app-pub-5203454754912425/9679208107';
 
   // ── Google official test ad units ────────────────────────────────────────
   static const String testAppId = 'ca-app-pub-3940256099942544~3347511713';
