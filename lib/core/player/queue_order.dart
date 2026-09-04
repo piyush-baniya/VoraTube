@@ -7,17 +7,21 @@ import 'player_controller.dart';
 /// These pure functions encode the rotation/repeat rules so they can be unit
 /// tested in isolation, independently of the just_audio engine.
 
-/// Rotates [items] so the song at [index] moves to the FRONT, preserving the
-/// relative order of every other song. Returns null when [index] is out of
-/// range.
+/// Rotates [items] so the song at [index] becomes the CURRENT song, keeping
+/// the queue's natural play order intact: the songs that follow [index] wrap
+/// around to the front of the remainder.
+///
+/// For `A B C D E` with index 2 this yields `C D E A B` — the song after C
+/// stays D, so Next from C plays D. (A naive "move C to front, keep the rest
+/// in original order" would produce `C A B D E`, making Next from C jump to
+/// A.) Returns null when [index] is out of range.
 List<SongRef>? currentFirst(List<SongRef> items, int index) {
   if (index < 0 || index >= items.length) {
     return null;
   }
+  final length = items.length;
   return [
-    items[index],
-    for (var i = 0; i < items.length; i++)
-      if (i != index) items[i],
+    for (var i = 0; i < length; i++) items[(index + i) % length],
   ];
 }
 

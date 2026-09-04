@@ -16,10 +16,25 @@ List<String> _keys(List<SongRef> refs) => [for (final r in refs) r.identityKey];
 
 void main() {
   group('currentFirst', () {
-    test('moves the selected song to #1 preserving relative order', () {
+    test('rotates the selected song to #1 keeping the list play order', () {
       final queue = [_song(1), _song(2), _song(3), _song(4)];
-      expect(_keys(currentFirst(queue, 2)!), ['ms:3', 'ms:1', 'ms:2', 'ms:4']);
+      // True circular rotation: the song after the tapped one stays next.
+      expect(_keys(currentFirst(queue, 2)!), ['ms:3', 'ms:4', 'ms:1', 'ms:2']);
       expect(_keys(currentFirst(queue, 0)!), ['ms:1', 'ms:2', 'ms:3', 'ms:4']);
+    });
+
+    test('Next from a mid-queue start follows list order, not library head', () {
+      // A B C D E, start C: queue must be C D E A B, so Next from C → D.
+      final queue = [
+        _song(1),
+        _song(2),
+        _song(3),
+        _song(4),
+        _song(5),
+      ];
+      final fromC = currentFirst(queue, 2)!;
+      expect(_keys(fromC), ['ms:3', 'ms:4', 'ms:5', 'ms:1', 'ms:2']);
+      expect(_keys(rotateForward(fromC)).first, 'ms:4');
     });
 
     test('returns null for out-of-range indices', () {
