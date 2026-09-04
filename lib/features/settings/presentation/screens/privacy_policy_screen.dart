@@ -66,11 +66,12 @@ class PrivacyPolicyScreen extends StatelessWidget {
           _PolicySection(
             title: 'Advertising',
             body:
-                'The App integrates the Google Mobile Ads SDK to show banner '
-                'and interstitial advertisements. When ads are shown, Google and '
-                'its partners may process information under Google\u2019s own '
-                'privacy policy. Activating Premium disables all ad placements '
-                'and no ad requests are made.',
+                'VoraTube is a fully released app and integrates the Google '
+                'Mobile Ads SDK to show live, production banner and interstitial '
+                'advertisements served through Google AdMob. When ads are shown, '
+                'Google and its partners may process information under Google'
+                '\u2019s own privacy policy. Activating Premium disables all ad '
+                'placements and no ad requests are made.',
           ),
           _PolicySection(
             title: 'Accounts and analytics',
@@ -110,10 +111,9 @@ class PrivacyPolicyScreen extends StatelessWidget {
           _PolicySection(
             title: 'Changes to this privacy policy',
             body:
-                'This privacy policy may be updated as VoraTube evolves (for '
-                'example when production advertising is introduced). The current '
-                'version is always available within the App and at the policy '
-                'URL linked from the App.',
+                'This privacy policy may be updated as VoraTube evolves. The '
+                'current version is always available within the App and at the '
+                'policy URL linked from the App.',
           ),
           _PolicySection(
             title: 'Contact',
@@ -152,7 +152,8 @@ class _PolicyIntro extends StatelessWidget {
         'your device. VoraTube has no user accounts, no cloud music storage, '
         'and no server-side user profiles. It does send small, non-identifying '
         'song details to third-party lookup services so it can show lyrics and '
-        'genres, and it displays ads unless you activate Premium.',
+        'genres, and as a fully released app it displays live advertisements '
+        'served by Google unless you activate Premium.',
         style: theme.textTheme.bodyMedium?.copyWith(
           color: colors.onSurface,
           height: 1.5,

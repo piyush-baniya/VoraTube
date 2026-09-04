@@ -201,9 +201,9 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
   }
 
   void _play(List<SongTileData> tiles) {
-    // Play restores the original persisted order.
-    setState(() => _shuffled = null);
-    _playFrom(tiles, 0);
+    // Play follows the currently displayed order. If the shuffled view is
+    // active it is kept (and played) rather than reset to the persisted order.
+    _playFrom(_viewTiles(tiles)!, 0);
   }
 
   void _playFrom(List<SongTileData> tiles, int startIndex) {

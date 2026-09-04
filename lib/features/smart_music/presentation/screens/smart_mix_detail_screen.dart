@@ -306,7 +306,8 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
       setState(() => _shuffled = shuffled);
       player.playQueue(shuffled.map((t) => songTileToRef(t)).toList());
     } else {
-      setState(() => _shuffled = null);
+      // Play follows the currently displayed order; an active shuffled view is
+      // kept rather than reset to the mix's original order.
       player.playQueue(_viewSongs.map((t) => songTileToRef(t)).toList());
     }
   }

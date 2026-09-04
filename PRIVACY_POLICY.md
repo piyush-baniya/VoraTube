@@ -1,6 +1,6 @@
 # VoraTube Privacy Policy
 
-**Effective date:** September 3, 2026
+**Effective date:** September 5, 2026
 
 VoraTube is an Android music player application ("the App") developed by Piyush Das ("we", "us", "our"). This Privacy Policy explains what information the App accesses, what it stores on your device, what it transmits over the internet, and which third-party services are involved.
 
@@ -54,11 +54,11 @@ VoraTube needs an internet connection for a small number of features. It never t
 - **"Find on YouTube."** When you choose this action for a song, VoraTube opens a YouTube search in your browser or the YouTube app, using that song's title and artist as the search terms. No search happens automatically.
 - **Donation page ("Buy Me a Momo").** When you open the donation screen, VoraTube loads the Buy Me a Momo page (`https://buymemomo.com/piyushbaniya`) inside an in-app browser view. VoraTube does not control that website and is not responsible for data it collects; when you interact with it, that service handles your information under its own privacy policy.
 
-## 5. Advertising (current status)
+## 5. Advertising
 
-VoraTube integrates the **Google Mobile Ads SDK** to show banner and interstitial advertisements.
+VoraTube is a fully released application and integrates the **Google Mobile Ads SDK** to show **live, production banner and interstitial advertisements** served through Google AdMob.
 
-- **Current status:** the App is still using Google's **official test advertisements** in its development configuration. Production advertising, including any consent-management flow, is not yet configured and will be introduced in a future update, at which point this policy will be updated accordingly.
+- **Live advertising:** the App now serves real, production advertisements from Google's ad network (not test advertisements). When ads are shown, they are delivered and paid for by Google's advertising system.
 - When ads are shown, Google and its partners may collect and process information (such as device identifiers and advertising identifiers) under **Google's own Privacy Policy**: https://policies.google.com/technologies/ads
 - If you activate **Premium**, all ad placements in VoraTube are disabled and no ad requests are made. Premium is a local entitlement activated within the App; it involves no payment processing by or account system in VoraTube itself.
 
@@ -80,7 +80,7 @@ VoraTube itself does not sell, rent, or share your personal data, because it doe
 - song title/artist sent to Apple's iTunes Search API for genre lookup;
 - a YouTube search you explicitly trigger;
 - the donation webpage you explicitly open;
-- data processed by Google's advertising SDK when ads are displayed (test ads in the current configuration).
+- data processed by Google's advertising SDK when live ads are displayed.
 
 Each of those third parties processes information under its own privacy policy. VoraTube does not control their practices.
 
@@ -115,13 +115,13 @@ VoraTube is a general-audience local music player. It does not knowingly collect
 | Apple iTunes Search (itunes.apple.com) | Genre lookup | Automatic, best-effort | Song title, artist |
 | YouTube | "Find on YouTube" action | Only when you tap it | Song title and artist as a search query |
 | Buy Me a Momo (buymemomo.com) | Donations | Only when you open it | Whatever the website itself processes |
-| Google Mobile Ads | Advertising | When ads are shown (Premium off) | As described by Google's ad policies |
+| Google Mobile Ads | Live advertising (production AdMob) | When ads are shown (Premium off) | As described by Google's ad policies |
 
 These services are governed by their own privacy policies; VoraTube is not responsible for their content or practices.
 
 ## 13. Changes to this privacy policy
 
-We may update this privacy policy as VoraTube evolves (for example when production advertising is introduced). The "Effective date" at the top will be updated, and the current version will always be available at the policy URL linked from the App and from the Google Play listing.
+We may update this privacy policy as VoraTube evolves. The "Effective date" at the top will be updated, and the current version will always be available at the policy URL linked from the App and from the Google Play listing.
 
 ## 14. Contact information
 

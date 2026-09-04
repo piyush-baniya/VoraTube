@@ -61,8 +61,9 @@ class TermsScreen extends StatelessWidget {
           _TermsSection(
             title: 'Advertising',
             body:
-                'The App may display advertisements through a third-party '
-                'advertising SDK unless you activate Premium. Ads are provided '
+                'VoraTube is a fully released app and displays live, production '
+                'advertisements served through the Google Mobile Ads SDK '
+                '(Google AdMob), unless you activate Premium. Ads are provided '
                 'by third parties under their own policies. Activating Premium '
                 'is a local entitlement within the App and disables ad '
                 'placements.',
@@ -86,7 +87,8 @@ class TermsScreen extends StatelessWidget {
           _TermsSection(
             title: 'Availability',
             body:
-                'VoraTube is provided "as is" and may be updated, changed, or '
+                'VoraTube is a fully released app, publicly available on Google '
+                'Play. It is provided "as is" and may be updated, changed, or '
                 'discontinued at any time. The developer makes no guarantee '
                 'that the App will always be available, free of errors, or '
                 'compatible with every device.',
