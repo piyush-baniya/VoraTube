@@ -62,6 +62,8 @@ class SpyPlayerController implements PlayerController {
   @override
   Future<void> removeAt(int index) async {}
   @override
+  Future<void> removeByIdentityKeys(Set<String> identityKeys) async {}
+  @override
   Future<void> move(int fromIndex, int toIndex) async {}
   @override
   Future<void> moveQueueItem(int fromIndex, int toIndex) async {}

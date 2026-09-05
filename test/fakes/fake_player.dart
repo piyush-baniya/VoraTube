@@ -64,6 +64,16 @@ class FakePlayerController implements PlayerController {
   @override
   Future<void> removeAt(int index) async {}
 
+  /// Records what the delete flow asked to prune, and drops matching entries
+  /// from the fake queue so tests can assert the queue was actually cleaned.
+  final Set<String> removedIdentityKeys = <String>{};
+
+  @override
+  Future<void> removeByIdentityKeys(Set<String> identityKeys) async {
+    removedIdentityKeys.addAll(identityKeys);
+    _queue.removeWhere((r) => identityKeys.contains(r.identityKey));
+  }
+
   @override
   Future<void> move(int fromIndex, int toIndex) async {}
 

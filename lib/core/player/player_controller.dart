@@ -321,6 +321,16 @@ abstract class PlayerController {
 
   Future<void> removeAt(int index);
 
+  /// Removes every queue entry whose identity key is in [identityKeys].
+  ///
+  /// Called when songs are deleted from the library so a stale queue entry
+  /// cannot keep a deleted file "playable" through the queue or the persisted
+  /// session snapshot. If the currently playing track is removed, the next
+  /// remaining track becomes current (or the queue clears when nothing is
+  /// left) — matching [removeAt] semantics. If nothing matches, this is a
+  /// no-op and no state (revision, persistence, notification) changes.
+  Future<void> removeByIdentityKeys(Set<String> identityKeys);
+
   Future<void> move(int fromIndex, int toIndex);
 
   /// Moves a queue item from one position to another (alias for move).

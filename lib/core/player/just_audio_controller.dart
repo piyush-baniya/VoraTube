@@ -881,6 +881,7 @@ class JustAudioController extends BaseAudioHandler
   }
 
   @override
+  @override
   Future<void> removeAt(int index) async {
     if (index < 0 || index >= _queueRefs.length) {
       return;
@@ -894,6 +895,53 @@ class JustAudioController extends BaseAudioHandler
     _schedulePersist(immediate: true);
     if (removedCurrent) {
       // The next item becomes current. If the queue emptied, stop.
+      if (_queueRefs.isEmpty) {
+        _wantPlayback = false;
+        _queueTransition = true;
+        try {
+          await _clearEngine();
+        } finally {
+          _queueTransition = false;
+          _emit();
+        }
+      } else {
+        _queueTransition = true;
+        try {
+          await _loadCurrent();
+          if (_wantPlayback) {
+            unawaited(_player.play());
+          }
+        } finally {
+          _queueTransition = false;
+          _emit();
+        }
+      }
+    }
+    await _syncQueueMetadata();
+    _broadcastQueueChange();
+  }
+
+  @override
+  Future<void> removeByIdentityKeys(Set<String> identityKeys) async {
+    if (identityKeys.isEmpty || _queueRefs.isEmpty) {
+      return;
+    }
+    final removedCurrent = identityKeys.contains(_queueRefs.first.identityKey);
+    final updated = [
+      for (final ref in _queueRefs)
+        if (!identityKeys.contains(ref.identityKey)) ref,
+    ];
+    if (updated.length == _queueRefs.length) {
+      // Nothing in the queue matched — a no-op must not bump the revision or
+      // re-persist the session for no reason.
+      return;
+    }
+    _queueRefs = List.unmodifiable(updated);
+    _queueRevision++;
+    _schedulePersist(immediate: true);
+    if (removedCurrent) {
+      // Same semantics as removeAt(0): the next remaining track becomes
+      // current, or the session ends when the queue emptied out.
       if (_queueRefs.isEmpty) {
         _wantPlayback = false;
         _queueTransition = true;

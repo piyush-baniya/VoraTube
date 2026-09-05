@@ -8,12 +8,11 @@ import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../app/theme/app_tokens.dart';
-import '../../../collections/presentation/providers/collections_providers.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
 import '../../data/library_repository.dart';
 import '../../data/song_ref_mapper.dart';
-import '../providers/library_providers.dart';
+import '../providers/library_view_providers.dart';
 import '../widgets/library_tiles.dart';
 import '../widgets/song_tile.dart';
 
@@ -49,42 +48,22 @@ class FilteredSongsScreen extends ConsumerStatefulWidget {
 }
 
 class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
-  late final Future<List<SongTileData>> _future = _load();
-
-  /// Albums the artist appears on — only loaded on the artist detail page,
-  /// where they render as a horizontal strip above the song list.
-  late final Future<List<AlbumSummary>>? _albumsFuture = widget.artist == null
-      ? null
-      : ref
-          .read(libraryRepositoryProvider)
-          .albumsForArtist(widget.artist!.artistRowId);
+  /// Reactive query key for [filteredSongsProvider]. The list is re-read from
+  /// the database whenever the library refresh (or stats/favorites) ticks
+  /// move, so a delete, rescan or import committed while this page is open
+  /// can never leave a stale song list — or stale Song objects whose content
+  /// URIs no longer resolve — on screen.
+  FilteredSongsQuery get _query => (
+    albumRowId: widget.album?.albumRowId,
+    artistRowId: widget.artist?.artistRowId,
+    genre: widget.genre,
+    collectionKind: widget.collectionKind,
+  );
 
   /// True while a shuffled playback session started from this screen is
   /// active. Only used to highlight the Shuffle button.
   bool _shuffleActive = false;
 
-  Future<List<SongTileData>> _load() {
-    final collectionKind = widget.collectionKind;
-    if (collectionKind != null) {
-      final collections = ref.read(collectionsProvider);
-      return collections.songsOf(collectionKind);
-    }
-    final repository = ref.read(libraryRepositoryProvider);
-    final album = widget.album;
-    if (album != null) {
-      return repository.songsForAlbum(album.albumRowId);
-    }
-    final genre = widget.genre;
-    if (genre != null) {
-      return repository.songsForGenre(genre);
-    }
-    return repository.songsForArtist(widget.artist!.artistRowId);
-  }
-
-  /// Starts the whole list in shuffled playback. The on-screen order is never
-  /// reordered: the played queue is randomised in full — including the
-  /// starting song — so Shuffle plays from a random song instead of always
-  /// starting at the list head like Play.
   Future<void> _playShuffled(List<SongTileData> tiles) async {
     final player = ref.read(playerProvider);
     await player.setShuffle(true);
@@ -109,6 +88,10 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
     final subtitle =
         widget.album?.artistName ??
         (widget.artist != null ? '${widget.artist!.songCount} songs' : null);
+    final songsAsync = ref.watch(filteredSongsProvider(_query));
+    final artistAlbumsAsync = widget.artist == null
+        ? null
+        : ref.watch(artistAlbumsProvider(widget.artist!.artistRowId));
 
     return Scaffold(
       appBar: AppBar(title: Text(title)),
@@ -116,12 +99,9 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
       // (and playlist detail) — float Shuffle/Play above the Mini Player
       // instead of keeping them inline with the song count.
       floatingActionButton: widget.artist != null
-          ? FutureBuilder<List<SongTileData>>(
-              future: _future,
-              builder: (context, snapshot) {
-                final tiles = snapshot.data ?? const <SongTileData>[];
-                if (snapshot.connectionState != ConnectionState.done ||
-                    tiles.isEmpty) {
+          ? songsAsync.maybeWhen(
+              data: (tiles) {
+                if (tiles.isEmpty) {
                   return const SizedBox.shrink();
                 }
                 return _ArtistPlayerButtons(
@@ -135,31 +115,24 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                       ]),
                 );
               },
+              orElse: () => const SizedBox.shrink(),
             )
           : null,
-      body: FutureBuilder<List<SongTileData>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const SkeletonList(rows: 8);
-          }
-          if (snapshot.hasError) {
-            return const EmptyState(
-              icon: Icons.error_outline_rounded,
-              title: 'Could not load songs',
-              message: 'Go back and try again.',
-            );
-          }
-          final tiles = snapshot.data ?? const [];
-          if (tiles.isEmpty) {
-            return const EmptyState(
-              icon: Icons.music_off_rounded,
-              title: 'No songs here',
-              message: 'This entry has no playable songs right now.',
-            );
-          }
-          return CustomScrollView(
-            slivers: [
+      body: songsAsync.when(
+        loading: () => const SkeletonList(rows: 8),
+        error: (_, _) => const EmptyState(
+          icon: Icons.error_outline_rounded,
+          title: 'Could not load songs',
+          message: 'Go back and try again.',
+        ),
+        data: (tiles) => tiles.isEmpty
+            ? const EmptyState(
+                icon: Icons.music_off_rounded,
+                title: 'No songs here',
+                message: 'This entry has no playable songs right now.',
+              )
+            : CustomScrollView(
+                slivers: [
               SliverToBoxAdapter(
                 child: _EntryHeader(
                   album: widget.album,
@@ -173,12 +146,10 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
               // Artist detail page: albums the artist appears on, shown as a
               // horizontally scrolling strip (like the Home playlist strip),
               // separated from the song list by a divider.
-              if (widget.artist != null && _albumsFuture != null)
+              if (widget.artist != null && artistAlbumsAsync != null)
                 SliverToBoxAdapter(
-                  child: FutureBuilder<List<AlbumSummary>>(
-                    future: _albumsFuture,
-                    builder: (context, albumSnapshot) {
-                      final albums = albumSnapshot.data ?? const [];
+                  child: artistAlbumsAsync.maybeWhen(
+                    data: (albums) {
                       if (albums.isEmpty) return const SizedBox.shrink();
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,6 +199,7 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                         ],
                       );
                     },
+                    orElse: () => const SizedBox.shrink(),
                   ),
                 ),
               if (widget.genre != null)
@@ -312,10 +284,9 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                 const SliverToBoxAdapter(
                   child: SizedBox(height: AppTokens.s2),
                 ),
-            ],
-          );
-        },
-      ),
+                ],
+              ),
+        ),
     );
   }
 }

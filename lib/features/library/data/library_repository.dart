@@ -766,9 +766,12 @@ ON CONFLICT(song_id) DO UPDATE SET art_resolved_at = excluded.art_resolved_at
       return 0;
     }
 
-    await _deleteSongRows(doomedIds);
-    await _cleanupOrphans();
-    return doomedIds.length;
+    return _db.transaction(() async {
+      await _deletePlaylistEntriesFor(doomedIds.toSet());
+      final deleted = await _deleteSongRows(doomedIds);
+      await _cleanupOrphans();
+      return deleted;
+    });
   }
 
   Future<List<StoredImportedSong>> importedSongsForReconciliation() async {
@@ -785,16 +788,43 @@ ON CONFLICT(song_id) DO UPDATE SET art_resolved_at = excluded.art_resolved_at
     if (rowIds.isEmpty) {
       return 0;
     }
-    await _deleteSongRows(rowIds.toList());
-    await _cleanupOrphans();
-    return rowIds.length;
+    // The song rows, their dependent rows (playlist entries, stats, extras)
+    // and the now-empty album/artist containers must commit together: a
+    // partial delete is exactly the stale state that made a song vanish from
+    // one list but survive in another until the app data was cleared.
+    //
+    // playlist_songs has a plain (non-cascading) foreign key on songs, so its
+    // entries for the doomed rows go first, inside the same transaction.
+    return _db.transaction(() async {
+      await _deletePlaylistEntriesFor(rowIds);
+      final deleted = await _deleteSongRows(rowIds.toList());
+      await _cleanupOrphans();
+      return deleted;
+    });
   }
 
-  Future<void> _deleteSongRows(List<int> ids) async {
+  Future<void> _deletePlaylistEntriesFor(Set<int> rowIds) async {
+    for (var i = 0; i < rowIds.length; i += _deleteChunkSize) {
+      final chunk = rowIds
+          .skip(i)
+          .take(_deleteChunkSize)
+          .toList(growable: false);
+      if (chunk.isEmpty) break;
+      await (_db.delete(_db.playlistSongs)
+            ..where((tbl) => tbl.songRowId.isIn(chunk)))
+          .go();
+    }
+  }
+
+  Future<int> _deleteSongRows(List<int> ids) async {
+    var deleted = 0;
     for (var i = 0; i < ids.length; i += _deleteChunkSize) {
       final chunk = ids.sublist(i, (i + _deleteChunkSize).clamp(0, ids.length));
-      await (_db.delete(_db.songs)..where((tbl) => tbl.id.isIn(chunk))).go();
+      deleted += await (_db.delete(_db.songs)
+            ..where((tbl) => tbl.id.isIn(chunk)))
+          .go();
     }
+    return deleted;
   }
 
   Future<void> _cleanupOrphans() async {
@@ -810,6 +840,17 @@ ON CONFLICT(song_id) DO UPDATE SET art_resolved_at = excluded.art_resolved_at
     await _db.customStatement(
       'DELETE FROM playlist_songs WHERE song_row_id NOT IN '
       '(SELECT id FROM songs)',
+    );
+    // Side tables without SQL foreign keys need explicit sweeps. play_history
+    // and song_artists cascade via ON DELETE CASCADE (foreign_keys pragma is
+    // on), and user_lrc / lyrics_cache are deliberately kept: they are keyed
+    // by stable identity keys so a rescan that re-adds the same song
+    // re-attaches its lyrics instead of losing them.
+    await _db.customStatement(
+      'DELETE FROM song_stats WHERE song_id NOT IN (SELECT id FROM songs)',
+    );
+    await _db.customStatement(
+      'DELETE FROM song_extras WHERE song_id NOT IN (SELECT id FROM songs)',
     );
   }
 

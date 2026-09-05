@@ -522,6 +522,19 @@ class SongActions {
         deleteSucceeded = result.deleted;
         deleteCancelled = result.cancelled;
         deleteReason = result.reason;
+        // `uri_not_found` means the MediaStore row is already gone — the file
+        // was deleted (possibly by another app, possibly by an earlier
+        // attempt that only failed to update the UI). That is the
+        // already-absent case, not a failure: treating it as success lets a
+        // retry clean up the leftover library row instead of reporting a
+        // confusing "could not delete" for a file that no longer exists.
+        if (deleteReason == 'uri_not_found') {
+          deleteSucceeded = true;
+        }
+      } else {
+        // A MediaStore row without a usable content URI can never be
+        // addressed — report that honestly instead of doing nothing.
+        deleteReason = 'missing_uri';
       }
     } else if (song.path != null && song.path!.isNotEmpty) {
       final f = File(song.path!);
@@ -535,6 +548,9 @@ class SongActions {
       } catch (_) {
         deleteSucceeded = false;
       }
+    } else {
+      // Neither a content URI nor a file path — nothing to delete.
+      deleteReason = 'missing_uri';
     }
 
     if (deleteCancelled) {
@@ -544,21 +560,51 @@ class SongActions {
     }
 
     // Only remove from the local database when the file was actually deleted
-    // (or the MediaStore row is unreachable/stale, in which case the library
-    // should be reconciled).
+    // (or was already gone). The library tick is bumped after the database
+    // work below so no provider can rebuild from a pre-delete snapshot.
     if (deleteSucceeded) {
-      await repo.deleteSongsByRowIds({song.id});
-      ref.invalidate(pagedSongsProvider);
-      _refreshLibrary(ref);
-      ref.invalidate(albumsOverviewProvider);
-      ref.invalidate(artistsOverviewProvider);
-      if (context.mounted) {
-        _snack(
-          context,
-          '"${song.title}" was removed from your library.',
-          variant: VoraSnackbarVariant.success,
-          title: 'Song deleted',
-        );
+      try {
+        final removed = await repo.deleteSongsByRowIds({song.id});
+        if (removed > 0) {
+          // The song is gone from the library: prune it from the active
+          // playback queue (and the persisted session) too, so a deleted
+          // file can no longer be "played" through a stale queue entry.
+          final identityKey = songTileToRef(
+            SongTileData(song: song),
+          ).identityKey;
+          await ref.read(playerProvider).removeByIdentityKeys({identityKey});
+          if (context.mounted) {
+            _snack(
+              context,
+              '"${song.title}" was removed from your library.',
+              variant: VoraSnackbarVariant.success,
+              title: 'Song deleted',
+            );
+          }
+        } else if (context.mounted) {
+          // The library row was already gone (e.g. this screen held a stale
+          // tile). Nothing was deleted now; say what is true.
+          _snack(
+            context,
+            '"${song.title}" is no longer in your library.',
+            variant: VoraSnackbarVariant.success,
+            title: 'Already removed',
+          );
+        }
+      } catch (_) {
+        // The file is gone but the database write failed. That must NOT be
+        // reported as success. The tick bump above already made every
+        // provider re-read the database, and the next scan reconciles the
+        // missing row against MediaStore.
+        if (context.mounted) {
+          _snack(
+            context,
+            'The file was removed, but your library could not be updated. '
+            'It will be reconciled on the next scan.',
+            variant: VoraSnackbarVariant.error,
+            title: 'Library not updated',
+          );
+        }
       }
     } else {
       if (context.mounted) {
@@ -573,6 +619,12 @@ class SongActions {
         );
       }
     }
+    // Committed or failed, the database is the single source of truth: every
+    // derived surface (paged lists, album/artist/genre overviews, collections,
+    // playlists, smart mixes, hidden songs) watches this tick and re-reads it.
+    // No per-provider invalidate is needed — and none is used — so the
+    // refresh contract stays exactly the one every other mutation relies on.
+    _refreshLibrary(ref);
   }
 
   static Future<void> _findOnYouTube(BuildContext context, Song song) async {

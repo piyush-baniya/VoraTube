@@ -143,6 +143,60 @@ final pagedSongsProvider =
     AutoDisposeAsyncNotifierProvider<PagedSongsController, List<SongTileData>>(
       PagedSongsController.new,
     );
+/// The drill-down query behind [filteredSongsProvider].
+///
+/// A record so Riverpod's family equality works structurally: two screens
+/// opened for the same album share one cached list, and a rebuilt query for
+/// the same target correctly reuses (or invalidates with the refresh ticks).
+typedef FilteredSongsQuery = ({
+  int? albumRowId,
+  int? artistRowId,
+  String? genre,
+  CollectionKind? collectionKind,
+});
+
+/// Songs of one album, artist, genre or collection, read reactively.
+///
+/// This is the invalidation point the drill-down screen was missing: every
+/// tick-watching surface in the app (Library browser, Home, collections,
+/// playlists, smart mixes) refreshes when the library changes, but the detail
+/// screen used to load its list once into a `late final` future — so a song
+/// deleted or a rescan committed while the page was open left it holding a
+/// stale list of stale Song objects. Watching all three ticks keeps it on the
+/// same refresh contract as every other library surface, at the cost of one
+/// bounded, indexed query per change.
+final filteredSongsProvider = FutureProvider.autoDispose
+    .family<List<SongTileData>, FilteredSongsQuery>((ref, query) async {
+      ref.watch(libraryRefreshTickProvider);
+      ref.watch(statsRefreshTickProvider);
+      ref.watch(favoritesRefreshTickProvider);
+      final repository = ref.watch(libraryRepositoryProvider);
+      final collectionKind = query.collectionKind;
+      if (collectionKind != null) {
+        return repository.collectionSongs(collectionKind, limit: 100);
+      }
+      final albumRowId = query.albumRowId;
+      if (albumRowId != null) {
+        return repository.songsForAlbum(albumRowId);
+      }
+      final genre = query.genre;
+      if (genre != null) {
+        return repository.songsForGenre(genre);
+      }
+      return repository.songsForArtist(query.artistRowId!);
+    });
+
+/// Albums an artist appears on — the horizontal strip on the artist detail
+/// page. Reactive for the same reason as [filteredSongsProvider]: a delete or
+/// rescan must not leave the strip showing albums that no longer exist.
+final artistAlbumsProvider = FutureProvider.autoDispose
+    .family<List<AlbumSummary>, int>((ref, artistRowId) async {
+      ref.watch(libraryRefreshTickProvider);
+      ref.watch(statsRefreshTickProvider);
+      ref.watch(favoritesRefreshTickProvider);
+      final repository = ref.watch(libraryRepositoryProvider);
+      return repository.albumsForArtist(artistRowId);
+    });
 
 final albumsOverviewProvider = FutureProvider.autoDispose<List<AlbumSummary>>((
   ref,
