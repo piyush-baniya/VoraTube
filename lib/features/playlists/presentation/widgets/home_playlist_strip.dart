@@ -168,6 +168,7 @@ class _HomePlaylistCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return PressableScale(
       onTap: () => Navigator.of(context).push(
@@ -188,6 +189,17 @@ class _HomePlaylistCard extends ConsumerWidget {
             color: colorScheme.outlineVariant.withValues(alpha: 0.3),
             width: AppTokens.borderHairline,
           ),
+          // A soft shadow lifts the card off the surface. Light mode needs a
+          // little extra depth here (near-white surface vs. warm paper), so we
+          // strengthen the shadow only outside dark mode.
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.08 : 0.16),
+              blurRadius: 14,
+              offset: const Offset(0, 3),
+              spreadRadius: -1,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
