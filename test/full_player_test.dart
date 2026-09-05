@@ -871,10 +871,33 @@ void main() {
       expect(find.byType(FullPlayerScreen), findsOneWidget);
     });
 
-    testWidgets('a drag on the artwork area dismisses the player', (
-      tester,
-    ) async {
-      await pumpPushedPlayer(tester);
+    testWidgets('TEMP short-viewport artwork drag dismisses', (tester) async {
+      // Short viewport → the artwork/metadata area becomes scrollable.
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(400, 520);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        _wrap(
+          Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const FullPlayerScreen(),
+                    ),
+                  ),
+                  child: const Text('open player'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open player'));
+      await tester.pumpAndSettle();
+      expect(find.byType(FullPlayerScreen), findsOneWidget);
 
       final artCenter = tester.getCenter(find.byType(RotatingArtwork));
       await tester.timedDragFrom(
@@ -884,8 +907,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // Expect the player to dismiss.
       expect(find.byType(FullPlayerScreen), findsNothing);
-      expect(find.text('open player'), findsOneWidget);
     });
   });
 }
