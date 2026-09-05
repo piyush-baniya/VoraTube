@@ -43,7 +43,9 @@ abstract final class AppTheme {
 
   static ColorScheme get _lightScheme => const ColorScheme.light(
     primary: AppColors.accentDeep,
-    onPrimary: AppColors.textPrimaryLight,
+    // Light mode uses a deep-purple primary; its content must be white for
+    // contrast (near-black text on the dark-violet button looked muddy).
+    onPrimary: AppColors.textPrimaryDark,
     primaryContainer: Color(0xFFE9D5FF),
     onPrimaryContainer: AppColors.accentDeep,
     secondary: AppColors.accentDeep,
