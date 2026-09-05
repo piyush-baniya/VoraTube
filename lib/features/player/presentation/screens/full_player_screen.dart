@@ -39,7 +39,7 @@ class FullPlayerScreen extends ConsumerStatefulWidget {
 }
 
 class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   bool _showLyrics = false;
   bool _lyricsExpanded = true;
 
@@ -52,6 +52,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   late final AnimationController _dismissAnim;
   double _dragOffset = 0;
   bool _dragActive = false;
+
+  // ── Horizontal track-swipe state ──────────────────────────────────────
+  /// Drives [_swipeDx] while the exit / settle animation plays. Reuses the
+  /// same animated pattern as the MiniPlayer so both surfaces feel identical.
+  late final AnimationController _swipeAnim;
+  Animation<double>? _swipeTween;
+
+  /// Current horizontal pixel offset of the whole player content.
+  double _swipeDx = 0;
+  bool _swipeFingerDown = false;
 
   @override
   void initState() {
@@ -66,12 +76,98 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           });
         }
       });
+    _swipeAnim = AnimationController(
+      vsync: this,
+      duration: AppTokens.normal,
+    )..addListener(() {
+        final anim = _swipeTween;
+        if (anim != null && mounted) {
+          setState(() => _swipeDx = anim.value);
+        }
+      });
   }
 
   @override
   void dispose() {
     _dismissAnim.dispose();
+    _swipeAnim.dispose();
     super.dispose();
+  }
+
+  /// Animates the horizontal swipe offset from its current value to [target].
+  void _animateSwipeDxTo(
+    double target, {
+    Duration? duration,
+    Curve curve = AppTokens.easeOut,
+    VoidCallback? onDone,
+  }) {
+    _swipeTween = Tween<double>(
+      begin: _swipeDx,
+      end: target,
+    ).animate(CurvedAnimation(parent: _swipeAnim, curve: curve));
+    if (duration != null) {
+      _swipeAnim.duration = duration;
+    }
+    _swipeAnim.forward(from: 0).whenComplete(() => onDone?.call());
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    // A new finger grab always takes over from any running animation.
+    _swipeAnim.stop();
+    _swipeFingerDown = true;
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (!_swipeFingerDown) {
+      return;
+    }
+    setState(() => _swipeDx += details.delta.dx);
+  }
+
+  /// Swipe right → next song, swipe left → previous song — the same animated
+  /// follow-the-finger → fly-out → slide-in interaction as the MiniPlayer, so
+  /// both surfaces behave identically. The progress slider (bottom region)
+  /// still claims its own drags for seeking; everything else participates in
+  /// the swipe.
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    _swipeFingerDown = false;
+    if (!mounted) {
+      return;
+    }
+    final width = MediaQuery.sizeOf(context).width;
+    final velocity = details.velocity.pixelsPerSecond.dx;
+    // Commit on a real drag (past 25% of the screen width) or a decisive
+    // fling in the same direction as the offset.
+    final dir = _swipeDx == 0 ? velocity.sign : _swipeDx.sign;
+    final commit =
+        _swipeDx.abs() > width * 0.25 ||
+        (velocity.abs() > 600 && velocity.sign == dir);
+    if (!commit || dir == 0) {
+      _animateSwipeDxTo(0);
+      return;
+    }
+
+    // 1) Fly the current content out in the swipe direction.
+    _animateSwipeDxTo(
+      dir * width * 1.1,
+      duration: AppTokens.fast,
+      curve: AppTokens.easeIn,
+      onDone: () {
+        // 2) Skip. The ad hook matches the transport-button behaviour.
+        ref.read(interstitialAdControllerProvider).onSkipClicked();
+        if (dir > 0) {
+          ref.read(playerProvider).next();
+        } else {
+          ref.read(playerProvider).previous();
+        }
+        if (!mounted) {
+          return;
+        }
+        // 3) The next track slides in from the opposite side.
+        setState(() => _swipeDx = -dir * width * 0.45);
+        _animateSwipeDxTo(0, duration: AppTokens.normal);
+      },
+    );
   }
 
   bool _startsOnControls(DragStartDetails details) {
@@ -142,7 +238,15 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           onVerticalDragStart: _onVerticalDragStart,
           onVerticalDragUpdate: _onVerticalDragUpdate,
           onVerticalDragEnd: _onVerticalDragEnd,
+          onHorizontalDragStart: _onHorizontalDragStart,
+          onHorizontalDragUpdate: _onHorizontalDragUpdate,
+          onHorizontalDragEnd: _onHorizontalDragEnd,
           child: Transform.translate(
+            // Horizontal track swipe (next / previous): the whole content
+            // follows the finger and animates on commit. Sits outside the
+            // vertical-dismiss transform so both gestures compose cleanly.
+            offset: Offset(_swipeDx, 0),
+            child: Transform.translate(
             offset: Offset(0, _dragOffset * 0.65),
             child: Transform.scale(
               scale: 1.0 - _dragOffset / _maxDrag * 0.06,
@@ -243,6 +347,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         ),
               ),
             ),
+          ),
           ),
         ),
       ),

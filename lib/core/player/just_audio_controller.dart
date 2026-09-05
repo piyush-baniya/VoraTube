@@ -807,7 +807,15 @@ class JustAudioController extends BaseAudioHandler
       );
       _queueRevision++;
       _schedulePersist(immediate: true);
+      // Refresh the media notification's queue + current MediaItem BEFORE the
+      // engine load so title/artist/album/art in the notification (and every
+      // system surface bound to the media session) reflect the skip
+      // immediately and consistently, instead of waiting for the engine load
+      // to finish. _loadCurrent re-syncs the current item after the source is
+      // prepared as a belt-and-braces follow-up.
+      await _syncQueueMetadata();
       await _loadCurrent();
+      _broadcastSystemState();
       unawaited(_player.play());
     } finally {
       _queueTransition = false;

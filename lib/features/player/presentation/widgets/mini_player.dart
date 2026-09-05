@@ -14,13 +14,124 @@ import '../providers/player_providers.dart';
 ///
 /// Design: Premium elevated surface with artwork, metadata, progress indicator,
 /// and transport controls. Seamless Hero transition to full-screen player.
-class MiniPlayer extends ConsumerWidget {
+class MiniPlayer extends ConsumerStatefulWidget {
   const MiniPlayer({super.key});
 
   static const _heroTag = 'player_artwork_hero';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MiniPlayer> createState() => _MiniPlayerState();
+}
+
+class _MiniPlayerState extends ConsumerState<MiniPlayer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _swipeAnim;
+
+  /// Drives [_dragDx] while an exit / settle animation is playing.
+  Animation<double>? _swipeTween;
+
+  /// Current horizontal pixel offset of the card. Follows the finger during a
+  /// drag and is animated by [_swipeAnim] during settle / commit.
+  double _dragDx = 0;
+  bool _fingerDown = false;
+
+  // Step availability, refreshed on every build so drag-end handlers don't
+  // have to synchronously read providers.
+  bool _hasPrevious = false;
+  bool _hasNext = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _swipeAnim = AnimationController(vsync: this, duration: AppTokens.normal)
+      ..addListener(() {
+        final anim = _swipeTween;
+        if (anim != null && mounted) {
+          setState(() => _dragDx = anim.value);
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _swipeAnim.dispose();
+    super.dispose();
+  }
+
+  /// Animates the card's horizontal offset from its current value to [target].
+  void _animateDxTo(
+    double target, {
+    Duration? duration,
+    Curve curve = AppTokens.easeOut,
+    VoidCallback? onDone,
+  }) {
+    _swipeTween = Tween<double>(
+      begin: _dragDx,
+      end: target,
+    ).animate(CurvedAnimation(parent: _swipeAnim, curve: curve));
+    if (duration != null) {
+      _swipeAnim.duration = duration;
+    }
+    _swipeAnim.forward(from: 0).whenComplete(() => onDone?.call());
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    // A new finger grab always takes over from any running animation.
+    _swipeAnim.stop();
+    _fingerDown = true;
+  }
+
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (!_fingerDown) {
+      return;
+    }
+    setState(() => _dragDx += details.delta.dx);
+  }
+
+  /// Swipe right → next song, swipe left → previous song — animated: the card
+  /// follows the finger, flies out on commit and the new track slides in from
+  /// the opposite edge. With shuffle on, Next follows the engine's shuffled
+  /// order (random) while Previous always walks back to the song that just
+  /// played (never random).
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    _fingerDown = false;
+    if (!mounted) {
+      return;
+    }
+    final width = context.size?.width ?? 0;
+    final velocity = details.velocity.pixelsPerSecond.dx;
+    // A commit happens on a real drag (past 28% of the card width) or a
+    // decisive fling in the same direction as the offset.
+    final dir = _dragDx == 0 ? velocity.sign : _dragDx.sign;
+    final commit =
+        _dragDx.abs() > width * 0.28 ||
+        (velocity.abs() > 600 && velocity.sign == dir);
+    final canStep = dir > 0 ? _hasNext : _hasPrevious;
+    if (!commit || dir == 0 || !canStep) {
+      _animateDxTo(0);
+      return;
+    }
+
+    // 1) Fly the current card out in the swipe direction.
+    _animateDxTo(dir * width * 1.1, duration: AppTokens.fast, curve: AppTokens.easeIn, onDone: () {
+      // 2) Skip. The ad hook matches the transport-button behaviour.
+      ref.read(interstitialAdControllerProvider).onSkipClicked();
+      if (dir > 0) {
+        ref.read(playerProvider).next();
+      } else {
+        ref.read(playerProvider).previous();
+      }
+      if (!mounted) {
+        return;
+      }
+      // 3) The next track slides in from the opposite side.
+      setState(() => _dragDx = -dir * width * 0.45);
+      _animateDxTo(0, duration: AppTokens.normal);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final snapshot = ref.watch(playbackStateProvider);
     final current = snapshot.current;
 
@@ -34,8 +145,8 @@ class MiniPlayer extends ConsumerWidget {
 
     final canStep =
         snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
-    final hasPrevious = canStep && snapshot.currentIndex >= 0;
-    final hasNext = canStep && snapshot.currentIndex >= 0;
+    _hasPrevious = canStep && snapshot.currentIndex >= 0;
+    _hasNext = canStep && snapshot.currentIndex >= 0;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -51,20 +162,15 @@ class MiniPlayer extends ConsumerWidget {
           ref.read(playerProvider).clearSession();
         }
       },
-      // Swipe right → next song, swipe left → previous song. With shuffle on,
-      // Next follows the engine's shuffled order (random) while Previous
-      // always walks back to the song that just played (never random).
-      onHorizontalDragEnd: (details) {
-        final velocity = details.primaryVelocity ?? 0;
-        if (velocity < -400 && hasPrevious) {
-          ref.read(interstitialAdControllerProvider).onSkipClicked();
-          ref.read(playerProvider).previous();
-        } else if (velocity > 400 && hasNext) {
-          ref.read(interstitialAdControllerProvider).onSkipClicked();
-          ref.read(playerProvider).next();
-        }
-      },
-      child: Padding(
+      // Animated horizontal card swipe (see [_onHorizontalDragEnd]). The
+      // recognizers live on the whole card — artwork, title, progress bar and
+      // transport controls included — so a swipe started anywhere skips.
+      onHorizontalDragStart: _onHorizontalDragStart,
+      onHorizontalDragUpdate: _onHorizontalDragUpdate,
+      onHorizontalDragEnd: _onHorizontalDragEnd,
+      child: Transform.translate(
+        offset: Offset(_dragDx, 0),
+        child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppTokens.s3,
           0,
@@ -122,7 +228,7 @@ class MiniPlayer extends ConsumerWidget {
                   CompactArtwork(
                     path: current.artPath,
                     size: 48,
-                    heroTag: _heroTag,
+                    heroTag: MiniPlayer._heroTag,
                     borderRadius: AppTokens.rMd,
                   ),
                   const SizedBox(width: AppTokens.s3),
@@ -177,7 +283,7 @@ class MiniPlayer extends ConsumerWidget {
                     label: 'Previous',
                     child: _TransportButton(
                       icon: Icons.skip_previous_rounded,
-                      enabled: hasPrevious,
+                      enabled: _hasPrevious,
                       onTap: () {
                         ref
                             .read(interstitialAdControllerProvider)
@@ -235,7 +341,7 @@ class MiniPlayer extends ConsumerWidget {
                     label: 'Next',
                     child: _TransportButton(
                       icon: Icons.skip_next_rounded,
-                      enabled: hasNext,
+                      enabled: _hasNext,
                       onTap: () {
                         ref
                             .read(interstitialAdControllerProvider)
@@ -250,6 +356,7 @@ class MiniPlayer extends ConsumerWidget {
               ),
             ),
           ),
+        ),
         ),
       ),
     );
@@ -370,26 +477,16 @@ class _MiniProgress extends ConsumerWidget {
                 ? position.inMilliseconds / duration.inMilliseconds
                 : 0.0;
 
-            // Tappable + draggable progress: a taller invisible hit area so the
-            // thin 3px bar is easy to seek without hurting the compact layout.
-            // A tap seeks to the tapped fraction; a horizontal drag scrubs. The
-            // recognizers here deliberately claim only taps and horizontal
-            // drags — a vertical swipe is never claimed by this region, so the
-            // outer vertical-drag gesture (open player / stop) always wins for
-            // swipes starting over the progress bar instead of being eaten as a
-            // phantom seek (the seek-vs-swipe arena race).
+            // Tappable progress: a taller invisible hit area so the thin 3px
+            // bar is easy to seek without hurting the compact layout. A tap
+            // seeks to the tapped fraction. Horizontal drags deliberately do
+            // NOT belong to this region: they belong to the whole-card swipe
+            // (next/previous), so a swipe started over the progress bar works
+            // exactly like one started anywhere else on the card.
             return GestureDetector(
               key: const Key('mini_progress'),
               behavior: HitTestBehavior.translucent,
               onTapUp: duration.inMilliseconds <= 0
-                  ? null
-                  : (details) =>
-                        _seekAt(context, details.localPosition.dx, duration),
-              onHorizontalDragStart: duration.inMilliseconds <= 0
-                  ? null
-                  : (details) =>
-                        _seekAt(context, details.localPosition.dx, duration),
-              onHorizontalDragUpdate: duration.inMilliseconds <= 0
                   ? null
                   : (details) =>
                         _seekAt(context, details.localPosition.dx, duration),

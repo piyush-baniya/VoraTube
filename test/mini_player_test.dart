@@ -226,6 +226,57 @@ void main() {
     expect(player.calls, contains('togglePlay'));
   });
 
+  testWidgets('a horizontal swipe started on the transport controls dispatches next', (
+    tester,
+  ) async {
+    final player = _playerWithTrack(atStart: true);
+    await tester.pumpWidget(_wrap(player));
+    await tester.pumpAndSettle();
+
+    // Start the swipe over a control button, NOT the middle of the card, to
+    // prove the whole card surface participates in the swipe gesture.
+    await tester.fling(
+      find.byIcon(Icons.skip_previous_rounded),
+      const Offset(200, 0),
+      1500,
+    );
+    await tester.pumpAndSettle();
+
+    expect(player.calls, contains('next'));
+  });
+
+  testWidgets('swipe left dispatches previous', (tester) async {
+    final player = _playerWithTrack();
+    await tester.pumpWidget(_wrap(player));
+    await tester.pumpAndSettle();
+
+    await tester.fling(
+      find.byType(MiniPlayer),
+      const Offset(-200, 0),
+      1500,
+    );
+    await tester.pumpAndSettle();
+
+    expect(player.calls, contains('previous'));
+  });
+
+  testWidgets('a small horizontal nudge springs back without skipping', (
+    tester,
+  ) async {
+    final player = _playerWithTrack();
+    await tester.pumpWidget(_wrap(player));
+    await tester.pumpAndSettle();
+
+    final card = tester.getCenter(find.byType(MiniPlayer));
+    final gesture = await tester.startGesture(card);
+    await gesture.moveBy(const Offset(40, 0));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(player.calls, isNot(contains('next')));
+    expect(player.calls, isNot(contains('previous')));
+  });
+
   testWidgets('a quick downward fling stops playback', (tester) async {
     final player = _playerWithTrack();
     await tester.pumpWidget(_wrap(player));

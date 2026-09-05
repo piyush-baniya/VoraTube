@@ -15,6 +15,20 @@ import 'package:vora_tube/features/player/presentation/widgets/rotating_artwork.
 
 import 'fakes/fake_player.dart';
 
+/// A [FakePlayerController] that records transport calls so the horizontal
+/// swipe gestures can be asserted to dispatch to the real controller.
+class _RecordingFullPlayer extends FakePlayerController {
+  _RecordingFullPlayer({super.initial, super.queue});
+
+  final List<String> calls = [];
+
+  @override
+  Future<void> next() async => calls.add('next');
+
+  @override
+  Future<void> previous() async => calls.add('previous');
+}
+
 SongRef _testSong({
   int id = 1,
   String title = 'Test Song',
@@ -94,6 +108,91 @@ void main() {
 
       expect(find.text('Test Song'), findsOneWidget);
       expect(find.text('Test Artist'), findsOneWidget);
+    });
+
+    testWidgets('a horizontal swipe right on the artwork skips to next', (
+      tester,
+    ) async {
+      final player = _RecordingFullPlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: false,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 2,
+          currentIndex: 0,
+          durationMs: 200000,
+          current: _testSong(),
+        ),
+        queue: [_testSong(id: 1), _testSong(id: 2, title: 'Song 2')],
+      );
+      await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
+      await tester.pumpAndSettle();
+
+      await tester.fling(
+        find.byType(RotatingArtwork),
+        const Offset(300, 0),
+        1500,
+      );
+      await tester.pumpAndSettle();
+
+      expect(player.calls, contains('next'));
+      expect(player.calls, isNot(contains('previous')));
+    });
+
+    testWidgets('a horizontal swipe left on the artwork skips to previous', (
+      tester,
+    ) async {
+      final player = _RecordingFullPlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: false,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 2,
+          currentIndex: 0,
+          durationMs: 200000,
+          current: _testSong(),
+        ),
+        queue: [_testSong(id: 1), _testSong(id: 2, title: 'Song 2')],
+      );
+      await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
+      await tester.pumpAndSettle();
+
+      await tester.fling(
+        find.byType(RotatingArtwork),
+        const Offset(-300, 0),
+        1500,
+      );
+      await tester.pumpAndSettle();
+
+      expect(player.calls, contains('previous'));
+      expect(player.calls, isNot(contains('next')));
+    });
+
+    testWidgets('a horizontal swipe on the metadata area skips to next', (
+      tester,
+    ) async {
+      final player = _RecordingFullPlayer(
+        initial: PlayerSnapshot(
+          status: PlayerStatus.ready,
+          isPlaying: false,
+          repeatMode: RepeatMode.off,
+          shuffleEnabled: false,
+          queueLength: 2,
+          currentIndex: 0,
+          durationMs: 200000,
+          current: _testSong(),
+        ),
+        queue: [_testSong(id: 1), _testSong(id: 2, title: 'Song 2')],
+      );
+      await tester.pumpWidget(_wrap(const FullPlayerScreen(), player: player));
+      await tester.pumpAndSettle();
+
+      await tester.fling(find.text('Test Song'), const Offset(300, 0), 1500);
+      await tester.pumpAndSettle();
+
+      expect(player.calls, contains('next'));
     });
 
     testWidgets('shows empty state when no track', (tester) async {
