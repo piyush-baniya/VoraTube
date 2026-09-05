@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../../app/theme/app_tokens.dart';
 import '../../../../../app/widgets/vora_snackbar.dart';
 import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
-import '../../../../../core/player/player_controller.dart';
 import '../../../../../features/library/data/song_ref_mapper.dart';
 import '../../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../../shared/widgets/pressable_scale.dart';
@@ -298,18 +297,24 @@ class MixCard extends ConsumerWidget {
     Navigator.of(context).push(_SmartMixRoute(mix: mix));
   }
 
-  void _playMix(BuildContext context, WidgetRef ref, {required bool shuffle}) {
+  Future<void> _playMix(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool shuffle,
+  }) async {
     final player = ref.read(playerProvider);
     final songs = mix.songs.map((t) => songTileToRef(t)).toList();
 
     if (songs.isEmpty) return;
 
-    if (shuffle) {
-      final shuffled = List<SongRef>.from(songs)..shuffle();
-      player.playQueue(shuffled);
-    } else {
-      player.playQueue(songs);
-    }
+    // With shuffle the whole queue is randomised in full (starting song
+    // included) so Shuffle never starts at the list head like Play, and the
+    // player's shuffled mode is enabled to keep Next/Previous semantics
+    // consistent with the other shuffle entry points.
+    if (shuffle) songs.shuffle();
+    await player.setShuffle(shuffle);
+    if (!context.mounted) return;
+    player.playQueue(songs);
 
     VoraSnackbar.info(
       context,

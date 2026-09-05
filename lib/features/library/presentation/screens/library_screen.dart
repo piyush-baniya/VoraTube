@@ -33,37 +33,51 @@ class LibraryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final section = ref.watch(librarySectionProvider);
     final isSongs = section == LibrarySection.songs;
+    // The current (filtered + sorted) songs so the floating Play/Shuffle
+    // buttons act on exactly what the list below is showing. Watched
+    // unconditionally so Riverpod tracks a stable dependency set.
+    final songs =
+        ref.watch(pagedSongsProvider).valueOrNull ?? const <SongTileData>[];
 
-    return SafeArea(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const _LibraryHeader(),
-          // A single, small, unobtrusive banner that never overlaps playback
-          // controls. It sits under the Library header and collapses to nothing
-          // when Premium is active or the ad fails to load.
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
-            child: VoraTubeBannerAd(),
-          ),
-          SectionSelector(
-            selected: section,
-            onChanged: (s) =>
-                ref.read(librarySectionProvider.notifier).state = s,
-          ),
-          if (isSongs) const _SongsToolbar(),
-          Expanded(
-            child: FadeThroughSwitcher(
-              child: switch (section) {
-                LibrarySection.songs => const _SongsView(),
-                LibrarySection.albums => const _AlbumsView(),
-                LibrarySection.artists => const _ArtistsView(),
-                LibrarySection.genres => const _GenresView(),
-              },
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _LibraryHeader(),
+            // A single, small, unobtrusive banner that never overlaps playback
+            // controls. It sits under the Library header and collapses to nothing
+            // when Premium is active or the ad fails to load.
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+              child: VoraTubeBannerAd(),
             ),
-          ),
-        ],
+            SectionSelector(
+              selected: section,
+              onChanged: (s) =>
+                  ref.read(librarySectionProvider.notifier).state = s,
+            ),
+            if (isSongs) const _SongsToolbar(),
+            Expanded(
+              child: FadeThroughSwitcher(
+                child: switch (section) {
+                  LibrarySection.songs => const _SongsView(),
+                  LibrarySection.albums => const _AlbumsView(),
+                  LibrarySection.artists => const _ArtistsView(),
+                  LibrarySection.genres => const _GenresView(),
+                },
+              ),
+            ),
+          ],
+        ),
       ),
+      // Big Play/Shuffle controls floating above the Mini Player, matching the
+      // detail screens (playlist detail, filtered songs). Only shown in the
+      // Songs section once there is something to play.
+      floatingActionButton: !isSongs || songs.isEmpty
+          ? null
+          : _LibraryPlayerButtons(songs: songs),
     );
   }
 }
@@ -173,42 +187,12 @@ class _NowPlayingBadge extends StatelessWidget {
 class _SongsToolbar extends ConsumerWidget {
   const _SongsToolbar();
 
-  /// Plays the given tiles from the top. With [shuffle] the player's shuffled
-  /// mode is enabled first - the engine shuffles the queue after the starting
-  /// song - while the on-screen list is never reordered.
-  Future<void> _playAll(
-    BuildContext context,
-    WidgetRef ref,
-    List<SongTileData> tiles, {
-    required bool shuffle,
-  }) async {
-    final player = ref.read(playerProvider);
-    await player.setShuffle(shuffle);
-    if (!context.mounted) return;
-    if (shuffle) {
-      VoraSnackbar.show(
-        context,
-        variant: VoraSnackbarVariant.info,
-        message: 'Playing in shuffled mode',
-      );
-    }
-    final playContext = playContextFromTiles(tiles, 0);
-    await player.playQueue(
-      playContext.refs,
-      startIndex: playContext.startIndex,
-    );
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final accent = AppColors.accent;
     final favoritesOnly = ref.watch(favoritesOnlyProvider);
-    // The current (filtered + sorted) songs so Play/Shuffle act on exactly
-    // what the list below is showing.
-    final songs =
-        ref.watch(pagedSongsProvider).valueOrNull ?? const <SongTileData>[];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -246,45 +230,6 @@ class _SongsToolbar extends ConsumerWidget {
                 ref.read(favoritesOnlyProvider.notifier).state = v,
           ),
           const Spacer(),
-          // Play: starts the current (filtered + sorted) list in order.
-          PressableScale(
-            onTap: songs.isEmpty
-                ? null
-                : () => _playAll(context, ref, songs, shuffle: false),
-            child: Container(
-              padding: const EdgeInsets.all(AppTokens.s2),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(AppTokens.rMd),
-              ),
-              child: Icon(
-                Icons.play_arrow_rounded,
-                size: 22,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppTokens.s2),
-          // Shuffle: enables the player's shuffled mode and starts the list -
-          // the on-screen order is untouched; the engine plays it shuffled.
-          PressableScale(
-            onTap: songs.isEmpty
-                ? null
-                : () => _playAll(context, ref, songs, shuffle: true),
-            child: Container(
-              padding: const EdgeInsets.all(AppTokens.s2),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(AppTokens.rMd),
-              ),
-              child: Icon(
-                Icons.shuffle_rounded,
-                size: 22,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppTokens.s2),
           // Sort button
           PressableScale(
             onTap: () => showSortSheet(context, ref),
@@ -300,6 +245,73 @@ class _SongsToolbar extends ConsumerWidget {
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The floating Play + Shuffle buttons above the Mini Player in the Library's
+/// Songs section - the same prominent controls the detail screens (playlist
+/// detail, filtered songs) use. They act on the currently displayed (filtered
+/// + sorted) song list.
+class _LibraryPlayerButtons extends ConsumerWidget {
+  const _LibraryPlayerButtons({required this.songs});
+
+  final List<SongTileData> songs;
+
+  /// Plays the given tiles from the top. With [shuffle] the WHOLE list is
+  /// randomised first - so the first song is not the list head and Shuffle
+  /// never behaves like Play - and the player's shuffled mode is enabled; the
+  /// on-screen list itself is never reordered.
+  Future<void> _playAll(
+    BuildContext context,
+    WidgetRef ref,
+    List<SongTileData> tiles, {
+    required bool shuffle,
+  }) async {
+    final player = ref.read(playerProvider);
+    final playTiles = shuffle ? (List.of(tiles)..shuffle()) : tiles;
+    final playContext = playContextFromTiles(playTiles, 0);
+    await player.setShuffle(shuffle);
+    if (!context.mounted) return;
+    if (shuffle) {
+      VoraSnackbar.show(
+        context,
+        variant: VoraSnackbarVariant.info,
+        message: 'Playing in shuffled mode',
+      );
+    }
+    await player.playQueue(
+      playContext.refs,
+      startIndex: playContext.startIndex,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final shuffling = ref.watch(playbackStateProvider).shuffleEnabled;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppTokens.s2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          FilledButton.tonalIcon(
+            onPressed: () => _playAll(context, ref, songs, shuffle: true),
+            icon: const Icon(Icons.shuffle_rounded, size: 20),
+            label: const Text('Shuffle'),
+            style: FilledButton.styleFrom(
+              backgroundColor: shuffling ? colorScheme.primary : null,
+              foregroundColor: shuffling ? colorScheme.onPrimary : null,
+            ),
+          ),
+          const SizedBox(width: AppTokens.s3),
+          FilledButton.icon(
+            onPressed: () => _playAll(context, ref, songs, shuffle: false),
+            icon: const Icon(Icons.play_arrow_rounded, size: 22),
+            label: const Text('Play'),
           ),
         ],
       ),
@@ -366,7 +378,7 @@ class _SongsViewState extends ConsumerState<_SongsView> {
               hasMore: ref.read(pagedSongsProvider.notifier).hasMore,
               onPlay: _playFrom,
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s8)),
+            const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s10)),
           ],
         );
       },

@@ -313,10 +313,10 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
     final player = ref.read(playerProvider);
 
     if (shuffle) {
-      // Shuffle NEVER reorders the on-screen list: enable the player's
-      // shuffled mode and start playback — the engine keeps the chosen song
-      // first and shuffles everything after it, so Next plays a random song
-      // while Previous always walks back through the (shuffled) history.
+      // Shuffle NEVER reorders the on-screen list. The played queue is
+      // randomised in full (including the starting song), and the player's
+      // shuffled mode is enabled so Next jumps randomly and Previous walks
+      // back through the (shuffled) history.
       await player.setShuffle(true);
       if (!mounted) return;
       setState(() => _shuffleActive = true);
@@ -331,7 +331,9 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
       if (!mounted) return;
       setState(() => _shuffleActive = false);
     }
-    await player.playQueue(_viewSongs.map((t) => songTileToRef(t)).toList());
+    final songs = _viewSongs.map((t) => songTileToRef(t)).toList();
+    if (shuffle) songs.shuffle();
+    await player.playQueue(songs);
   }
 
   void _playFromIndex(int index) {

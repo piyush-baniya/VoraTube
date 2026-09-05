@@ -82,12 +82,15 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
   }
 
   /// Starts the whole list in shuffled playback. The on-screen order is never
-  /// reordered: shuffling happens inside the player, which keeps the queue's
-  /// chosen song first and randomises everything after it.
+  /// reordered: the played queue is randomised in full — including the
+  /// starting song — so Shuffle plays from a random song instead of always
+  /// starting at the list head like Play.
   Future<void> _playShuffled(List<SongTileData> tiles) async {
     final player = ref.read(playerProvider);
     await player.setShuffle(true);
-    player.playQueue([for (final t in tiles) songTileToRef(t)]);
+    player.playQueue([
+      for (final t in (List.of(tiles)..shuffle())) songTileToRef(t),
+    ]);
     if (mounted) {
       setState(() => _shuffleActive = true);
     }

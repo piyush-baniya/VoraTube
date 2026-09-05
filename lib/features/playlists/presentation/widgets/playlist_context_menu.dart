@@ -21,10 +21,13 @@ Future<void> queuePlaylistSongs(
   final repository = ref.read(playlistRepositoryProvider);
   final songs = await repository.songsOf(playlist.id);
   if (songs.isEmpty || !context.mounted) return;
-  var playSongs = songs;
-  if (shuffle) {
-    playSongs = List.of(songs)..shuffle();
-  }
+  // With shuffle the whole queue is randomised in full (starting song
+  // included) so Shuffle never starts at the list head like Play. The
+  // player's shuffled mode is toggled to match, keeping Next/Previous
+  // semantics consistent with every other shuffle entry point.
+  final playSongs = shuffle ? (List.of(songs)..shuffle()) : songs;
+  await ref.read(playerProvider).setShuffle(shuffle);
+  if (!context.mounted) return;
   ref
       .read(playerProvider)
       .playQueue([for (final s in playSongs) songTileToRef(s)], startIndex: 0);

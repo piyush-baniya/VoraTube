@@ -202,7 +202,10 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     await player.setShuffle(true);
     if (!mounted) return;
     setState(() => _shuffleActive = true);
-    _playFrom(tiles, 0);
+    // Shuffle NEVER reorders the on-screen list, but the played queue IS
+    // randomised in full — including the starting song — so Shuffle starts
+    // from a random song instead of always behaving like Play.
+    _playFrom(List.of(tiles)..shuffle(), 0);
     VoraSnackbar.show(
       context,
       variant: VoraSnackbarVariant.info,
