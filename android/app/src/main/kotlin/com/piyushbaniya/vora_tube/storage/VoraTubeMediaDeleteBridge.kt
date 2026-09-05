@@ -26,14 +26,34 @@ import io.flutter.plugin.common.MethodChannel
  *    blocks until the system dialog completes.
  * 4. [onActivityResult] is forwarded from [MainActivity] to
  *    [handleActivityResult], which resolves the pending [MethodChannel.Result].
+ *
+ * Robustness notes (the consent flow itself can silently lose its result on
+ * some devices/OEMs, which previously left the channel wedged and every later
+ * attempt failing with "busy"):
+ *  * A new delete request pre-empts a stale in-flight one instead of failing.
+ *  * RESULT_OK is not trusted blindly: the target row is verified to be gone
+ *    before reporting success, so a consent dialog that "succeeds" without
+ *    actually deleting the file no longer deletes the library row.
+ *  * When the activity returns to the foreground while a request is still in
+ *    flight, the dialog's result was lost — the bridge reconciles by checking
+ *    whether the row actually vanished.
  */
 class VoraTubeMediaDeleteBridge(private val appContext: Context) {
 
     private var pendingResult: MethodChannel.Result? = null
+    private var pendingUri: Uri? = null
     private var activity: Activity? = null
 
     fun setActivity(a: Activity?) {
         activity = a
+        // If the activity regains the foreground while a request is still in
+        // flight, onActivityResult was lost (a device/OEM where the system
+        // consent dialog closes without delivering the result). Reconcile the
+        // pending call against the actual MediaStore state so it can never
+        // wedge a later request.
+        if (a != null && pendingResult != null) {
+            resolveLostResult()
+        }
     }
 
     fun register(messenger: BinaryMessenger) {
@@ -92,9 +112,12 @@ class VoraTubeMediaDeleteBridge(private val appContext: Context) {
             result.error("no_activity", "Activity is unavailable", null)
             return
         }
-        if (pendingResult != null) {
-            result.error("busy", "Another delete request is in progress", null)
-            return
+
+        // Pre-empt any stale in-flight request (a previous consent dialog whose
+        // result was lost would otherwise wedge every later call with "busy").
+        val stale = pendingResult
+        if (stale != null) {
+            stale.success(mapOf("deleted" to false, "cancelled" to true))
         }
 
         try {
@@ -103,6 +126,7 @@ class VoraTubeMediaDeleteBridge(private val appContext: Context) {
                 listOf(uri),
             )
             pendingResult = result
+            pendingUri = uri
             act.startIntentSenderForResult(
                 request.intentSender,
                 REQUEST_CODE_DELETE,
@@ -110,6 +134,7 @@ class VoraTubeMediaDeleteBridge(private val appContext: Context) {
             )
         } catch (e: Exception) {
             pendingResult = null
+            pendingUri = null
             result.error(
                 "delete_request_failed",
                 e.message ?: "could not create delete request",
@@ -121,16 +146,20 @@ class VoraTubeMediaDeleteBridge(private val appContext: Context) {
     /**
      * Called from [MainActivity.onActivityResult].
      *
-     * If the user confirmed, the system performs the actual deletion — we
-     * simply report success.  If the user cancelled, we report cancellation
-     * (not an error) so Dart can treat it as a normal cancel.
+     * RESULT_OK means the user granted consent — it does *not* guarantee the
+     * row is actually gone on every device. The row is verified afterwards;
+     * if it is still present, a final direct delete is attempted and only a
+     * genuinely-deleted item is reported as success. A cancel is reported as
+     * cancellation (not an error) so Dart treats it as a normal cancel.
      */
     fun handleActivityResult(requestCode: Int, resultCode: Int): Boolean {
         if (requestCode != REQUEST_CODE_DELETE) return false
         val result = pendingResult ?: return false
+        val uri = pendingUri ?: return false
         pendingResult = null
+        pendingUri = null
         if (resultCode == Activity.RESULT_OK) {
-            result.success(mapOf("deleted" to true))
+            resolveAfterUserConsent(uri, result)
         } else {
             // User cancelled the system dialog — this is not an error.
             result.success(mapOf("deleted" to false, "cancelled" to true))
@@ -138,10 +167,68 @@ class VoraTubeMediaDeleteBridge(private val appContext: Context) {
         return true
     }
 
+    /** A device where the consent dialog's result got lost: reconcile instead. */
+    private fun resolveLostResult() {
+        val result = pendingResult ?: return
+        val uri = pendingUri
+        pendingResult = null
+        pendingUri = null
+        if (uri != null && !rowExists(uri)) {
+            // The file is gone, so the deletion effectively happened.
+            result.success(mapOf("deleted" to true))
+        } else {
+            // Row still present: no deletion happened. Treat as a cancel so the
+            // user's library is left untouched and they can try again cleanly.
+            result.success(mapOf("deleted" to false, "cancelled" to true))
+        }
+    }
+
+    private fun resolveAfterUserConsent(uri: Uri, result: MethodChannel.Result) {
+        if (!rowExists(uri)) {
+            result.success(mapOf("deleted" to true))
+            return
+        }
+        // The consent dialog "succeeded" but the row is still there — attempt
+        // one direct delete before giving up.
+        try {
+            val deleted = appContext.contentResolver.delete(uri, null, null)
+            if (deleted > 0) {
+                result.success(mapOf("deleted" to true))
+                return
+            }
+        } catch (_: Exception) {
+            // Ignore: we fall through to reporting still-absent deletion.
+        }
+        result.success(mapOf("deleted" to false, "reason" to "still_present"))
+    }
+
+    private fun rowExists(uri: Uri): Boolean {
+        return try {
+            val cursor = appContext.contentResolver.query(
+                uri,
+                arrayOf(MediaStore.MediaColumns._ID),
+                null,
+                null,
+                null,
+            )
+            if (cursor == null) {
+                // Cannot inspect the row — be conservative and assume it still
+                // exists so we never report a deletion we cannot confirm.
+                true
+            } else {
+                cursor.use { c -> c.moveToFirst() }
+            }
+        } catch (_: Exception) {
+            // Same conservative default.
+            true
+        }
+    }
+
     /** Drop any in-flight request when the Activity is destroyed. */
     fun dispose() {
         pendingResult?.error("activity_destroyed", "Activity was destroyed", null)
         pendingResult = null
+        pendingUri = null
         activity = null
     }
 

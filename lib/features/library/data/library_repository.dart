@@ -430,8 +430,12 @@ class LibraryRepository {
   ///
   /// [dirtyAlbumKeys] is now a *priority* hint rather than a filter: those
   /// albums are returned first, then any other album still missing art that we
-  /// have not already tried, then album-less songs. [limit] bounds the result
-  /// so a 20,000-song library cannot turn one scan into 20,000 native decodes.
+  /// have not already tried, then album-less songs, then songs inside albums
+  /// that have no per-song artwork yet. Resolving the last group is what lets
+  /// lists show each track's own embedded artwork (album detail, artist, genre,
+  /// collections) instead of every row repeating the shared album art. [limit]
+  /// bounds the result so a 20,000-song library cannot turn one scan into
+  /// 20,000 native decodes.
   Future<List<ArtworkTarget>> artworkTargets({
     Set<String> dirtyAlbumKeys = const {},
     int limit = 240,
@@ -534,6 +538,52 @@ LIMIT ?
         .get();
 
     for (final row in songRows) {
+      final source = row.data['source'] as String?;
+      final msId = (row.data['song_ms_id'] as num?)?.toInt();
+      final hash = row.data['content_hash'] as String?;
+      final identityKey = source == IngestSource.mediastore.name
+          ? (msId == null ? null : 'ms:$msId')
+          : (hash == null ? null : 'h:$hash');
+      if (identityKey == null) continue;
+      add(
+        ArtworkTarget.song(
+          identityKey: identityKey,
+          audioMediaStoreId: msId,
+          path: row.data['path'] as String?,
+        ),
+      );
+    }
+
+    final remainingAfterAlbumLess = limit - targets.length;
+    if (remainingAfterAlbumLess <= 0) {
+      return targets;
+    }
+
+    // Songs inside an album that still lack per-song artwork. The album above
+    // covers their display fallback, but resolving the track's own embedded
+    // art (cached in song_extras) lets detail lists show distinct per-song
+    // covers. Lower priority than album-less songs since they already have
+    // artwork to show.
+    final albumSongRows = await _db
+        .customSelect(
+          '''
+SELECT s.media_store_id AS song_ms_id,
+       s.content_hash AS content_hash,
+       s.source AS source,
+       s.path AS path
+FROM songs s
+LEFT JOIN song_extras sx ON sx.song_id = s.id
+WHERE s.album_row_id IS NOT NULL
+  AND (sx.art_small_path IS NULL OR sx.art_small_path = '')
+  ${retryFailed ? '' : 'AND sx.art_resolved_at IS NULL'}
+ORDER BY s.date_added_sec DESC
+LIMIT ?
+''',
+          variables: [Variable<int>(remainingAfterAlbumLess)],
+        )
+        .get();
+
+    for (final row in albumSongRows) {
       final source = row.data['source'] as String?;
       final msId = (row.data['song_ms_id'] as num?)?.toInt();
       final hash = row.data['content_hash'] as String?;

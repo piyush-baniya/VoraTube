@@ -513,6 +513,7 @@ class SongActions {
 
     var deleteSucceeded = false;
     var deleteCancelled = false;
+    String? deleteReason;
 
     if (isMediaStore) {
       final contentUri = song.contentUri;
@@ -520,6 +521,7 @@ class SongActions {
         final result = await MediaDeleteService().deleteMediaFile(contentUri);
         deleteSucceeded = result.deleted;
         deleteCancelled = result.cancelled;
+        deleteReason = result.reason;
       }
     } else if (song.path != null && song.path!.isNotEmpty) {
       final f = File(song.path!);
@@ -560,9 +562,12 @@ class SongActions {
       }
     } else {
       if (context.mounted) {
+        final message = deleteReason == 'still_present'
+            ? 'The file could not be deleted on this device.'
+            : 'The song could not be removed.';
         _snack(
           context,
-          'The song could not be removed.',
+          message,
           variant: VoraSnackbarVariant.error,
           title: 'Couldn\'t delete song',
         );

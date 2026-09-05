@@ -290,15 +290,27 @@ void main() {
       final targets = await repository.artworkTargets(
         dirtyAlbumKeys: {'ms:11'},
       );
-      expect(targets.map((t) => t.key), ['ms:11']);
+      expect(targets.map((t) => t.key), ['ms:11', 'song:ms:1']);
       // The album id and a representative song must both be present, since the
       // native side needs the song handle for album-less and Android 10+ cases.
-      expect(targets.single.albumMediaStoreId, 11);
-      expect(targets.single.audioMediaStoreId, 1);
-      expect(targets.single.path, '/storage/emulated/0/Music/song_1.mp3');
+      expect(targets.first.albumMediaStoreId, 11);
+      expect(targets.first.audioMediaStoreId, 1);
+      expect(targets.first.path, '/storage/emulated/0/Music/song_1.mp3');
 
       await repository.attachArtwork({
         'ms:11': const ResolvedArtwork(
+          smallPath: '/a_s.webp',
+          largePath: '/a_l.webp',
+        ),
+      });
+      // The album's own art is resolved, but the song still wants its own
+      // per-song artwork so detail lists show distinct covers per track.
+      expect((await repository.artworkTargets()).map((t) => t.key), [
+        'song:ms:1',
+      ]);
+
+      await repository.attachArtwork({
+        'song:ms:1': const ResolvedArtwork(
           smallPath: '/a_s.webp',
           largePath: '/a_l.webp',
         ),
@@ -315,7 +327,7 @@ void main() {
       // The old implementation returned nothing when no album had changed in
       // the current batch, so artwork that failed once was never retried.
       final targets = await repository.artworkTargets();
-      expect(targets.map((t) => t.key), ['ms:11']);
+      expect(targets.map((t) => t.key), ['ms:11', 'song:ms:1']);
     });
 
     test('failed artwork writes NULL, not an empty string', () async {
@@ -335,9 +347,12 @@ void main() {
       await repository.attachArtwork({'ms:11': null});
       expect((await repository.artworkTargets()).map((t) => t.key), [
         'ms:11',
+        'song:ms:1',
       ], reason: 'one transient failure should not disqualify an album');
 
-      await repository.attachArtwork({'ms:11': null});
+      // Fail the song's own artwork attempt too, so the retry rule below can
+      // assert on both artist types without the song leaking back in.
+      await repository.attachArtwork({'ms:11': null, 'song:ms:1': null});
       expect(
         await repository.artworkTargets(),
         isEmpty,
@@ -346,7 +361,7 @@ void main() {
 
       expect(
         (await repository.artworkTargets(retryFailed: true)).map((t) => t.key),
-        ['ms:11'],
+        ['ms:11', 'song:ms:1'],
         reason: 'an explicit rescan must still be able to force a retry',
       );
     });

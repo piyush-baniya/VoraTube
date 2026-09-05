@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -8,29 +10,29 @@ void main() {
 
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() {
+  void setHandler(Future<Map<Object?, Object?>> Function(MethodCall call)? fn) {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      channel,
-      (call) async {
-        if (call.method != 'deleteMediaFile') {
-          return MissingPluginException();
-        }
-        final uri = (call.arguments as Map<Object?, Object?>)['contentUri'];
-        if (uri == 'cancel') {
-          return {'deleted': false, 'cancelled': true};
-        }
-        if (uri == 'fail') {
-          throw PlatformException(code: 'delete_request_failed');
-        }
-        return {'deleted': true};
-      },
-    );
+        .setMockMethodCallHandler(channel, fn);
+  }
+
+  setUp(() {
+    setHandler((call) async {
+      if (call.method != 'deleteMediaFile') {
+        throw MissingPluginException();
+      }
+      final uri = (call.arguments as Map<Object?, Object?>)['contentUri'];
+      if (uri == 'cancel') {
+        return {'deleted': false, 'cancelled': true};
+      }
+      if (uri == 'fail') {
+        throw PlatformException(code: 'delete_request_failed');
+      }
+      return {'deleted': true};
+    });
   });
 
   tearDown(() {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, null);
+    setHandler(null);
   });
 
   test('successful deletion reports deleted=true', () async {
@@ -56,14 +58,10 @@ void main() {
 
   test('invokes the platform channel with the content URI', () async {
     final calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-          channel,
-          (call) async {
-            calls.add(call);
-            return {'deleted': true};
-          },
-        );
+    setHandler((call) async {
+      calls.add(call);
+      return {'deleted': true};
+    });
 
     final service = MediaDeleteService(channel: channel);
     await service.deleteMediaFile('content://media/audio/42');
@@ -74,4 +72,23 @@ void main() {
     expect((call.arguments as Map<Object?, Object?>)['contentUri'],
         'content://media/audio/42');
   });
+
+  test(
+    'a lost platform result times out instead of hanging forever',
+    () async {
+      // The platform never answers (the failure mode behind "Allow does
+      // nothing, and the next attempt says it could not be deleted").
+      setHandler((call) => Completer<Map<Object?, Object?>>().future);
+
+      final service = MediaDeleteService(channel: channel);
+      final result = await service.deleteMediaFile(
+        'content://media/audio/42',
+        timeout: const Duration(milliseconds: 50),
+      );
+
+      expect(result.deleted, isFalse);
+      expect(result.cancelled, isFalse);
+      expect(result.reason, 'timeout');
+    },
+  );
 }
