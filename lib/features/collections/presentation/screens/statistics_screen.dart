@@ -535,6 +535,7 @@ class _YearlyReportSection extends ConsumerWidget {
         icon: Icons.calendar_month_rounded,
         period: breakdown?.year,
         bars: breakdown?.yearMonthly,
+        barsLabel: 'By month',
         barLabel: (d) => const [
           'J',
           'F',
@@ -561,6 +562,7 @@ class _ReportBody extends StatelessWidget {
     required this.period,
     required this.bars,
     required this.barLabel,
+    this.barsLabel = 'By day',
   });
 
   final String title;
@@ -568,6 +570,10 @@ class _ReportBody extends StatelessWidget {
   final PeriodStats? period;
   final List<DayListen>? bars;
   final String Function(DateTime day) barLabel;
+
+  /// Caption shown above the bar chart. Weeks aggregate by day; the yearly
+  /// report aggregates by month, so its section passes 'By month'.
+  final String barsLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -625,7 +631,7 @@ class _ReportBody extends StatelessWidget {
                 ],
                 if (bars != null && bars!.any((b) => b.listenedMs > 0)) ...[
                   const SizedBox(height: AppTokens.s3),
-                  const _SubLabel('By day'),
+                  _SubLabel(barsLabel),
                   const SizedBox(height: AppTokens.s2),
                   _BarChart(bars: bars!, barLabel: barLabel),
                 ],
