@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:vora_tube/app/widgets/vora_snackbar.dart';
 
 import '../../../../../app/theme/app_tokens.dart';
 import '../../../../../core/ingest/artwork/artwork_file_cache.dart';
@@ -26,13 +27,15 @@ class SmartMixDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
-  /// Shuffled song order shown when the Shuffle button is active. `null`
-  /// means the list displays the original mix order.
-  List<SongTileData>? _shuffled;
+  /// True while a shuffled playback session started from this screen is
+  /// active. Used only to highlight the Shuffle button — the on-screen list
+  /// always keeps the mix's original order; shuffling happens purely inside
+  /// the player.
+  bool _shuffleActive = false;
 
-  List<SongTileData> get _viewSongs => _shuffled ?? widget.mix.songs;
+  List<SongTileData> get _viewSongs => widget.mix.songs;
 
-  bool get _shuffling => _shuffled != null;
+  bool get _shuffling => _shuffleActive;
 
   @override
   void initState() {
@@ -306,20 +309,29 @@ class _SmartMixDetailScreenState extends ConsumerState<SmartMixDetailScreen> {
     }
   }
 
-  void _playMix({required bool shuffle}) {
+  Future<void> _playMix({required bool shuffle}) async {
     final player = ref.read(playerProvider);
 
     if (shuffle) {
-      // Reorder the on-screen list AND play that same order so the visible
-      // playlist matches playback.
-      final shuffled = List<SongTileData>.of(_viewSongs)..shuffle();
-      setState(() => _shuffled = shuffled);
-      player.playQueue(shuffled.map((t) => songTileToRef(t)).toList());
+      // Shuffle NEVER reorders the on-screen list: enable the player's
+      // shuffled mode and start playback — the engine keeps the chosen song
+      // first and shuffles everything after it, so Next plays a random song
+      // while Previous always walks back through the (shuffled) history.
+      await player.setShuffle(true);
+      if (!mounted) return;
+      setState(() => _shuffleActive = true);
+      VoraSnackbar.show(
+        context,
+        variant: VoraSnackbarVariant.info,
+        message: 'Playing in shuffled mode',
+      );
     } else {
-      // Play follows the currently displayed order; an active shuffled view is
-      // kept rather than reset to the mix's original order.
-      player.playQueue(_viewSongs.map((t) => songTileToRef(t)).toList());
+      // Plain play resets to the mix's original order.
+      await player.setShuffle(false);
+      if (!mounted) return;
+      setState(() => _shuffleActive = false);
     }
+    await player.playQueue(_viewSongs.map((t) => songTileToRef(t)).toList());
   }
 
   void _playFromIndex(int index) {

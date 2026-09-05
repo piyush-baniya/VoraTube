@@ -51,6 +51,19 @@ class MiniPlayer extends ConsumerWidget {
           ref.read(playerProvider).clearSession();
         }
       },
+      // Swipe right → next song, swipe left → previous song. With shuffle on,
+      // Next follows the engine's shuffled order (random) while Previous
+      // always walks back to the song that just played (never random).
+      onHorizontalDragEnd: (details) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity < -400 && hasPrevious) {
+          ref.read(interstitialAdControllerProvider).onSkipClicked();
+          ref.read(playerProvider).previous();
+        } else if (velocity > 400 && hasNext) {
+          ref.read(interstitialAdControllerProvider).onSkipClicked();
+          ref.read(playerProvider).next();
+        }
+      },
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           AppTokens.s3,

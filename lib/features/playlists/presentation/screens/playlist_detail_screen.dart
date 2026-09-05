@@ -46,17 +46,15 @@ class PlaylistDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
-  /// Shuffled song order shown while the Shuffle button is active. `null`
-  /// means the list displays the playlist's persisted order. The shuffled view
-  /// is intentionally NOT persisted so the playlist order stays user-controlled.
-  List<SongTileData>? _shuffled;
+  /// True while a shuffled playback session started from this screen is
+  /// active. Used only to highlight the Shuffle button - the on-screen list
+  /// always keeps the playlist's persisted order; shuffling happens purely
+  /// inside the player.
+  bool _shuffleActive = false;
 
   /// True while a reorder drag is in flight so pagination does not reload the
   /// list mid-drag (which would cancel the drag and snap the row back).
   bool _dragging = false;
-
-  List<SongTileData>? _viewTiles(List<SongTileData> tiles) =>
-      _shuffled ?? tiles;
 
   @override
   void initState() {
@@ -121,7 +119,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                       onAction: _addSongs,
                     );
                   }
-                  final viewTiles = _viewTiles(tiles)!;
+                  final viewTiles = tiles;
                   return NotificationListener<ScrollNotification>(
                     onNotification: (notification) {
                       _onScroll(notification.metrics);
@@ -171,7 +169,7 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
                           index: index,
                           onPlay: (_) => _playFrom(viewTiles, index),
                           removeFromPlaylistId: widget.playlistId,
-                          dragHandle: !_shuffling,
+                          dragHandle: true,
                         );
                       },
                     ),
@@ -185,8 +183,8 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
       floatingActionButton: asyncSongs.whenOrNull(
         data: (tiles) => tiles.isNotEmpty
             ? _PlayerButtons(
-                tiles: _viewTiles(tiles)!,
-                shuffling: _shuffling,
+                tiles: tiles,
+                shuffling: _shuffleActive,
                 onShuffle: () => _shuffle(tiles),
                 onPlay: () => _play(tiles),
               )
@@ -195,20 +193,29 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     );
   }
 
-  bool get _shuffling => _shuffled != null;
-
-  void _shuffle(List<SongTileData> tiles) {
-    // Reorder the on-screen list AND play that same order so the visible
-    // playlist matches playback.
-    final shuffled = List<SongTileData>.of(tiles)..shuffle();
-    setState(() => _shuffled = shuffled);
-    _playFrom(shuffled, 0);
+  /// Shuffle NEVER reorders the on-screen list. Instead it enables the
+  /// player's shuffled mode and starts playback - the engine keeps the chosen
+  /// song first and shuffles everything after it, so Next plays a random song
+  /// while Previous always walks back through the (shuffled) history.
+  Future<void> _shuffle(List<SongTileData> tiles) async {
+    final player = ref.read(playerProvider);
+    await player.setShuffle(true);
+    if (!mounted) return;
+    setState(() => _shuffleActive = true);
+    _playFrom(tiles, 0);
+    VoraSnackbar.show(
+      context,
+      variant: VoraSnackbarVariant.info,
+      message: 'Playing in shuffled mode',
+    );
   }
 
-  void _play(List<SongTileData> tiles) {
-    // Play follows the currently displayed order. If the shuffled view is
-    // active it is kept (and played) rather than reset to the persisted order.
-    _playFrom(_viewTiles(tiles)!, 0);
+  /// Play always follows the playlist's persisted order and clears any
+  /// shuffled playback started earlier from this screen.
+  Future<void> _play(List<SongTileData> tiles) async {
+    setState(() => _shuffleActive = false);
+    await ref.read(playerProvider).setShuffle(false);
+    _playFrom(tiles, 0);
   }
 
   void _playFrom(List<SongTileData> tiles, int startIndex) {

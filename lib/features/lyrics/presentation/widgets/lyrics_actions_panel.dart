@@ -311,10 +311,6 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     final colorScheme = Theme.of(context).colorScheme;
     final isDestructive = destructive == true;
     final iconColor = isDestructive ? colorScheme.error : colorScheme.primary;
-    // Icon footprint used to keep the label centred: the leading side holds
-    // the icon + gap, so an equal spacer on the trailing side means the label
-    // (in the Expanded middle) is centred within the whole button instead of
-    // being pushed to the right by the icon.
     final double iconSize = widget.grid ? 20 : 18;
     return FilledButton.tonal(
       onPressed: enabled ? () => onTap() : null,
@@ -324,34 +320,32 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
             ? colorScheme.errorContainer.withValues(alpha: 0.5)
             : null,
         padding: EdgeInsets.symmetric(
+          horizontal: AppTokens.s3,
           vertical: widget.compact ? AppTokens.s2 : AppTokens.s3,
         ),
         visualDensity: widget.compact ? VisualDensity.compact : null,
       ),
-      child: Center(
-        // Icon + label centred as a group inside the button.
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: iconSize,
-              color: iconColor,
+      // The label is genuinely centred within the WHOLE button: the Expanded
+      // text sits between the leading icon+gap and an equally-sized trailing
+      // spacer, so its centre always lands on the button centre line and
+      // differing label lengths never push it off-centre.
+      child: Row(
+        children: [
+          Icon(icon, size: iconSize, color: iconColor),
+          const SizedBox(width: AppTokens.s1),
+          Expanded(
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: isDestructive
+                  ? TextStyle(color: colorScheme.error)
+                  : null,
             ),
-            const SizedBox(width: AppTokens.s1),
-            Flexible(
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: isDestructive
-                    ? TextStyle(color: colorScheme.error)
-                    : null,
-              ),
-            ),
-          ],
-        ),
+          ),
+          SizedBox(width: iconSize + AppTokens.s1),
+        ],
       ),
     );
   }
@@ -377,29 +371,29 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
           borderRadius: BorderRadius.circular(AppTokens.rFull),
           child: Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppTokens.s1,
+              horizontal: AppTokens.s2,
               vertical: AppTokens.s2,
             ),
-            child: Center(
-              // Icon + label centred as a group inside the chip.
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(icon, size: 16, color: colorScheme.primary),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+            // Same centring rule as the grid buttons: the label sits between
+            // the leading icon+gap and an equally-sized trailing spacer so it
+            // is centred within the whole chip.
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: colorScheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 22),
+              ],
             ),
           ),
         ),

@@ -10,6 +10,7 @@ import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/utils/scroll_pagination.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
 import '../../../../../core/player/player_controller.dart';
@@ -172,12 +173,42 @@ class _NowPlayingBadge extends StatelessWidget {
 class _SongsToolbar extends ConsumerWidget {
   const _SongsToolbar();
 
+  /// Plays the given tiles from the top. With [shuffle] the player's shuffled
+  /// mode is enabled first - the engine shuffles the queue after the starting
+  /// song - while the on-screen list is never reordered.
+  Future<void> _playAll(
+    BuildContext context,
+    WidgetRef ref,
+    List<SongTileData> tiles, {
+    required bool shuffle,
+  }) async {
+    final player = ref.read(playerProvider);
+    await player.setShuffle(shuffle);
+    if (!context.mounted) return;
+    if (shuffle) {
+      VoraSnackbar.show(
+        context,
+        variant: VoraSnackbarVariant.info,
+        message: 'Playing in shuffled mode',
+      );
+    }
+    final playContext = playContextFromTiles(tiles, 0);
+    await player.playQueue(
+      playContext.refs,
+      startIndex: playContext.startIndex,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final accent = AppColors.accent;
     final favoritesOnly = ref.watch(favoritesOnlyProvider);
+    // The current (filtered + sorted) songs so Play/Shuffle act on exactly
+    // what the list below is showing.
+    final songs =
+        ref.watch(pagedSongsProvider).valueOrNull ?? const <SongTileData>[];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -215,6 +246,45 @@ class _SongsToolbar extends ConsumerWidget {
                 ref.read(favoritesOnlyProvider.notifier).state = v,
           ),
           const Spacer(),
+          // Play: starts the current (filtered + sorted) list in order.
+          PressableScale(
+            onTap: songs.isEmpty
+                ? null
+                : () => _playAll(context, ref, songs, shuffle: false),
+            child: Container(
+              padding: const EdgeInsets.all(AppTokens.s2),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(AppTokens.rMd),
+              ),
+              child: Icon(
+                Icons.play_arrow_rounded,
+                size: 22,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s2),
+          // Shuffle: enables the player's shuffled mode and starts the list -
+          // the on-screen order is untouched; the engine plays it shuffled.
+          PressableScale(
+            onTap: songs.isEmpty
+                ? null
+                : () => _playAll(context, ref, songs, shuffle: true),
+            child: Container(
+              padding: const EdgeInsets.all(AppTokens.s2),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(AppTokens.rMd),
+              ),
+              child: Icon(
+                Icons.shuffle_rounded,
+                size: 22,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s2),
           // Sort button
           PressableScale(
             onTap: () => showSortSheet(context, ref),
