@@ -76,6 +76,8 @@ flutter:
 
   assets:
     - assets/voratube_logo.png
+    - assets/legal/privacy_policy.md
+    - assets/legal/terms_of_use.md
 
   # To add assets to your application, add an assets section, like this:
   # assets:

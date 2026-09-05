@@ -154,6 +154,10 @@ class SettingsKeys {
   static const String library = 'settings.library';
   static const String appearance = 'settings.appearance';
 
+  /// The last-browsed Library section (Songs/Albums/Artists/Genres), so the
+  /// Library tab reopens where the user left off across restarts.
+  static const String librarySection = 'settings.librarySection';
+
   /// Stores the most recent successful update-check timestamp (milliseconds
   /// since epoch) so the check is throttled to once per interval.
   static const String updateCheck = 'update.lastCheck';

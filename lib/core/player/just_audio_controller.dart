@@ -765,17 +765,10 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> previous() async {
-    // If we're more than ~3s into the current song, restart it rather than
-    // jumping songs (standard transport behaviour). A single-source engine has
-    // no "previous sequence index", so the only way back is to restart the
-    // current song or replay from this first-position view.
-    if (_player.position > const Duration(seconds: 3)) {
-      await _player.seek(Duration.zero);
-      // Re-anchor the system playback state so the notification seekbar
-      // follows the restart (see [seek]).
-      _broadcastSystemState();
-      return;
-    }
+    // Previous always moves to the previous song — no "restart if more than
+    // ~3s in" behaviour. A single-source engine has no "previous sequence
+    // index", so the only way back is to replay from this first-position view
+    // via [_advance].
     await _advance(manual: true, backward: true);
   }
 

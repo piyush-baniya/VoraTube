@@ -221,6 +221,7 @@ class VoraTubeIngestBridge(context: Context) {
         val albumId: Long?,
         val audioId: Long?,
         val path: String?,
+        val preferEmbedded: Boolean = false,
     )
 
     private fun resolveArtwork(
@@ -235,6 +236,7 @@ class VoraTubeIngestBridge(context: Context) {
                 albumId = (raw["albumId"] as? Number)?.toLong()?.takeIf { it > 0 },
                 audioId = (raw["audioId"] as? Number)?.toLong()?.takeIf { it > 0 },
                 path = (raw["path"] as? String)?.takeIf { it.isNotBlank() },
+                preferEmbedded = raw["preferEmbedded"] as? Boolean ?: false,
             )
             out[key] = resolveSingleArtwork(target, artDir)
         }
@@ -280,6 +282,15 @@ class VoraTubeIngestBridge(context: Context) {
 
     private fun loadArtworkBitmap(target: ArtworkTarget): Bitmap? {
         val thumbSize = Size(LARGE_PX, LARGE_PX)
+
+        // Song-scoped targets go embedded-artwork FIRST. MediaStore builds song
+        // thumbnails from the album's artwork, so a thumbnail-first strategy
+        // resolves every track of an album to the same image and distinct
+        // per-song covers can never surface. Embedded art is the track's own;
+        // the thumbnails below are only a fallback for tracks that carry none.
+        if (target.preferEmbedded) {
+            embeddedArtwork(target)?.let { return it }
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (target.albumId != null) {

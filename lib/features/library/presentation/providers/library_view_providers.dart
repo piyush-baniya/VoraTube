@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../features/settings/data/settings_models.dart';
 import '../../data/library_models.dart';
 import '../../data/library_repository.dart';
 import 'library_providers.dart';
@@ -31,9 +32,48 @@ final statsRefreshTickProvider = StateProvider<int>((ref) => 0);
 /// Home screen flicker on a heart tap.
 final favoritesRefreshTickProvider = StateProvider<int>((ref) => 0);
 
-final librarySectionProvider = StateProvider<LibrarySection>(
-  (ref) => LibrarySection.songs,
-);
+/// The active Library browse section (Songs, Albums, Artists, Genres).
+///
+/// Persisted to KV storage so the Library reopens on the section the user was
+/// last on — even after the app process is restarted (which would otherwise
+/// silently reset the tab to Songs). In-memory state still updates instantly;
+/// the write is a fire-and-forget KV save.
+class LibrarySectionController extends StateNotifier<LibrarySection> {
+  LibrarySectionController(this._repository) : super(LibrarySection.songs) {
+    _load();
+  }
+
+  final LibraryRepository _repository;
+
+  Future<void> _load() async {
+    try {
+      final raw = await _repository.kvGet(SettingsKeys.librarySection);
+      if (raw == null) return;
+      final restored = LibrarySection.values.firstWhere(
+        (e) => e.name == raw,
+        orElse: () => LibrarySection.songs,
+      );
+      if (restored != LibrarySection.songs) {
+        state = restored;
+      }
+    } catch (_) {
+      // A failed read simply keeps the default Songs section.
+    }
+  }
+
+  @override
+  set state(LibrarySection value) {
+    if (value == state) return;
+    super.state = value;
+    // Best-effort persistence; never block the UI on the KV write.
+    _repository.kvSet(SettingsKeys.librarySection, value.name);
+  }
+}
+
+final librarySectionProvider =
+    StateNotifierProvider<LibrarySectionController, LibrarySection>((ref) {
+  return LibrarySectionController(ref.watch(libraryRepositoryProvider));
+});
 
 final songSortProvider = StateProvider<SongSort>(
   (ref) => SongSort.recentlyAdded,

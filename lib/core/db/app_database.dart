@@ -138,7 +138,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -286,6 +286,26 @@ class AppDatabase extends _$AppDatabase {
         await customStatement(
           "UPDATE albums SET art_large_path = NULL WHERE art_large_path = ''",
         );
+      }
+      if (from < 7) {
+        // Re-resolve per-song artwork for tracks that belong to an album.
+        //
+        // The native resolver used to answer song-scoped artwork requests with
+        // MediaStore's *song thumbnail*, which Android derives from the
+        // album's artwork. Every track of an album therefore stored the same
+        // image in song_extras, and album detail pages showed identical art on
+        // every row even when individual tracks carried their own embedded
+        // cover. Clearing the cached per-song art makes the next scan re-run
+        // resolution with the embedded-first strategy; tracks without their
+        // own art simply resolve to no art again and fall back to the album
+        // cover, so nothing is lost.
+        await customStatement('''
+UPDATE song_extras
+SET art_small_path = NULL,
+    art_large_path = NULL,
+    art_resolved_at = NULL
+WHERE song_id IN (SELECT id FROM songs WHERE album_row_id IS NOT NULL)
+''');
       }
     },
   );

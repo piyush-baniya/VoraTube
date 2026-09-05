@@ -38,6 +38,7 @@ final class ArtworkTarget {
     this.albumMediaStoreId,
     this.audioMediaStoreId,
     this.path,
+    this.preferEmbedded = false,
   });
 
   /// Album-scoped lookup: one decode is cached under the album key and shared
@@ -60,6 +61,9 @@ final class ArtworkTarget {
   /// The prefix is what makes the result routable: album keys and song identity
   /// keys are both shaped `ms:<int>`, so without it a returned key would be
   /// ambiguous and artwork could be written to the wrong row.
+  ///
+  /// Song-scoped targets always resolve embedded artwork first (see
+  /// [preferEmbedded]).
   factory ArtworkTarget.song({
     required String identityKey,
     int? audioMediaStoreId,
@@ -68,6 +72,7 @@ final class ArtworkTarget {
     key: '$songKeyPrefix$identityKey',
     audioMediaStoreId: audioMediaStoreId,
     path: path,
+    preferEmbedded: true,
   );
 
   static const String songKeyPrefix = 'song:';
@@ -84,6 +89,17 @@ final class ArtworkTarget {
   /// Absolute file path, used for embedded-artwork extraction.
   final String? path;
 
+  /// When true, the native resolver reads the track's own embedded artwork
+  /// before consulting any MediaStore thumbnail.
+  ///
+  /// This matters for song-scoped targets: MediaStore generates song
+  /// thumbnails from the *album's* artwork, so a thumbnail-first strategy
+  /// resolves every track of an album to the same image and per-song covers
+  /// (tracks with their own embedded art) can never appear. Embedded-first
+  /// makes per-song artwork distinct; the thumbnail remains the fallback for
+  /// tracks without embedded art.
+  final bool preferEmbedded;
+
   bool get isSongScoped => isSongKey(key);
 
   static bool isSongKey(String key) => key.startsWith(songKeyPrefix);
@@ -97,6 +113,7 @@ final class ArtworkTarget {
     'albumId': albumMediaStoreId,
     'audioId': audioMediaStoreId,
     'path': path,
+    'preferEmbedded': preferEmbedded,
   };
 
   @override
@@ -105,11 +122,12 @@ final class ArtworkTarget {
       other.key == key &&
       other.albumMediaStoreId == albumMediaStoreId &&
       other.audioMediaStoreId == audioMediaStoreId &&
-      other.path == path;
+      other.path == path &&
+      other.preferEmbedded == preferEmbedded;
 
   @override
   int get hashCode =>
-      Object.hash(key, albumMediaStoreId, audioMediaStoreId, path);
+      Object.hash(key, albumMediaStoreId, audioMediaStoreId, path, preferEmbedded);
 }
 
 /// ReplayGain information extracted from audio metadata.

@@ -134,6 +134,8 @@ void main() {
     await _openSettings(tester);
 
     await tester.tap(find.text('Privacy Policy').first);
+    // The legal document loads asynchronously from a bundled markdown asset.
+    await tester.pumpAndSettle();
     await tester.pumpAndSettle();
 
     expect(find.byType(PrivacyPolicyScreen), findsOneWidget);
@@ -146,10 +148,12 @@ void main() {
     await _openSettings(tester);
 
     await tester.tap(find.text('Terms of Use').first);
+    // The legal document loads asynchronously from a bundled markdown asset.
+    await tester.pumpAndSettle();
     await tester.pumpAndSettle();
 
     expect(find.byType(TermsScreen), findsOneWidget);
-    expect(find.text('Acceptance of Terms'), findsOneWidget);
+    expect(find.text('1. Use of the App'), findsOneWidget);
   });
 
   testWidgets('tapping FAQ opens the in-app FAQ screen', (tester) async {

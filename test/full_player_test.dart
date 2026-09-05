@@ -110,7 +110,7 @@ void main() {
       expect(find.text('Test Artist'), findsOneWidget);
     });
 
-    testWidgets('a horizontal swipe right on the artwork skips to next', (
+    testWidgets('a horizontal swipe right on the artwork no longer skips', (
       tester,
     ) async {
       final player = _RecordingFullPlayer(
@@ -136,11 +136,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(player.calls, contains('next'));
+      // Horizontal track-swipe was intentionally removed from the full player;
+      // only the transport buttons (and the MiniPlayer) change tracks.
+      expect(player.calls, isNot(contains('next')));
       expect(player.calls, isNot(contains('previous')));
     });
 
-    testWidgets('a horizontal swipe left on the artwork skips to previous', (
+    testWidgets('a horizontal swipe left on the artwork no longer skips', (
       tester,
     ) async {
       final player = _RecordingFullPlayer(
@@ -166,11 +168,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(player.calls, contains('previous'));
+      expect(player.calls, isNot(contains('previous')));
       expect(player.calls, isNot(contains('next')));
     });
 
-    testWidgets('a horizontal swipe on the metadata area skips to next', (
+    testWidgets('a horizontal swipe on the metadata area no longer skips', (
       tester,
     ) async {
       final player = _RecordingFullPlayer(
@@ -192,7 +194,8 @@ void main() {
       await tester.fling(find.text('Test Song'), const Offset(300, 0), 1500);
       await tester.pumpAndSettle();
 
-      expect(player.calls, contains('next'));
+      expect(player.calls, isNot(contains('next')));
+      expect(player.calls, isNot(contains('previous')));
     });
 
     testWidgets('shows empty state when no track', (tester) async {

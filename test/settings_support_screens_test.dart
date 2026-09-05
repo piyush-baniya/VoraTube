@@ -45,18 +45,28 @@ void main() {
   });
 
   group('TermsScreen', () {
+    Future<void> pumpTerms(WidgetTester tester) async {
+      // The markdown asset loads through real (async) platform I/O, which
+      // needs runAsync inside the fake-async test zone.
+      await tester.runAsync(() async {
+        await tester.pumpWidget(_wrap(const TermsScreen()));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('renders the Terms of Use header and first section',
         (tester) async {
-      await tester.pumpWidget(_wrap(const TermsScreen()));
+      await pumpTerms(tester);
 
       expect(find.widgetWithText(AppBar, 'Terms of Use'), findsOneWidget);
-      expect(find.text('Acceptance of Terms'), findsOneWidget);
+      expect(find.text('1. Use of the App'), findsOneWidget);
     });
 
     testWidgets('scrolling reveals later sections', (tester) async {
-      await tester.pumpWidget(_wrap(const TermsScreen()));
+      await pumpTerms(tester);
 
-      final target = find.text('Changes to These Terms');
+      final target = find.text('9. Limitation of liability');
       expect(target, findsNothing);
 
       await tester.scrollUntilVisible(
@@ -69,8 +79,18 @@ void main() {
   });
 
   group('PrivacyPolicyScreen', () {
+    Future<void> pumpPrivacy(WidgetTester tester) async {
+      // The markdown asset loads through real (async) platform I/O, which
+      // needs runAsync inside the fake-async test zone.
+      await tester.runAsync(() async {
+        await tester.pumpWidget(_wrap(const PrivacyPolicyScreen()));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('renders the Privacy Policy header and intro', (tester) async {
-      await tester.pumpWidget(_wrap(const PrivacyPolicyScreen()));
+      await pumpPrivacy(tester);
 
       expect(find.widgetWithText(AppBar, 'Privacy Policy'), findsOneWidget);
       expect(
@@ -81,9 +101,9 @@ void main() {
     });
 
     testWidgets('scrolling reveals later policy sections', (tester) async {
-      await tester.pumpWidget(_wrap(const PrivacyPolicyScreen()));
+      await pumpPrivacy(tester);
 
-      final target = find.text('Data retention and deletion');
+      final target = find.text('10. Data retention and deletion');
       expect(target, findsNothing);
 
       await tester.scrollUntilVisible(
