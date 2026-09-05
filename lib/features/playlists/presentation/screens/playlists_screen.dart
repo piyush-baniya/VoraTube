@@ -14,6 +14,9 @@ import '../providers/playlist_providers.dart';
 import '../widgets/playlist_collage.dart';
 import 'playlist_detail_screen.dart';
 import '../../../../features/library/data/song_ref_mapper.dart';
+import '../../../collections/presentation/providers/collections_providers.dart';
+import '../../../library/data/library_repository.dart' show CollectionKind;
+import '../../../library/presentation/screens/filtered_songs_screen.dart';
 import '../../../smart_music/presentation/widgets/smart_mix_strip.dart';
 
 class PlaylistsScreen extends ConsumerStatefulWidget {
@@ -112,6 +115,10 @@ class _PlaylistList extends StatelessWidget {
         // Recommended Smart Mixes, clearly distinct from the user-created
         // playlists listed below.
         const SliverToBoxAdapter(child: SmartMixStrip()),
+        // "Your Listening": Favourites / Most played / Recently played shown
+        // as playlist-like cards above My Playlists. Their song lists only
+        // appear when a card is opened.
+        const SliverToBoxAdapter(child: _YourListeningSection()),
         if (playlists.isEmpty)
           SliverFillRemaining(
             hasScrollBody: false,
@@ -194,6 +201,152 @@ class _PlaylistList extends StatelessWidget {
         // Bottom padding for MiniPlayer
         SliverToBoxAdapter(child: SizedBox(height: AppTokens.s10)),
       ],
+    );
+  }
+}
+
+/// "Your Listening" section: Favourites, Most played and Recently played
+/// presented like playlists above the user's own playlists. Opening a card
+/// shows that collection's songs on a dedicated screen.
+class _YourListeningSection extends ConsumerWidget {
+  const _YourListeningSection();
+
+  static const _entries = <(CollectionKind, String, IconData)>[
+    (CollectionKind.favorites, 'Favourites', Icons.favorite_rounded),
+    (CollectionKind.mostPlayed, 'Most played', Icons.local_fire_department_rounded),
+    (CollectionKind.recentlyPlayed, 'Recently Played', Icons.history_rounded),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final async = ref.watch(collectionSummariesProvider);
+
+    return async.when(
+      skipLoadingOnRefresh: true,
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (summaries) {
+        final counts = {
+          for (final s in summaries) s.kind: s.count,
+        };
+        // Cards with nothing to show are hidden so an empty detail screen is
+        // never reachable.
+        final visible = _entries
+            .where((e) => (counts[e.$1] ?? 0) > 0)
+            .toList();
+        if (visible.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s5,
+                AppTokens.s4,
+                AppTokens.s5,
+                AppTokens.s2,
+              ),
+              child: Text(
+                'Your Listening',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 132,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                itemCount: visible.length,
+                separatorBuilder: (_, _) => const SizedBox(width: AppTokens.s3),
+                itemBuilder: (context, index) {
+                  final (kind, label, icon) = visible[index];
+                  return _ListeningCard(
+                    kind: kind,
+                    label: label,
+                    icon: icon,
+                    count: counts[kind] ?? 0,
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ListeningCard extends StatelessWidget {
+  const _ListeningCard({
+    required this.kind,
+    required this.label,
+    required this.icon,
+    required this.count,
+  });
+
+  final CollectionKind kind;
+  final String label;
+  final IconData icon;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
+      onTap: () => Navigator.of(context).push(
+        pushSharedAxis<void>(
+          context,
+          FilteredSongsScreen.collection(kind, label),
+        ),
+      ),
+      child: Container(
+        width: 148,
+        padding: const EdgeInsets.all(AppTokens.s3),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppTokens.rLg),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppTokens.rMd),
+              ),
+              child: Icon(icon, size: 22, color: colorScheme.primary),
+            ),
+            const Spacer(),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '$count ${count == 1 ? 'song' : 'songs'}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

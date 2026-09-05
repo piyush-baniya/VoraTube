@@ -171,7 +171,9 @@ class _SleepTimerTile extends ConsumerWidget {
     return SettingsTile(
       title: 'Sleep Timer',
       subtitle: active
-          ? 'Counting down — ${formatSleepTimer(remaining)} remaining'
+          ? (remaining <= const Duration(minutes: 5)
+                ? 'Counting down — ${formatSleepTimer(remaining)} remaining'
+                : 'Sleep timer is on')
           : 'Pause playback automatically after a set time',
       leading: Container(
         width: 44,

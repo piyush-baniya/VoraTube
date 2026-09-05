@@ -282,18 +282,24 @@ class VoraTubeIngestBridge(context: Context) {
         val thumbSize = Size(LARGE_PX, LARGE_PX)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Song thumbnail first: it exists for album-less tracks too.
+            if (target.albumId != null) {
+                // Album thumbnail FIRST for album targets: the album row is the
+                // authoritative artwork for every song it contains. Resolving
+                // from the representative *song* thumbnail instead let one
+                // song's own (possibly song-specific) artwork bleed into every
+                // track of the album — which surfaced as every song in an
+                // artist page showing the same wrong cover.
+                val uri = ContentUris.withAppendedId(
+                    MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI,
+                    target.albumId,
+                )
+                loadThumbnailOrNull(uri, thumbSize)?.let { return it }
+            }
+            // Song thumbnail fallback: it exists for album-less tracks too.
             target.audioId?.let { audioId ->
                 val uri = ContentUris.withAppendedId(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                     audioId,
-                )
-                loadThumbnailOrNull(uri, thumbSize)?.let { return it }
-            }
-            target.albumId?.let { albumId ->
-                val uri = ContentUris.withAppendedId(
-                    MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI,
-                    albumId,
                 )
                 loadThumbnailOrNull(uri, thumbSize)?.let { return it }
             }

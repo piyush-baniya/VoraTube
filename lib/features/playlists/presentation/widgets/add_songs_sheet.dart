@@ -15,6 +15,9 @@ class PickerResult {
   final List<int> toRemove;
 }
 
+/// Bulk-selection actions offered by the picker's app-bar menu.
+enum _BulkSelection { allToAdd, allToRemove, clear }
+
 /// Opens a full-screen multi-select picker that adds/removes songs in a
 /// playlist.
 ///
@@ -142,6 +145,60 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
         elevation: 0,
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
+        actions: [
+          PopupMenuButton<_BulkSelection>(
+            tooltip: 'Bulk selection',
+            icon: const Icon(Icons.checklist_rounded),
+            onSelected: (action) async {
+              // Make "select all" genuinely select all: stream in the
+              // remaining pages before snapshotting the tile list.
+              if (action != _BulkSelection.clear) {
+                final notifier = ref.read(pagedSongsProvider.notifier);
+                while (notifier.hasMore) {
+                  await notifier.loadMore();
+                }
+              }
+              final tiles = ref.read(pagedSongsProvider).value;
+              if (tiles == null) return;
+              setState(() {
+                switch (action) {
+                  case _BulkSelection.allToAdd:
+                    _selected.addAll(
+                      tiles
+                          .where((t) => !_members.contains(t.song.id))
+                          .map((t) => t.song.id),
+                    );
+                  case _BulkSelection.allToRemove:
+                    _toRemove.addAll(
+                      tiles
+                          .where((t) => _members.contains(t.song.id))
+                          .map((t) => t.song.id),
+                    );
+                    // Songs just selected for adding cannot also be removed.
+                    _selected.removeAll(_toRemove);
+                  case _BulkSelection.clear:
+                    _selected.clear();
+                    _toRemove.clear();
+                }
+              });
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _BulkSelection.allToAdd,
+                child: Text('Select all (add)'),
+              ),
+              if (_members.isNotEmpty)
+                const PopupMenuItem(
+                  value: _BulkSelection.allToRemove,
+                  child: Text('Select all (remove)'),
+                ),
+              const PopupMenuItem(
+                value: _BulkSelection.clear,
+                child: Text('Clear selection'),
+              ),
+            ],
+          ),
+        ],
       ),
       body: asyncValue.when(
         skipLoadingOnRefresh: true,

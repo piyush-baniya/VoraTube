@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../shared/widgets/artwork_view.dart';
+import '../../../../shared/widgets/initials_avatar.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../data/library_models.dart';
@@ -87,12 +88,18 @@ class ArtistTile extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 56),
           child: Row(
             children: [
-              ArtworkView(
-                path: artist.artPath,
-                size: 52,
-                square: false,
-                iconSize: 24,
-              ),
+              // Artist thumbnail: real artwork when available, otherwise the
+              // artist's initials on a deterministic per-name colour instead
+              // of a generic profile icon.
+              if (artist.artPath != null)
+                ArtworkView(
+                  path: artist.artPath,
+                  size: 52,
+                  square: false,
+                  iconSize: 24,
+                )
+              else
+                InitialsAvatar(name: artist.name, size: 52),
               const SizedBox(width: AppTokens.s3),
               Expanded(
                 child: Text(

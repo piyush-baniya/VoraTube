@@ -722,6 +722,12 @@ class _TopBar extends ConsumerWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final timerActive = ref.watch(sleepTimerIsActiveProvider);
     final timerRemaining = ref.watch(sleepTimerRemainingProvider);
+    // The live countdown only appears in the last five minutes. Before that
+    // the pill just shows the (tinted) bedtime icon so the user can see a
+    // timer is armed without a permanently ticking number.
+    final showCountdown =
+        timerActive && timerRemaining <= const Duration(minutes: 5);
+    final timerPillHighlighted = timerActive;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -762,18 +768,20 @@ class _TopBar extends ConsumerWidget {
             child: Container(
               height: 48,
               padding: EdgeInsets.symmetric(
-                horizontal: timerActive ? AppTokens.s4 : 0,
+                horizontal: timerPillHighlighted ? AppTokens.s4 : 0,
               ),
               decoration: BoxDecoration(
-                color: timerActive
+                color: timerPillHighlighted
                     ? colorScheme.primary.withValues(alpha: 0.16)
                     : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                shape: timerActive ? BoxShape.rectangle : BoxShape.circle,
-                borderRadius: timerActive
+                shape: timerPillHighlighted
+                    ? BoxShape.rectangle
+                    : BoxShape.circle,
+                borderRadius: timerPillHighlighted
                     ? const BorderRadius.all(Radius.circular(AppTokens.rFull))
                     : null,
                 border: Border.all(
-                  color: timerActive
+                  color: timerPillHighlighted
                       ? colorScheme.primary.withValues(alpha: 0.3)
                       : colorScheme.outlineVariant.withValues(alpha: 0.3),
                   width: AppTokens.borderHairline,
@@ -783,12 +791,12 @@ class _TopBar extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // When inactive the pill is a plain 48px circular button
-                  // centred on the icon; when active it becomes a pill showing
-                  // the icon and the live countdown side by side with explicit
-                  // spacing so neither ever overlaps the other.
+                  // centred on the icon; when a timer is armed it becomes a
+                  // tinted pill showing the icon — plus the live countdown
+                  // only in the final five minutes.
                   SizedBox(
-                    width: timerActive ? null : 48,
-                    child: timerActive
+                    width: timerPillHighlighted ? null : 48,
+                    child: timerPillHighlighted
                         ? Icon(
                             Icons.bedtime_rounded,
                             size: 22,
@@ -802,7 +810,7 @@ class _TopBar extends ConsumerWidget {
                             ),
                           ),
                   ),
-                  if (timerActive) ...[
+                  if (showCountdown) ...[
                     const SizedBox(width: AppTokens.s2),
                     Text(
                       formatSleepTimer(timerRemaining),

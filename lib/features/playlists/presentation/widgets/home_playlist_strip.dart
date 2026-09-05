@@ -9,6 +9,7 @@ import '../../data/playlist_models.dart';
 import '../providers/playlist_providers.dart';
 import '../screens/playlist_detail_screen.dart';
 import 'playlist_collage.dart';
+import 'playlist_context_menu.dart';
 
 /// Home dashboard section showing the user's playlists with a Create action.
 ///
@@ -175,6 +176,8 @@ class _HomePlaylistCard extends ConsumerWidget {
           PlaylistDetailScreen(playlistId: playlist.id, name: playlist.name),
         ),
       ),
+      // Long-press shows the same context menu as the Playlists tab cards.
+      onLongPress: () => showPlaylistContextMenu(context, ref, playlist),
       child: Container(
         width: 148,
         padding: const EdgeInsets.all(AppTokens.s3),

@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/empty_state.dart';
+import '../../../../shared/widgets/initials_avatar.dart';
+import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
+import '../../../../shared/widgets/transitions.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../collections/presentation/providers/collections_providers.dart';
 import '../../../player/presentation/providers/player_providers.dart';
@@ -48,6 +51,18 @@ class FilteredSongsScreen extends ConsumerStatefulWidget {
 class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
   late final Future<List<SongTileData>> _future = _load();
 
+  /// Albums the artist appears on — only loaded on the artist detail page,
+  /// where they render as a horizontal strip above the song list.
+  late final Future<List<AlbumSummary>>? _albumsFuture = widget.artist == null
+      ? null
+      : ref
+          .read(libraryRepositoryProvider)
+          .albumsForArtist(widget.artist!.artistRowId);
+
+  /// True while a shuffled playback session started from this screen is
+  /// active. Only used to highlight the Shuffle button.
+  bool _shuffleActive = false;
+
   Future<List<SongTileData>> _load() {
     final collectionKind = widget.collectionKind;
     if (collectionKind != null) {
@@ -64,6 +79,18 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
       return repository.songsForGenre(genre);
     }
     return repository.songsForArtist(widget.artist!.artistRowId);
+  }
+
+  /// Starts the whole list in shuffled playback. The on-screen order is never
+  /// reordered: shuffling happens inside the player, which keeps the queue's
+  /// chosen song first and randomises everything after it.
+  Future<void> _playShuffled(List<SongTileData> tiles) async {
+    final player = ref.read(playerProvider);
+    await player.setShuffle(true);
+    player.playQueue([for (final t in tiles) songTileToRef(t)]);
+    if (mounted) {
+      setState(() => _shuffleActive = true);
+    }
   }
 
   @override
@@ -112,6 +139,66 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                   subtitle: subtitle,
                 ),
               ),
+              // Artist detail page: albums the artist appears on, shown as a
+              // horizontally scrolling strip (like the Home playlist strip),
+              // separated from the song list by a divider.
+              if (widget.artist != null && _albumsFuture != null)
+                SliverToBoxAdapter(
+                  child: FutureBuilder<List<AlbumSummary>>(
+                    future: _albumsFuture,
+                    builder: (context, albumSnapshot) {
+                      final albums = albumSnapshot.data ?? const [];
+                      if (albums.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppTokens.s5,
+                              AppTokens.s1,
+                              AppTokens.s5,
+                              AppTokens.s2,
+                            ),
+                            child: Text(
+                              'Albums',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            height: 176,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppTokens.s4,
+                              ),
+                              itemCount: albums.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(width: AppTokens.s3),
+                              itemBuilder: (context, index) => _AlbumStripCard(
+                                album: albums[index],
+                                onTap: () => Navigator.of(context).push(
+                                  pushSharedAxis<void>(
+                                    context,
+                                    FilteredSongsScreen.album(albums[index]),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: AppTokens.s2),
+                          Divider(
+                            height: AppTokens.borderHairline,
+                            thickness: AppTokens.borderHairline,
+                            color: colorScheme.outlineVariant,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
               if (widget.genre != null)
                 const SliverToBoxAdapter(child: GenreDisclaimer()),
               if (tiles.isNotEmpty)
@@ -134,6 +221,20 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                           ),
                         ),
                         FilledButton.tonalIcon(
+                          onPressed: _shuffleActive ? null : () => _playShuffled(tiles),
+                          icon: const Icon(Icons.shuffle_rounded, size: 20),
+                          label: const Text('Shuffle'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _shuffleActive
+                                ? colorScheme.primary
+                                : null,
+                            foregroundColor: _shuffleActive
+                                ? colorScheme.onPrimary
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: AppTokens.s3),
+                        FilledButton.icon(
                           onPressed: () => ref.read(playerProvider).playQueue([
                             for (final t in tiles) songTileToRef(t),
                           ]),
@@ -201,28 +302,16 @@ class _EntryHeader extends StatelessWidget {
                     size: AppTokens.artworkXl,
                     radius: AppTokens.rLg,
                   )
-                : Container(
-                    width: AppTokens.artworkXl,
-                    height: AppTokens.artworkXl,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          colorScheme.primary.withValues(alpha: 0.18),
-                          colorScheme.primary.withValues(alpha: 0.04),
-                        ],
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.person_rounded,
-                      size: AppTokens.artworkXl * 0.45,
-                      color: colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.6,
-                      ),
-                    ),
-                  ),
+                : (artPath != null
+                      ? ArtworkView(
+                          path: artPath,
+                          size: AppTokens.artworkXl,
+                          radius: AppTokens.artworkXl / 2,
+                        )
+                      : InitialsAvatar(
+                          name: title,
+                          size: AppTokens.artworkXl,
+                        )),
           ),
           const SizedBox(width: AppTokens.s4),
           Expanded(
@@ -254,6 +343,68 @@ class _EntryHeader extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Compact album card for the horizontal strip on the artist detail page —
+/// the same visual language as the Home playlist cards.
+class _AlbumStripCard extends StatelessWidget {
+  const _AlbumStripCard({required this.album, required this.onTap});
+
+  final AlbumSummary album;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return PressableScale(
+      onTap: onTap,
+      child: Container(
+        width: 148,
+        padding: const EdgeInsets.all(AppTokens.s3),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppTokens.rLg),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ArtworkView(
+              path: album.artPath,
+              size: 104,
+              radius: AppTokens.rMd,
+              showShadow: true,
+            ),
+            const SizedBox(height: AppTokens.s2),
+            Text(
+              album.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Flexible(
+              child: Text(
+                album.artistName ??
+                    '${album.songCount} ${album.songCount == 1 ? 'song' : 'songs'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

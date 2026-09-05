@@ -1479,6 +1479,67 @@ extension FilteredSongQueries on LibraryRepository {
     return _decorate(rows);
   }
 
+  /// Albums the artist appears on — primary-artist albums plus albums of any
+  /// song they are credited on via `song_artists` — for the horizontal album
+  /// strip on the artist detail page.
+  Future<List<AlbumSummary>> albumsForArtist(
+    int artistRowId, {
+    int limit = 200,
+  }) async {
+    final albums = _db.albums;
+    final songs = _db.songs;
+    final songCount = songs.id.count();
+
+    final credited = await _db
+        .customSelect(
+          'SELECT DISTINCT song_id FROM song_artists WHERE artist_id = ?',
+          variables: [Variable<int>(artistRowId)],
+        )
+        .get();
+    final creditedSongIds = <int>{
+      for (final row in credited) row.data['song_id'] as int,
+    };
+
+    final query = _db.selectOnly(albums).join([
+      innerJoin(songs, songs.albumRowId.equalsExp(albums.id)),
+    ]);
+    query
+      ..addColumns([
+        albums.id,
+        albums.albumKey,
+        albums.name,
+        albums.artistName,
+        albums.artSmallPath,
+        albums.artLargePath,
+        songCount,
+      ])
+      ..where(
+        songs.artistRowId.equals(artistRowId) |
+            (creditedSongIds.isEmpty
+                ? const Constant(false)
+                : songs.id.isIn(creditedSongIds)),
+      )
+      ..groupBy([albums.id])
+      ..orderBy([OrderingTerm.desc(songs.dateAddedSec.max())]);
+    query.limit(limit);
+
+    final rows = await query.get();
+    return [
+      for (final row in rows)
+        AlbumSummary(
+          albumRowId: row.read(albums.id)!,
+          key: row.read(albums.albumKey) ?? '',
+          name: row.read(albums.name)!,
+          artistName: row.read(albums.artistName),
+          artPath: _pickArt(
+            row.read(albums.artLargePath),
+            row.read(albums.artSmallPath),
+          ),
+          songCount: row.read(songCount) ?? 0,
+        ),
+    ];
+  }
+
   Future<List<SongTileData>> songsForGenre(
     String genre, {
     int limit = 1000,
