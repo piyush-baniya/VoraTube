@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../app/widgets/top_toast.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../features/ads/interstitial_ads_provider.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -195,9 +196,15 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                             final snapshot = ref.watch(playbackStateProvider);
                             return PlayerModeRow(
                               snapshot: snapshot,
-                              onToggleShuffle: () => ref
-                                  .read(playerProvider)
-                                  .setShuffle(!snapshot.shuffleEnabled),
+                              onToggleShuffle: () {
+                                final enabling = !snapshot.shuffleEnabled;
+                                ref.read(playerProvider).setShuffle(enabling);
+                                showTopToast(
+                                  context,
+                                  icon: Icons.shuffle_rounded,
+                                  message: enabling ? 'Shuffle on' : 'Shuffle off',
+                                );
+                              },
                               onToggleRepeat: () {
                                 final next = switch (snapshot.repeatMode) {
                                   RepeatMode.off => RepeatMode.all,
@@ -205,6 +212,17 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                   RepeatMode.one => RepeatMode.off,
                                 };
                                 ref.read(playerProvider).setRepeat(next);
+                                showTopToast(
+                                  context,
+                                  icon: next == RepeatMode.one
+                                      ? Icons.repeat_one_rounded
+                                      : Icons.repeat_rounded,
+                                  message: switch (next) {
+                                    RepeatMode.off => 'Repeat off',
+                                    RepeatMode.all => 'Repeat all',
+                                    RepeatMode.one => 'Repeat one',
+                                  },
+                                );
                               },
                             );
                           }),
@@ -1059,8 +1077,15 @@ class _ControlsConsumer extends ConsumerWidget {
     return PlayerControls(
       snapshot: snapshot,
       showModeToggles: showModeToggles,
-      onToggleShuffle: () =>
-          ref.read(playerProvider).setShuffle(!snapshot.shuffleEnabled),
+      onToggleShuffle: () {
+        final enabling = !snapshot.shuffleEnabled;
+        ref.read(playerProvider).setShuffle(enabling);
+        showTopToast(
+          context,
+          icon: Icons.shuffle_rounded,
+          message: enabling ? 'Shuffle on' : 'Shuffle off',
+        );
+      },
       onToggleRepeat: () {
         final next = switch (snapshot.repeatMode) {
           RepeatMode.off => RepeatMode.all,
@@ -1068,6 +1093,17 @@ class _ControlsConsumer extends ConsumerWidget {
           RepeatMode.one => RepeatMode.off,
         };
         ref.read(playerProvider).setRepeat(next);
+        showTopToast(
+          context,
+          icon: next == RepeatMode.one
+              ? Icons.repeat_one_rounded
+              : Icons.repeat_rounded,
+          message: switch (next) {
+            RepeatMode.off => 'Repeat off',
+            RepeatMode.all => 'Repeat all',
+            RepeatMode.one => 'Repeat one',
+          },
+        );
       },
       onTogglePlay: () => ref.read(playerProvider).togglePlay(),
       onPrevious: () {
