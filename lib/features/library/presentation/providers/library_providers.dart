@@ -136,7 +136,12 @@ class ScanController extends Notifier<ScanUiState> {
 
   Future<void> startScan() async {
     final currentState = state;
-    if (currentState is! ScanReady && currentState is! ScanComplete) {
+    // A failed scan leaves the controller stuck in [ScanFailure]; unless we
+    // also allow restarting from there, "Rescan Library" silently does nothing
+    // (and shows no snackbar) until the app is restarted.
+    if (currentState is! ScanReady &&
+        currentState is! ScanComplete &&
+        currentState is! ScanFailure) {
       return;
     }
     state = const ScanRunning(
