@@ -611,7 +611,7 @@ class SongActions {
           await SharePlus.instance.share(
             ShareParams(
               files: [XFile(path, mimeType: _mimeForPath(path))],
-              text: '${song.title} â€” ${song.artist ?? ''}'.trim(),
+              text: '${song.title} — ${song.artist ?? ''}'.trim(),
             ),
           );
           return;
@@ -623,7 +623,7 @@ class SongActions {
       await SharePlus.instance.share(
         ShareParams(
           text:
-              '${song.title} â€” ${song.artist ?? ''}\n${song.albumName ?? ''}'
+              '${song.title} — ${song.artist ?? ''}\n${song.albumName ?? ''}'
                   .trim(),
           subject: song.title,
         ),
@@ -910,7 +910,7 @@ class SongActions {
   }
 
   static String _formatDuration(int ms) {
-    if (ms <= 0) return 'â€”';
+    if (ms <= 0) return '—';
     final total = Duration(milliseconds: ms);
     final s = total.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '${total.inMinutes}:$s';
@@ -1334,8 +1334,8 @@ class EditTagsResult {
 /// Edit Tags dialog.
 ///
 /// Owns its [TextEditingController]s in [State] so they are disposed exactly
-/// when the dialog's element tree is unmounted â€” after the exit transition
-/// finishes â€” never while the TextFields are still alive and referencing them.
+/// when the dialog's element tree is unmounted — after the exit transition
+/// finishes — never while the TextFields are still alive and referencing them.
 class EditTagsDialog extends StatefulWidget {
   const EditTagsDialog({
     super.key,
@@ -1443,7 +1443,7 @@ class _EditTagsDialogState extends State<EditTagsDialog> {
         TextButton(
           // Pop with a confirmed=false result; the controllers are disposed
           // later by this State's dispose(), once the route has fully left
-          // the tree â€” never during the pop animation.
+          // the tree — never during the pop animation.
           onPressed: () => Navigator.pop(context, _result(false)),
           child: const Text('Cancel'),
         ),

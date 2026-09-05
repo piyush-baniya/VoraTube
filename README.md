@@ -1,4 +1,4 @@
-# ðŸŽµ VoraTube
+# 🎵 VoraTube
 
 <p align="center">
   <img src="assets/voratube_logo.png" alt="VoraTube Logo" width="140">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Built with Flutter â€¢ Designed for smooth playback â€¢ Privacy-focused â€¢ No account required
+  Built with Flutter • Designed for smooth playback • Privacy-focused • No account required
 </p>
 
 <p align="center">
@@ -23,21 +23,21 @@
 
 ---
 
-## âœ¨ About
+## ✨ About
 
 **VoraTube** is a modern Android music player built with Flutter, focused on delivering a smooth, beautiful, and feature-rich local music experience.
 
 It is designed around three principles:
 
-* ðŸŽ¨ **Beautiful UI** â€” modern, polished interfaces and animations
-* âš¡ **Smooth experience** â€” responsive playback and navigation
-* ðŸ”’ **Local-first** â€” your music library and listening experience stay on your device
+* 🎨 **Beautiful UI** — modern, polished interfaces and animations
+* ⚡ **Smooth experience** — responsive playback and navigation
+* 🔒 **Local-first** — your music library and listening experience stay on your device
 
 VoraTube does not require an account to use the core music-player experience.
 
 ---
 
-## ðŸ“± Screenshots
+## 📱 Screenshots
 
 <p align="center">
   <img src="assets/Home.png" width="30%" alt="VoraTube Home">
@@ -57,9 +57,9 @@ VoraTube does not require an account to use the core music-player experience.
 
 ---
 
-# ðŸš€ Features
+# 🚀 Features
 
-## ðŸŽ§ Music Playback
+## 🎧 Music Playback
 
 * Local music playback
 * Play, pause and resume
@@ -76,7 +76,7 @@ VoraTube does not require an account to use the core music-player experience.
 
 ---
 
-## ðŸ“š Music Library
+## 📚 Music Library
 
 VoraTube automatically works with your device's music library and organizes your collection into:
 
@@ -90,7 +90,7 @@ The library is designed to keep your music accessible without requiring manual i
 
 ---
 
-## ðŸ”Ž Search
+## 🔎 Search
 
 Quickly search your local music library.
 
@@ -103,7 +103,7 @@ Search across:
 
 ---
 
-## ðŸ“‹ Playlists
+## 📋 Playlists
 
 Create and manage your own playlists.
 
@@ -122,7 +122,7 @@ Supported operations include:
 
 ---
 
-## ðŸŽ¶ Queue
+## 🎶 Queue
 
 A complete playback queue system lets you control exactly what plays next.
 
@@ -139,7 +139,7 @@ Features include:
 
 ---
 
-## ðŸ§  Smart Music
+## 🧠 Smart Music
 
 VoraTube includes intelligent music organization and recommendation features.
 
@@ -157,7 +157,7 @@ VoraTube can suggest genres using its existing genre-enrichment system and allow
 
 ---
 
-## ðŸ“Š Listening Statistics
+## 📊 Listening Statistics
 
 Track your listening activity directly inside the app.
 
@@ -177,7 +177,7 @@ The statistics system is designed around actual playback activity rather than ma
 
 ---
 
-## ðŸŽ¤ Lyrics
+## 🎤 Lyrics
 
 VoraTube includes an integrated lyrics experience.
 
@@ -192,7 +192,7 @@ Features include:
 
 ---
 
-## ðŸŽšï¸ Audio Controls
+## 🎚️ Audio Controls
 
 VoraTube provides additional audio controls for users who want more control over playback.
 
@@ -206,7 +206,7 @@ Support for ReplayGain-based volume normalization.
 
 ---
 
-## ðŸŽ¼ Metadata
+## 🎼 Metadata
 
 Manage your music metadata directly from the application.
 
@@ -222,7 +222,7 @@ VoraTube also provides genre suggestion functionality to help categorize songs.
 
 ---
 
-## ðŸ“³ MiniPlayer
+## 📳 MiniPlayer
 
 A persistent MiniPlayer provides quick access to the current track.
 
@@ -240,7 +240,7 @@ Features include:
 
 ---
 
-## ðŸŽµ Full Player
+## 🎵 Full Player
 
 A dedicated full-screen player provides an immersive listening experience.
 
@@ -259,7 +259,7 @@ Includes:
 
 ---
 
-## ðŸ”” Background Playback & Media Controls
+## 🔔 Background Playback & Media Controls
 
 VoraTube continues playback while the application is in the background.
 
@@ -277,7 +277,7 @@ This integrates with Android's media-session system for a native playback experi
 
 ---
 
-## ðŸ”’ Lock Screen Controls
+## 🔒 Lock Screen Controls
 
 When music is playing, Android's lock screen can display the current media session.
 
@@ -293,7 +293,7 @@ Supported information includes:
 
 ---
 
-## ðŸ“± Android Notification
+## 📱 Android Notification
 
 VoraTube provides an Android media notification while playback is active.
 
@@ -301,7 +301,7 @@ The notification updates as songs change and provides playback controls without 
 
 ---
 
-## ðŸ“³ Ringtone Cutter
+## 📳 Ringtone Cutter
 
 Create ringtones from songs in your library.
 
@@ -317,7 +317,7 @@ Exported ringtones are handled separately from the normal music library.
 
 ---
 
-## ðŸ·ï¸ Edit Tags
+## 🏷️ Edit Tags
 
 Edit song metadata directly from the application without requiring an external tag editor.
 
@@ -331,7 +331,7 @@ Supported metadata includes:
 
 ---
 
-## ðŸ’¾ Storage Information
+## 💾 Storage Information
 
 The Settings screen provides storage information from the Android device.
 
@@ -344,7 +344,7 @@ It can display:
 
 ---
 
-## âš™ï¸ Settings
+## ⚙️ Settings
 
 VoraTube includes a dedicated settings area for configuring the listening experience.
 
@@ -359,7 +359,7 @@ Available controls include:
 
 ---
 
-# ðŸŽ¨ Design
+# 🎨 Design
 
 VoraTube uses a dark, modern visual language with a distinctive purple-themed identity.
 
@@ -379,7 +379,7 @@ The goal is to make a powerful music player feel simple and enjoyable to use.
 
 ---
 
-# ðŸ› ï¸ Tech Stack
+# 🛠️ Tech Stack
 
 VoraTube is built using the Flutter ecosystem.
 
@@ -396,7 +396,7 @@ VoraTube is built using the Flutter ecosystem.
 
 ---
 
-# ðŸ—ï¸ Architecture
+# 🏗️ Architecture
 
 VoraTube follows a modular Flutter architecture designed to keep features separated and maintainable.
 
@@ -404,27 +404,27 @@ Major areas include:
 
 ```text
 lib/
-â”œâ”€â”€ app/
-â”œâ”€â”€ core/
-â”œâ”€â”€ features/
-â”‚   â”œâ”€â”€ library/
-â”‚   â”œâ”€â”€ player/
-â”‚   â”œâ”€â”€ playlists/
-â”‚   â”œâ”€â”€ search/
-â”‚   â”œâ”€â”€ settings/
-â”‚   â”œâ”€â”€ statistics/
-â”‚   â”œâ”€â”€ lyrics/
-â”‚   â”œâ”€â”€ ringtone/
-â”‚   â””â”€â”€ smart_music/
-â”œâ”€â”€ shared/
-â””â”€â”€ main.dart
+├── app/
+├── core/
+├── features/
+│   ├── library/
+│   ├── player/
+│   ├── playlists/
+│   ├── search/
+│   ├── settings/
+│   ├── statistics/
+│   ├── lyrics/
+│   ├── ringtone/
+│   └── smart_music/
+├── shared/
+└── main.dart
 ```
 
 The exact project structure may evolve as development continues.
 
 ---
 
-# ðŸ“‹ Requirements
+# 📋 Requirements
 
 For development you will need:
 
@@ -445,7 +445,7 @@ VoraTube currently targets Android.
 
 ---
 
-# ðŸ§‘â€ðŸ’» Getting Started
+# 🧑‍💻 Getting Started
 
 Clone the repository:
 
@@ -485,7 +485,7 @@ flutter run
 
 ---
 
-# ðŸ”¨ Build
+# 🔨 Build
 
 ### Debug APK
 
@@ -509,7 +509,7 @@ build/app/outputs/flutter-apk/
 
 ---
 
-# ðŸ§ª Testing
+# 🧪 Testing
 
 Run static analysis:
 
@@ -531,7 +531,7 @@ dart format .
 
 ---
 
-# ðŸ“± Supported Platform
+# 📱 Supported Platform
 
 ### Android
 
@@ -545,7 +545,7 @@ The project is currently focused on delivering the Android experience first.
 
 ---
 
-# ðŸ—ºï¸ Roadmap
+# 🗺️ Roadmap
 
 VoraTube is actively evolving.
 
@@ -563,7 +563,7 @@ The roadmap may change as development continues.
 
 ---
 
-# ðŸ¤ Contributing
+# 🤝 Contributing
 
 Contributions, suggestions, bug reports, and feature ideas are welcome.
 
@@ -587,7 +587,7 @@ For bugs, please include:
 
 ---
 
-# ðŸ› Bug Reports
+# 🐛 Bug Reports
 
 If you encounter a problem, please open an issue in the repository.
 
@@ -595,18 +595,18 @@ Include enough information to reproduce the issue so it can be investigated effi
 
 ---
 
-# ðŸ“„ License
+# 📄 License
 
 License information will be added to this repository.
 
 ---
 
-# ðŸ’œ VoraTube
+# 💜 VoraTube
 
 Built with Flutter and a lot of attention to the music-listening experience.
 
 **Listen. Discover. Organize. Enjoy.**
 
 <p align="center">
-  Made with ðŸ’œ for music lovers.
+  Made with 💜 for music lovers.
 </p>

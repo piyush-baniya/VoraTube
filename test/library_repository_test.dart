@@ -390,8 +390,8 @@ void main() {
     test('removeAbsentMediaStore refuses to wipe on an empty scan', () async {
       await repository.syncTracks([_msTrack(1), _msTrack(2)]);
 
-      // An empty seen-set means the scan enumerated nothing â€” a denied
-      // permission or an unmounted volume â€” not that the user deleted every
+      // An empty seen-set means the scan enumerated nothing — a denied
+      // permission or an unmounted volume — not that the user deleted every
       // song. Acting on it would destroy the library, playlists and stats.
       expect(await repository.removeAbsentMediaStore({}), 0);
       expect(await db.select(db.songs).get(), hasLength(2));
@@ -433,7 +433,7 @@ void main() {
 
       final artists = await repository.artistOverview();
       final names = artists.map((a) => a.name).toList();
-      // One entry per distinct artist name â€” the grouped credit may keep its
+      // One entry per distinct artist name — the grouped credit may keep its
       // own combined entry, but "Atif Aslam" must appear exactly once.
       expect(names.where((n) => n == 'Atif Aslam'), hasLength(1));
       expect(names.where((n) => n == 'Pritam'), hasLength(1));

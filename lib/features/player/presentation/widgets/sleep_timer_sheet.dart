@@ -297,7 +297,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
       children: [
         Text(
           'Stop playback automatically. Playback pauses when the timer runs '
-          'out â€” your spot is kept.',
+          'out — your spot is kept.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -474,7 +474,7 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
   }
 }
 
-/// A compact âˆ’ / value / + stepper used to compose a custom wall-clock time.
+/// A compact − / value / + stepper used to compose a custom wall-clock time.
 class _TimeStepper extends StatelessWidget {
   const _TimeStepper({
     required this.label,
