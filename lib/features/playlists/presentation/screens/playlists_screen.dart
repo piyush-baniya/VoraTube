@@ -37,6 +37,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen> {
         children: [
           ScreenHeader(
             title: 'Playlists',
+            showLogo: true,
             trailing: PressableScale(
               onTap: () => _showCreateDialog(context, ref),
               child: Container(

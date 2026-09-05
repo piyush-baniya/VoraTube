@@ -71,7 +71,7 @@ class SettingsScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ScreenHeader(title: 'Settings'),
+                ScreenHeader(title: 'Settings', showLogo: true),
                 const SizedBox(height: AppTokens.s2),
               ],
             ),

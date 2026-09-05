@@ -66,20 +66,6 @@ class _HomeHeader extends ConsumerWidget {
     // repaint the dashboard header.
     final current = ref.watch(currentTrackProvider);
 
-    final hour = DateTime.now().hour;
-    String greeting;
-    if (hour < 5) {
-      greeting = 'Late night listening';
-    } else if (hour < 12) {
-      greeting = 'Good morning';
-    } else if (hour < 17) {
-      greeting = 'Good afternoon';
-    } else if (hour < 22) {
-      greeting = 'Good evening';
-    } else {
-      greeting = 'Late night listening';
-    }
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppTokens.s5,
@@ -111,15 +97,6 @@ class _HomeHeader extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  greeting,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    letterSpacing: 0.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: AppTokens.s1),
                 Text(
                   'Home',
                   style: theme.textTheme.headlineMedium?.copyWith(

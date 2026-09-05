@@ -249,6 +249,7 @@ class ScreenHeader extends StatelessWidget {
     this.trailing,
     this.showBackButton = false,
     this.onBack,
+    this.showLogo = false,
   });
 
   final String title;
@@ -256,6 +257,10 @@ class ScreenHeader extends StatelessWidget {
   final Widget? trailing;
   final bool showBackButton;
   final VoidCallback? onBack;
+
+  /// Renders the VoraTube logo before the title, matching the Home and
+  /// Library tab headers.
+  final bool showLogo;
 
   @override
   Widget build(BuildContext context) {
@@ -279,6 +284,26 @@ class ScreenHeader extends StatelessWidget {
                 icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
                 color: colorScheme.onSurfaceVariant,
                 tooltip: 'Close',
+              )
+            else if (showLogo)
+              // Same 32px brand mark the Home and Library headers use,
+              // centred inside the same 48px leading slot.
+              SizedBox(
+                width: 48,
+                height: 32,
+                child: Center(
+                  child: Image.asset(
+                    'assets/voratube_logo.png',
+                    width: 32,
+                    height: 32,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => Icon(
+                      Icons.music_note_rounded,
+                      size: 24,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
               )
             else
               const SizedBox(width: 48),
