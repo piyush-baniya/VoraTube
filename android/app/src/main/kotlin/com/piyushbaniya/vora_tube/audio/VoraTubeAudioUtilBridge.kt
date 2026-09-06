@@ -3,6 +3,7 @@ package com.piyushbaniya.vora_tube.audio
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaExtractor
@@ -38,6 +39,11 @@ class VoraTubeAudioUtilBridge(context: Context) {
 
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Monotonic 0f..1f progress of the in-flight cut, read by the Dart side
+     *  "cutProgress" method while the blocking cutAudio call is running. */
+    @Volatile
+    private var cutProgress: Float = 0f
 
     fun register(messenger: BinaryMessenger) {
         val channel = MethodChannel(messenger, CHANNEL)
@@ -79,6 +85,30 @@ class VoraTubeAudioUtilBridge(context: Context) {
                     worker.start()
                 }
                 "supportsCutting" -> succeed(result, true)
+                "cutProgress" -> succeed(result, cutProgress)
+                "canWriteSettings" -> succeed(result, Settings.System.canWrite(appContext))
+                "requestWriteSettings" -> {
+                    val granted = Settings.System.canWrite(appContext)
+                    if (!granted) {
+                        try {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                                Uri.parse("package:${appContext.packageName}"),
+                            )
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            appContext.startActivity(intent)
+                        } catch (e: Exception) {
+                            android.util.Log.e(
+                                "VoraTubeAudio",
+                                "open modify-settings screen failed",
+                                e,
+                            )
+                            fail(result, "settings_launch_failed", e.message ?: "could not open settings")
+                            return@setMethodCallHandler
+                        }
+                    }
+                    succeed(result, granted)
+                }
                 else -> fail(result, "unsupported_method", call.method)
             }
         }
@@ -125,6 +155,7 @@ class VoraTubeAudioUtilBridge(context: Context) {
         endMs: Long,
         songTitle: String,
     ): Map<String, Any?> {
+        cutProgress = 0f
         if (sourceUri.isNullOrBlank()) {
             throw CutFailed("missing_source", "source audio is unavailable")
         }
@@ -201,6 +232,12 @@ class VoraTubeAudioUtilBridge(context: Context) {
 
             val sampleRate = sourceFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             val channelCount = sourceFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+
+            // Expected decoded PCM payload for the selected window; used to
+            // derive the 0..1 export progress reported across the channel.
+            val totalCutBytes =
+                if (sampleRate > 0) ((endMs - startMs) / 1000.0 * sampleRate * channelCount * 2.0).toLong()
+                else 0L
 
             decoder = MediaCodec.createDecoderByType(mime)
             decoder.configure(sourceFormat, null, null, 0)
@@ -370,6 +407,10 @@ class VoraTubeAudioUtilBridge(context: Context) {
                                     encoder.queueInputBuffer(encIn, 0, take, encPts, 0)
                                     written += take
                                     totalPcmBytesQueued += take
+                                    if (totalCutBytes > 0) {
+                                        cutProgress =
+                                            (totalPcmBytesQueued.toFloat() / totalCutBytes).coerceIn(0f, 1f)
+                                    }
                                 }
                             }
                             decoder.releaseOutputBuffer(outIdx, false)
@@ -405,6 +446,7 @@ class VoraTubeAudioUtilBridge(context: Context) {
                 // 4) Drain encoded data into the muxer.
                 drainEncoder()
             }
+            cutProgress = 1f
             android.util.Log.d("VoraTubeAudio", "Trim complete: totalPcmBytes=$totalPcmBytesQueued, totalMuxerSamples=$totalMuxerSamples, outFileSize=${outFile.length()}")
         } finally {
             try {

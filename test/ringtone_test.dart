@@ -23,8 +23,14 @@ class _FakeAudioUtilService implements AudioUtilService {
   Completer<void>? gate;
   bool noContentUri = false;
   bool failSetDefault = false;
+  bool canWrite = true;
+  int requestWriteSettingsCalls = 0;
+  double progressToReport = 0;
   final List<CutRequest> cutRequests = [];
   final List<String> setRingtoneCalls = [];
+
+  @override
+  Future<double> cutProgress() async => progressToReport;
 
   @override
   Future<bool> supportsCutting() async => true;
@@ -54,6 +60,15 @@ class _FakeAudioUtilService implements AudioUtilService {
     if (failSetDefault) {
       throw const RingtoneOperationException('write_settings_denied', 'denied');
     }
+  }
+
+  @override
+  Future<bool> canWriteSettings() async => canWrite;
+
+  @override
+  Future<bool> requestWriteSettings() async {
+    requestWriteSettingsCalls++;
+    return canWrite;
   }
 }
 
@@ -279,6 +294,32 @@ void main() {
       expect(c.lastError, isNull);
     });
 
+    test('exposes the native cut progress while exporting', () async {
+      final service = _FakeAudioUtilService()..gate = Completer<void>();
+      service.progressToReport = 0.4;
+      final c = RingtoneCutterController(
+        service: service,
+        durationMs: 120000,
+        cutProgressPollInterval: const Duration(milliseconds: 1),
+      )..attachTrack(sourceUri: _song().uri, title: _song().title);
+
+      final run = c.export();
+      expect(c.isBusy, isTrue);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(c.cutProgress, closeTo(0.4, 0.001));
+
+      service.progressToReport = 0.9;
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(c.cutProgress, closeTo(0.9, 0.001));
+
+      service.gate!.complete();
+      final clip = await run;
+      expect(clip, isNotNull);
+      // Progress resets to idle once the export finishes.
+      expect(c.isBusy, isFalse);
+      expect(c.cutProgress, 0);
+    });
+
     test('changing the selection clears the last export', () async {
       final service = _FakeAudioUtilService();
       final c = RingtoneCutterController(service: service, durationMs: 120000)
@@ -335,6 +376,54 @@ void main() {
       expect(c.lastError, isNotNull);
       expect(service.setRingtoneCalls, hasLength(1));
     });
+
+    test(
+      'permissionRequired outcome when write settings is not granted, '
+      'and no assignment is attempted',
+      () async {
+        final service = _FakeAudioUtilService()..canWrite = false;
+        final c = RingtoneCutterController(
+          service: service,
+          durationMs: 120000,
+        )..attachTrack(sourceUri: _song().uri, title: _song().title);
+        final outcome = await c.setAsRingtone();
+        expect(outcome, SetRingtoneOutcome.permissionRequired);
+        expect(c.lastSetRingtoneOutcome, SetRingtoneOutcome.permissionRequired);
+        expect(c.lastError, isNotNull);
+        // The clip was exported (so it can be assigned after granting) but
+        // the direct assignment was never attempted without permission.
+        expect(service.cutRequests, hasLength(1));
+        expect(service.setRingtoneCalls, isEmpty);
+      },
+    );
+
+    test(
+      'assignExportedClip succeeds once the permission is granted',
+      () async {
+        final service = _FakeAudioUtilService();
+        final c = RingtoneCutterController(
+          service: service,
+          durationMs: 120000,
+        )..attachTrack(sourceUri: _song().uri, title: _song().title);
+        // Export once with permission granted -> assigned.
+        expect(await c.setAsRingtone(), SetRingtoneOutcome.assigned);
+        expect(service.setRingtoneCalls, hasLength(1));
+
+        // Permission revoked -> assignment is refused, nothing is set.
+        service.canWrite = false;
+        expect(await c.setAsRingtone(), SetRingtoneOutcome.permissionRequired);
+        expect(service.setRingtoneCalls, hasLength(1));
+
+        // Granting again: assignExportedClip re-uses the cached export and
+        // does not re-encode the clip.
+        final cutsBefore = service.cutRequests.length;
+        service.canWrite = true;
+        expect(await c.assignExportedClip(), SetRingtoneOutcome.assigned);
+        expect(c.lastSetRingtoneOutcome, SetRingtoneOutcome.assigned);
+        expect(service.setRingtoneCalls, hasLength(2));
+        expect(service.cutRequests.length, cutsBefore);
+      },
+    );
   });
 
   group('RingtonePreviewer', () {

@@ -32,20 +32,27 @@ class RingtoneCutterScreen extends ConsumerStatefulWidget {
       _RingtoneCutterScreenState();
 }
 
-class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
+class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen>
+    with WidgetsBindingObserver {
   late final RingtoneCutterController _controller;
   late final RingtonePreviewer _previewer;
+  late final AudioUtilService _service;
+
+  /// Set right before opening the system "modify system settings" screen so
+  /// the resumed-app callback knows to re-attempt the ringtone assignment.
+  bool _pendingAssignOnResume = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Interstitial ad trigger: the user opened the ringtone cutter.
     Future.microtask(
       () => ref.read(interstitialAdControllerProvider).showOnTrigger(),
     );
-    final service = ref.read(audioUtilServiceProvider);
+    _service = ref.read(audioUtilServiceProvider);
     _controller = RingtoneCutterController(
-      service: service,
+      service: _service,
       durationMs: widget.song.durationMs,
     )..attachTrack(sourceUri: widget.song.uri, title: widget.song.title);
     _controller.addListener(_onControllerChange);
@@ -54,11 +61,21 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _previewer.dispose();
     _controller
       ..removeListener(_onControllerChange)
       ..dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_pendingAssignOnResume) return;
+    _pendingAssignOnResume = false;
+    // The user has returned from the system settings screen; the exported
+    // clip is still cached on the controller, so just re-attempt assignment.
+    unawaited(_assignPendingClip());
   }
 
   void _onControllerChange() {
@@ -92,6 +109,8 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
         unawaited(
           ref.read(interstitialAdControllerProvider).showOnTrigger(),
         );
+      case SetRingtoneOutcome.permissionRequired:
+        await _promptForWriteSettingsPermission();
       case SetRingtoneOutcome.failed:
         _snack(
           _controller.lastError ?? 'Ringtone could not be set.',
@@ -99,6 +118,82 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
           title: 'Couldn\'t set ringtone',
         );
     }
+  }
+
+  /// Re-attempts assigning the exported clip after the user returns from the
+  /// system "modify system settings" screen.
+  Future<void> _assignPendingClip() async {
+    if (!mounted) return;
+    if (_controller.lastExport == null) {
+      // The selection changed while the user was in settings; redo the flow.
+      await _onSetAsRingtone();
+      return;
+    }
+    final outcome = await _controller.assignExportedClip();
+    if (!mounted) return;
+    switch (outcome) {
+      case SetRingtoneOutcome.assigned:
+        _snack(
+          'Ringtone set successfully.',
+          variant: VoraSnackbarVariant.success,
+        );
+        unawaited(
+          ref.read(interstitialAdControllerProvider).showOnTrigger(),
+        );
+      case SetRingtoneOutcome.permissionRequired:
+        await _promptForWriteSettingsPermission();
+      case SetRingtoneOutcome.failed:
+        _snack(
+          _controller.lastError ?? 'Ringtone could not be set.',
+          variant: VoraSnackbarVariant.error,
+          title: 'Couldn\'t set ringtone',
+        );
+    }
+  }
+
+  /// Asks the user to grant the "modify system settings" permission: shows a
+  /// dialog and, when accepted, opens the system settings screen so the app
+  /// never fails silently because a special permission was never requested.
+  Future<void> _promptForWriteSettingsPermission() async {
+    if (!mounted) return;
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Permission needed'),
+        content: const Text(
+          'To set a ringtone, VoraTube needs the "Modify system settings" '
+          'permission. You only need to grant it once.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Open settings'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || openSettings != true) return;
+    _pendingAssignOnResume = true;
+    final grantedNow = await _service.requestWriteSettings();
+    if (!mounted) return;
+    if (grantedNow) {
+      // Permission was granted without leaving the app; assign immediately.
+      _pendingAssignOnResume = false;
+      await _assignPendingClip();
+      return;
+    }
+    // The system settings screen is now open (or could not be opened). While
+    // it is open Android pauses the engine, and didChangeAppLifecycleState
+    // (resumed) re-attempts the assignment on return. The snackbar below is
+    // shown instead of the assignment when the settings screen never opened.
+    _snack(
+      'Grant the "Modify system settings" permission and tap '
+      '"Set as ringtone" again.',
+    );
   }
 
   static String _fileNameOf(String path) {
@@ -489,12 +584,46 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
     );
   }
 
+  Widget _buildCutProgress(ThemeData theme, double progress) {
+    final colors = theme.colorScheme;
+    final determinate = progress > 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s1),
+      child: Row(
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppTokens.rSm),
+              child: LinearProgressIndicator(
+                value: determinate ? progress.clamp(0.0, 1.0) : null,
+                minHeight: 6,
+                backgroundColor: colors.surfaceContainerHighest,
+              ),
+            ),
+          ),
+          if (determinate) ...[
+            const SizedBox(width: AppTokens.s3),
+            Text(
+              '${(progress * 100).round()}%',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w700,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomBar(ThemeData theme) {
     final colors = theme.colorScheme;
     final selection = _controller.selection;
     final usable = selection.isUsable;
     final busy = _controller.isBusy;
     final previewing = _previewer.isPreviewing;
+    final progress = _controller.cutProgress;
 
     return Material(
       color: colors.surface,
@@ -512,7 +641,7 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (busy)
-                const LinearProgressIndicator(minHeight: 2)
+                _buildCutProgress(theme, progress)
               else
                 const SizedBox(height: 2),
               const SizedBox(height: AppTokens.s2),

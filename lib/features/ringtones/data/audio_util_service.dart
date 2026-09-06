@@ -66,6 +66,11 @@ abstract interface class AudioUtilService {
   /// true on every supported API; this exists so tests/fakes can turn it off.
   Future<bool> supportsCutting();
 
+  /// Progress (0..1) of the in-flight [cutAudio] operation, or 0 when no cut
+  /// is running (or progress cannot be determined). Polled while exporting so
+  /// the UI can show a determinate progress bar.
+  Future<double> cutProgress();
+
   /// Cuts [startMs..endMs] from [sourceUri] into a ringtone clip.
   ///
   /// [sourceUri] is the source track's `content://` or `file://` URI (the same
@@ -81,6 +86,18 @@ abstract interface class AudioUtilService {
   /// leaving the app (no system picker is launched). Throws a
   /// [RingtoneOperationException] when the assignment fails.
   Future<void> setDefaultRingtone(String contentUri);
+
+  /// Whether the "modify system settings" special permission is granted. It is
+  /// required by [setDefaultRingtone] on Android; defaulted to true on
+  /// platforms that do not enforce it so the happy path is never blocked.
+  Future<bool> canWriteSettings();
+
+  /// Opens the system settings screen where the user can grant the "modify
+  /// system settings" permission, and resolves with whether the permission is
+  /// held at launch time. Returns false once the settings screen has been
+  /// opened (or grant is still pending); callers re-check [canWriteSettings]
+  /// after the user returns to the app.
+  Future<bool> requestWriteSettings();
 }
 
 /// Default implementation backed by the Android method channel.
@@ -103,6 +120,18 @@ class MethodChannelAudioUtilService implements AudioUtilService {
       return false;
     } on MissingPluginException {
       return false;
+    }
+  }
+
+  @override
+  Future<double> cutProgress() async {
+    try {
+      final raw = await _channel.invokeMethod<num>('cutProgress');
+      return (raw?.toDouble() ?? 0).clamp(0.0, 1.0);
+    } on PlatformException {
+      return 0;
+    } on MissingPluginException {
+      return 0;
     }
   }
 
@@ -171,6 +200,30 @@ class MethodChannelAudioUtilService implements AudioUtilService {
         'unsupported_method',
         'This device cannot process ringtones.',
       );
+    }
+  }
+
+  @override
+  Future<bool> canWriteSettings() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('canWriteSettings');
+      return result ?? true;
+    } on PlatformException {
+      return true;
+    } on MissingPluginException {
+      return true;
+    }
+  }
+
+  @override
+  Future<bool> requestWriteSettings() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('requestWriteSettings');
+      return result ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
     }
   }
 }
