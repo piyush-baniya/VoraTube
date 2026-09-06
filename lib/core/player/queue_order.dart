@@ -99,3 +99,77 @@ List<SongRef>? moveCurrentFirst(List<SongRef> refs, int from, int to) {
 List<SongRef> insertNext(List<SongRef> refs, SongRef song) {
   return [refs.first, song, ...refs.sublist(1)];
 }
+
+/// Returns [refs] with the songs AFTER the current-first track (index 0)
+/// randomly permuted. The current song stays #1, so enabling shuffle never
+/// restarts or jumps away from what is playing. A single-song (or empty) queue
+/// is returned unchanged.
+List<SongRef> shuffledTail(List<SongRef> refs) {
+  if (refs.length <= 1) {
+    return refs;
+  }
+  final rest = refs.sublist(1).toList()..shuffle();
+  return [refs.first, ...rest];
+}
+
+/// Rotates the canonical (unshuffled) current-first ordering [items] so the
+/// song identified by [identityKey] becomes the CURRENT song (#1), preserving
+/// the natural play order — the song that originally followed it stays next.
+/// Returns null when the key is absent from [items].
+List<SongRef>? rotateToCurrent(List<SongRef> items, String identityKey) {
+  final index = items.indexWhere((s) => s.identityKey == identityKey);
+  if (index < 0) {
+    return null;
+  }
+  return currentFirst(items, index);
+}
+
+/// Restores the deterministic ORIGINAL ordering around the currently playing
+/// song: the canonical unshuffled [base] is rotated so the song that is
+/// current in [live] (located by identity key, never a raw index) becomes #1,
+/// with the natural order afterwards. Returns [live] untouched when it is
+/// empty or its current song is absent from [base].
+List<SongRef> restoreOriginalOrder({
+  required List<SongRef> base,
+  required List<SongRef> live,
+}) {
+  if (live.isEmpty) {
+    return live;
+  }
+  final restored = rotateToCurrent(base, live.first.identityKey);
+  return restored ?? live;
+}
+
+/// Reconciles the canonical unshuffled [base] with the live queue [live] after
+/// a queue mutation:
+///
+/// - Shuffle OFF: the base mirrors the live queue exactly (same membership AND
+///   order).
+/// - Shuffle ON: the base keeps its natural ordering but adopts membership
+///   changes — songs removed from the live queue (natural finish, broken-skip,
+///   user removal) leave the base, and songs added (enqueue, play-next) join
+///   it — so turning shuffle off always restores the original order of exactly
+///   the songs still queued, never a resurrected played song.
+List<SongRef> reconcileBaseOrder({
+  required List<SongRef> base,
+  required List<SongRef> live,
+  required bool shuffleEnabled,
+}) {
+  if (!shuffleEnabled) {
+    return List.of(live);
+  }
+  if (live.isEmpty) {
+    return const [];
+  }
+  final liveKeys = live.map((r) => r.identityKey).toSet();
+  final pruned = [
+    for (final r in base)
+      if (liveKeys.contains(r.identityKey)) r,
+  ];
+  final baseKeys = pruned.map((r) => r.identityKey).toSet();
+  return [
+    for (final r in pruned) r,
+    for (final r in live)
+      if (!baseKeys.contains(r.identityKey)) r,
+  ];
+}

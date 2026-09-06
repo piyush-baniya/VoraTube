@@ -202,6 +202,14 @@ class JustAudioController extends BaseAudioHandler
   /// implemented here; just_audio is used purely as a one-track engine.
   List<SongRef> _queueRefs = const [];
 
+  /// Canonical, UNshuffled current-first queue: the deterministic source of
+  /// truth for the original play order. While shuffle is off it mirrors
+  /// [_queueRefs] exactly; while shuffle is on it keeps the natural ordering
+  /// (adopting membership changes) so turning shuffle off can restore the
+  /// original order around the current song instead of continuing in the
+  /// shuffled permutation.
+  List<SongRef> _baseQueue = const [];
+
   /// Authoritative repeat mode. Mirrored to the engine only for the one-track
   /// behaviour (LoopMode.one for Repeat One, else off), but reported to the UI
   /// from here so Repeat All reports `all` even though the engine never loops
@@ -469,6 +477,9 @@ class JustAudioController extends BaseAudioHandler
       _queueRefs = List.unmodifiable(
         applyRepeatFinish(_queueRefs, _repeatMode),
       );
+      // A naturally-finished song leaves the queue (Repeat Off); drop the same
+      // song from the canonical base so shuffle-off can never resurrect it.
+      _reconcileBase();
       _queueRevision++;
       if (_queueRefs.isEmpty) {
         final gen = ++_playGeneration;
@@ -527,6 +538,7 @@ class JustAudioController extends BaseAudioHandler
         _consecutiveFailures = 0;
         _wantPlayback = false;
         _queueRefs = const [];
+        _reconcileBase();
         await _clearEngine();
         _queueRevision++;
         _schedulePersist(immediate: true);
@@ -535,6 +547,7 @@ class JustAudioController extends BaseAudioHandler
       }
       // Drop the broken track and advance to the next current-first item.
       _queueRefs = List.unmodifiable(_queueRefs.sublist(1));
+      _reconcileBase();
       _queueRevision++;
       final wasPlaying = _wantPlayback;
       await _loadCurrent();
@@ -598,18 +611,16 @@ class JustAudioController extends BaseAudioHandler
     // genuinely broken tracks auto-skip as normal from here on.
     _protectingRestoredSession = false;
     // Rotate so the selected song is at the front (it becomes the current
-    // song at #1). If shuffle is on, keep the current first and shuffle the
-    // rest — the display, the Dart state and the engine all share this one
-    // ordering, so playback always follows the shown queue.
+    // song at #1) and record that rotation as the canonical unshuffled order.
+    // If shuffle is on, keep the current first and shuffle the rest — the
+    // display, the Dart state and the engine all share this one ordering, so
+    // playback always follows the shown queue, while [_baseQueue] keeps the
+    // deterministic original order for a later shuffle-off restore.
     final ordered = currentFirst(songs, safeIndex) ?? List.of(songs);
-    final currentFirstList = List.of(ordered);
-    if (_shuffleEnabled && currentFirstList.length > 1) {
-      final first = currentFirstList.first;
-      final rest = (currentFirstList.sublist(1).toList()..shuffle());
-      _queueRefs = List.unmodifiable([first, ...rest]);
-    } else {
-      _queueRefs = List.unmodifiable(currentFirstList);
-    }
+    _baseQueue = List.unmodifiable(ordered);
+    _queueRefs = _shuffleEnabled && ordered.length > 1
+        ? List.unmodifiable(shuffledTail(ordered))
+        : List.unmodifiable(ordered);
     _queueRevision++;
     try {
       // Bind the refs before touching the engine so the index reported by any
@@ -798,6 +809,7 @@ class JustAudioController extends BaseAudioHandler
       _queueRefs = List.unmodifiable(
         backward ? rotateBackward(_queueRefs) : rotateForward(_queueRefs),
       );
+      _reconcileBase();
       _queueRevision++;
       _schedulePersist(immediate: true);
       // Refresh the media notification's queue + current MediaItem BEFORE the
@@ -831,6 +843,7 @@ class JustAudioController extends BaseAudioHandler
     _queueTransition = true;
     try {
       _queueRefs = List.unmodifiable(currentFirst(_queueRefs, index)!);
+      _reconcileBase();
       _queueRevision++;
       _schedulePersist(immediate: true);
       await _loadCurrent();
@@ -847,6 +860,7 @@ class JustAudioController extends BaseAudioHandler
     if (_queueRefs.isEmpty) {
       // First song: load it as the current.
       _queueRefs = List.unmodifiable([song]);
+      _reconcileBase();
       _queueRevision++;
       _wantPlayback = true;
       _queueTransition = true;
@@ -863,6 +877,7 @@ class JustAudioController extends BaseAudioHandler
       return;
     }
     _queueRefs = List.unmodifiable([..._queueRefs, song]);
+    _reconcileBase();
     await _syncQueueMetadata();
     _broadcastQueueChange();
     _schedulePersist(immediate: true);
@@ -875,6 +890,7 @@ class JustAudioController extends BaseAudioHandler
     }
     // Insert immediately after the current-first track (index 0 → insert at 1).
     _queueRefs = List.unmodifiable(insertNext(_queueRefs, song));
+    _reconcileBase();
     await _syncQueueMetadata();
     _broadcastQueueChange();
     _schedulePersist(immediate: true);
@@ -891,6 +907,7 @@ class JustAudioController extends BaseAudioHandler
       for (var i = 0; i < _queueRefs.length; i++)
         if (i != index) _queueRefs[i],
     ]);
+    _reconcileBase();
     _queueRevision++;
     _schedulePersist(immediate: true);
     if (removedCurrent) {
@@ -937,6 +954,7 @@ class JustAudioController extends BaseAudioHandler
       return;
     }
     _queueRefs = List.unmodifiable(updated);
+    _reconcileBase();
     _queueRevision++;
     _schedulePersist(immediate: true);
     if (removedCurrent) {
@@ -986,6 +1004,7 @@ class JustAudioController extends BaseAudioHandler
       return;
     }
     _queueRefs = List.unmodifiable(updated);
+    _reconcileBase();
     _queueRevision++;
     _schedulePersist(immediate: true);
     _broadcastQueueChange();
@@ -1018,6 +1037,7 @@ class JustAudioController extends BaseAudioHandler
     }
     // Keep only the current-first song.
     _queueRefs = List.unmodifiable([_queueRefs.first]);
+    _reconcileBase();
     _queueRevision++;
     await _syncQueueMetadata();
     _broadcastQueueChange();
@@ -1085,6 +1105,7 @@ class JustAudioController extends BaseAudioHandler
     _wantPlayback = false;
     _statLastKey = null;
     _queueRefs = const [];
+    _reconcileBase();
     // Clear the UI state unconditionally, before touching the engine: the
     // sequence must never linger as an orphan AudioTrack playing with no UI.
     _queueRevision++;
@@ -1109,17 +1130,51 @@ class JustAudioController extends BaseAudioHandler
     // ordering. Shuffling happens solely on [_queueRefs]; the engine's
     // shuffle flag is left off.
     await _player.setShuffleModeEnabled(false);
-    // Re-order the queue: current stays at #1, the rest shuffle. When toggling
-    // off, restore a simple current-first order (drop the previous shuffle
-    // permutation: current + the rest in their remaining order).
-    if (_shuffleEnabled && _queueRefs.length > 1) {
-      final first = _queueRefs.first;
-      final rest = (_queueRefs.sublist(1).toList()..shuffle());
-      _queueRefs = List.unmodifiable([first, ...rest]);
+    if (_shuffleEnabled) {
+      // Toggle ON keeps the current song at #1 and randomises the rest,
+      // WITHOUT touching the canonical [_baseQueue] — the original order is
+      // preserved so it can be restored again when shuffle turns off.
+      if (_baseQueue.isEmpty && _queueRefs.isNotEmpty) {
+        // Belt-and-braces: adopt a live queue whose base was never recorded.
+        _baseQueue = List.unmodifiable(_queueRefs);
+      }
+      _queueRefs = List.unmodifiable(shuffledTail(_queueRefs));
+    } else {
+      // Toggle OFF restores the deterministic ORIGINAL ordering around the
+      // currently playing song (located by identity, never a raw index): Next
+      // and Previous continue in original order from the same track — not the
+      // previously shuffled permutation. The loaded source and its position
+      // are untouched, so the current song keeps playing uninterrupted.
+      _restoreOriginalOrder();
     }
     _queueRevision++;
     _broadcastQueueChange();
     _schedulePersist(immediate: true);
+  }
+
+  /// Restores the canonical original order around the current song.
+  ///
+  /// See [restoreOriginalOrder] in `queue_order.dart` (pure, unit-tested).
+  void _restoreOriginalOrder() {
+    _queueRefs = List.unmodifiable(
+      restoreOriginalOrder(base: _baseQueue, live: _queueRefs),
+    );
+  }
+
+  /// Keeps the canonical [_baseQueue] in step with the live [_queueRefs] after
+  /// a queue mutation.
+  ///
+  /// See [reconcileBaseOrder] in `queue_order.dart` (pure, unit-tested): when
+  /// shuffle is off the base mirrors the live queue exactly; when shuffle is
+  /// on the base keeps its natural order but adopts membership changes.
+  void _reconcileBase() {
+    _baseQueue = List.unmodifiable(
+      reconcileBaseOrder(
+        base: _baseQueue,
+        live: _queueRefs,
+        shuffleEnabled: _shuffleEnabled,
+      ),
+    );
   }
 
   @override
@@ -1643,6 +1698,10 @@ class JustAudioController extends BaseAudioHandler
       // restored progress was never actually applied (and the position stream
       // never reported it) — progress appeared to reset to 0 on every restart.
       _queueRefs = List.unmodifiable(rotated);
+      // Both the live queue and the canonical base start from the persisted
+      // session order; a restored (possibly shuffled-flagged) session keeps
+      // the exact saved ordering, matching the pre-restore behaviour.
+      _baseQueue = List.unmodifiable(rotated);
       // Protect the restored session from transient cold-start idle failures
       // clearing it. Cleared on the next explicit [playQueue].
       _protectingRestoredSession = true;
