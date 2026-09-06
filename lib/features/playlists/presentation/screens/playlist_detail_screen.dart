@@ -226,14 +226,12 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
   }
 
-  /// Opens the song-selection sheet. The sheet itself applies every add/remove
-  /// immediately and refreshes this screen reactively through
-  /// [playlistRefreshTickProvider]; nothing is applied here on return.
+  /// Opens the song-selection sheet. Tapping +/− or `Select All` there only
+  /// stages a pending selection; its single "Done" button commits the diff and
+  /// refreshes this screen reactively through [playlistRefreshTickProvider].
+  /// Nothing is applied here on return.
   Future<void> _addSongs() async {
-    await showAddSongsSheet(
-      context,
-      playlistId: widget.playlistId,
-    );
+    await showAddSongsSheet(context, playlistId: widget.playlistId);
   }
 }
 

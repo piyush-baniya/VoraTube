@@ -8,19 +8,18 @@ import '../../../library/data/library_models.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../providers/playlist_providers.dart';
 
-/// Opens a full-screen picker that ADDs songs to, or REMOVEs them from, a
-/// playlist with one smart, contextual action at a time.
+/// Opens a full-screen picker that edits which songs belong to a playlist.
 ///
-/// Membership is the reactor plumbing's single source of truth
-/// ([playlistMembershipProvider]): every song already in the playlist shows a
-/// REMOVE (`-`) action, every song outside it shows an ADD (`+`) action, and
-/// tapping the `+`/`-` applies that action immediately. A single `Select All`
-/// action adds whatever is missing, or removes everything when nothing is
-/// missing — it is never two separate add/remove modes.
+/// Every row shows a contextual +/− action and the single `Select All` action
+/// (in the app bar) ONLY change the LOCAL pending selection — nothing touches
+/// the database while the user is picking. The one "Done" button at the bottom
+/// commits the whole pending diff at once: songs selected but absent are
+/// added, songs deselected but previously members are removed. Tapping the
+/// app bar's back / pressing Back discards the pending changes entirely.
 ///
-/// All database writes happen here and refresh the playlist surfaces
-/// reactively (via [playlistRefreshTickProvider]), so the picker returns
-/// nothing: the playlist behind it is always in sync before the sheet closes.
+/// [playlistRefreshTickProvider] is bumped after a successful commit so the
+/// playlist surfaces behind the sheet (detail screen, overviews) refresh
+/// reactively; this screen closes back to the playlist.
 Future<void> showAddSongsSheet(
   BuildContext context, {
   required int playlistId,
@@ -46,19 +45,24 @@ class AddSongsPickerScreen extends ConsumerStatefulWidget {
 class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
   final ScrollController _controller = ScrollController();
 
-  /// Current membership (song row ids) of the playlist. Hydrated from the
-  /// reactive [playlistMembershipProvider] and updated optimistically after
-  /// every committed DB write, so the `+`/`-` buttons never render a stale
-  /// window between a successful write and the provider's refetch.
-  Set<int> _members = const <int>{};
+  /// The playlist's membership (song row ids) captured when the screen opened.
+  /// This is the diff baseline for the "Done" commit.
+  Set<int> _originalIds = const <int>{};
+
+  /// The membership the user wants by the time they finish picking. The UI
+  /// renders purely from this (a song shows `-` when it is in this set, `+`
+  /// when it is not), and "Done" diffs it against [_originalIds]. It mutates
+  /// on every +/− or Select All tap WITHOUT touching the database.
+  Set<int> _pendingIds = const <int>{};
   bool _membersLoaded = false;
 
-  /// Song ids with an operation currently in flight (rapid-tap guard).
-  final Set<int> _busy = <int>{};
-
-  /// True while a bulk `Select All` operation is running, so per-song actions
-  /// can't race it into duplicates.
+  /// True while `Select All` is streaming the remaining pages of the picker
+  /// dataset (an async, read-only operation).
   bool _applyingSelectAll = false;
+
+  /// True while the "Done" commit is in flight; blocks re-entry and disables
+  /// every picker action until the write resolves.
+  bool _committing = false;
 
   @override
   void initState() {
@@ -74,13 +78,14 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
       );
       if (mounted) {
         setState(() {
-          _members = members;
+          _originalIds = members;
+          _pendingIds = members;
           _membersLoaded = true;
         });
       }
     } catch (_) {
-      // A failed read keeps the last known membership; rows never render a
-      // correct-looking but invented state. Actions still surface failures.
+      // A failed read still unlocks the screen; every action surfaces its own
+      // failure, so an empty pending state is never presented as truth.
       if (mounted) {
         setState(() => _membersLoaded = true);
       }
@@ -99,76 +104,24 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
     super.dispose();
   }
 
-  /// One immediate, contextual add/remove for [tile], decided purely by the
-  /// song's CURRENT membership: `+` for songs not in the playlist, `-` for
-  /// songs already in it. There is no global add/remove mode.
-  ///
-  /// The button state only advances after the database write commits; on
-  /// failure neither the membership nor the icon moves. A song whose operation
-  /// is still in flight can't be tapped again, so rapid `+` taps can never
-  /// create a duplicate entry.
-  Future<void> _toggle(SongTileData tile) async {
+  /// Flips [tile]'s pending membership: selected becomes deselected and vice
+  /// versa. Purely local state — no database write happens here.
+  void _toggle(SongTileData tile) {
     final id = tile.song.id;
-    if (_busy.contains(id) || _applyingSelectAll) return;
-    final add = !_members.contains(id);
-    setState(() => _busy.add(id));
-    final repository = ref.read(playlistRepositoryProvider);
-    try {
-      if (add) {
-        await repository.addSongs(widget.playlistId, [id]);
-      } else {
-        await repository.removeSongById(widget.playlistId, id);
-      }
-      if (mounted) {
-        setState(() {
-          _members = add ? {..._members, id} : {..._members}..remove(id);
-        });
-      }
-      _publishChange();
-      if (mounted) {
-        if (add) {
-          VoraSnackbar.success(
-            context,
-            'Added "${tile.song.title}" to playlist',
-            title: 'Added to playlist',
-          );
-        } else {
-          VoraSnackbar.success(
-            context,
-            'Removed "${tile.song.title}" from playlist',
-            title: 'Removed from playlist',
-          );
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        VoraSnackbar.error(
-          context,
-          add
-              ? 'Could not add "${tile.song.title}" to the playlist.'
-              : 'Could not remove "${tile.song.title}" from the playlist.',
-          title: 'Playlist error',
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _busy.remove(id));
-      }
-    }
+    setState(() {
+      final next = {..._pendingIds};
+      if (!next.remove(id)) next.add(id);
+      _pendingIds = next;
+    });
   }
 
-  /// Single, smart `Select All`. Operates on the whole picker dataset (the
-  /// paginated library, streamed to completion exactly like the previous bulk
-  /// actions — not the currently visible window):
-  ///
-  /// - when songs are missing from the playlist, exactly those are ADDED
-  ///   (existing members are left untouched, in their existing order);
-  /// - when every song is already a member, all of them are REMOVED.
-  ///
-  /// The reported count is the number of rows actually written. Songs with an
-  /// operation in flight are skipped so a bulk write can never duplicate them.
+  /// Marks every song in the picker dataset as selected for the playlist —
+  /// pending-only, never a database write. Streams every page (Select All
+  /// always means the WHOLE picker dataset, which matches the paginated
+  /// library source: only the currently visible window when the list is
+  /// short, every page streamed otherwise).
   Future<void> _selectAll() async {
-    if (_applyingSelectAll) return;
+    if (_applyingSelectAll || _committing) return;
     setState(() => _applyingSelectAll = true);
     try {
       final notifier = ref.read(pagedSongsProvider.notifier);
@@ -177,59 +130,10 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
       }
       final tiles = ref.read(pagedSongsProvider).value;
       if (tiles == null || tiles.isEmpty) return;
-      final members = await ref.read(
-        playlistMembershipProvider(widget.playlistId).future,
-      );
-      final missing = <int>[];
-      final present = <int>[];
-      for (final t in tiles) {
-        if (_busy.contains(t.song.id)) continue; // in flux: leave alone.
-        if (members.contains(t.song.id)) {
-          present.add(t.song.id);
-        } else {
-          missing.add(t.song.id);
-        }
-      }
-      if (missing.isEmpty && present.isEmpty) return;
-      final repository = ref.read(playlistRepositoryProvider);
-      if (missing.isEmpty) {
-        await repository.removeSongs(widget.playlistId, present);
-      } else {
-        await repository.addSongs(widget.playlistId, missing);
-      }
       if (mounted) {
         setState(() {
-          if (missing.isEmpty) {
-            _members = _members.difference(present.toSet());
-          } else {
-            _members = {..._members, ...missing};
-          }
+          _pendingIds = {for (final t in tiles) t.song.id};
         });
-      }
-      _publishChange();
-      if (mounted) {
-        final count = missing.isEmpty ? present.length : missing.length;
-        if (missing.isEmpty) {
-          VoraSnackbar.success(
-            context,
-            'Removed $count song${count == 1 ? '' : 's'} from playlist',
-            title: 'Removed from playlist',
-          );
-        } else {
-          VoraSnackbar.success(
-            context,
-            'Added $count song${count == 1 ? '' : 's'} to playlist',
-            title: 'Added to playlist',
-          );
-        }
-      }
-    } catch (_) {
-      if (mounted) {
-        VoraSnackbar.error(
-          context,
-          'Could not update the playlist.',
-          title: 'Playlist error',
-        );
       }
     } finally {
       if (mounted) {
@@ -238,9 +142,81 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
     }
   }
 
+  /// The single commit point: computes pending − original (adds) and original
+  /// − pending (removes), applies them efficiently to the database, refreshes
+  /// the playlist surfaces and closes the screen. Any error keeps the screen
+  /// open with the pending selection intact so the user can retry or back out.
+  Future<void> _done() async {
+    if (!_membersLoaded || _committing) return;
+    setState(() => _committing = true);
+    try {
+      final tiles =
+          ref.read(pagedSongsProvider).value ?? const <SongTileData>[];
+      final toAdd = <int>[
+        for (final t in tiles)
+          if (_pendingIds.contains(t.song.id) &&
+              !_originalIds.contains(t.song.id))
+            t.song.id,
+      ];
+      final toRemove = _originalIds.difference(_pendingIds);
+
+      if (toAdd.isEmpty && toRemove.isEmpty) {
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
+
+      final repository = ref.read(playlistRepositoryProvider);
+      await repository.addSongs(widget.playlistId, toAdd);
+      if (toRemove.isNotEmpty) {
+        await repository.removeSongs(widget.playlistId, toRemove);
+      }
+
+      _publishChange();
+      if (mounted) {
+        _showCommitResult(toAdd.length, toRemove.length);
+        Navigator.of(context).pop();
+      }
+    } catch (_) {
+      if (mounted) {
+        VoraSnackbar.error(
+          context,
+          'Could not update the playlist. Please try again.',
+          title: 'Playlist error',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _committing = false);
+      }
+    }
+  }
+
+  void _showCommitResult(int added, int removed) {
+    if (added > 0 && removed > 0) {
+      VoraSnackbar.success(
+        context,
+        'Added $added song${added == 1 ? '' : 's'}, '
+        'removed $removed song${removed == 1 ? '' : 's'}.',
+        title: 'Playlist updated',
+      );
+    } else if (added > 0) {
+      VoraSnackbar.success(
+        context,
+        'Added $added song${added == 1 ? '' : 's'} to playlist',
+        title: 'Added to playlist',
+      );
+    } else {
+      VoraSnackbar.success(
+        context,
+        'Removed $removed song${removed == 1 ? '' : 's'} from playlist',
+        title: 'Removed from playlist',
+      );
+    }
+  }
+
   /// Refreshes every playlist surface after a committed write: the
-  /// authoritative membership provider (this sheet re-renders its icons once
-  /// it refetches) and the playlist detail behind the sheet.
+  /// authoritative membership provider and the playlist detail behind the
+  /// sheet.
   void _publishChange() {
     ref.read(playlistRefreshTickProvider.notifier).state++;
     ref.invalidate(playlistMembershipProvider(widget.playlistId));
@@ -251,26 +227,16 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final asyncValue = ref.watch(pagedSongsProvider);
-    final membershipAsync = ref.watch(
-      playlistMembershipProvider(widget.playlistId),
-    );
-
-    // Reconcile the authoritative database membership into the local rendering
-    // set whenever the reactive provider delivers a fresh answer (it watches
-    // the refresh tick, so committed writes from this or any other surface
-    // converge here instead of leaving stale icons behind).
-    final authoritative = membershipAsync.value;
-    if (authoritative != null && !_sameMembers(authoritative)) {
-      Future.microtask(() {
-        if (mounted && !_sameMembers(authoritative)) {
-          setState(() => _members = authoritative);
-        }
-      });
-    }
 
     final hasSongs = asyncValue.value?.isNotEmpty ?? false;
     final selectAllEnabled =
-        _membersLoaded && hasSongs && !_applyingSelectAll;
+        _membersLoaded && hasSongs && !_applyingSelectAll && !_committing;
+    final count = _pendingIds.length;
+    final summary = count == 0
+        ? 'No songs will be in the playlist'
+        : count == 1
+        ? '1 song will be in the playlist'
+        : '$count songs will be in the playlist';
 
     return Scaffold(
       appBar: AppBar(
@@ -289,9 +255,7 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
             padding: const EdgeInsets.only(right: AppTokens.s2),
             child: TextButton(
               onPressed: selectAllEnabled ? _selectAll : null,
-              style: TextButton.styleFrom(
-                foregroundColor: colorScheme.primary,
-              ),
+              style: TextButton.styleFrom(foregroundColor: colorScheme.primary),
               child: _applyingSelectAll
                   ? const SizedBox(
                       width: 18,
@@ -365,20 +329,63 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
               final tile = tiles[index];
               return _PickerTile(
                 tile: tile,
-                isMember: _members.contains(tile.song.id),
-                busy: _busy.contains(tile.song.id),
+                isMember: _pendingIds.contains(tile.song.id),
                 onAction: () => _toggle(tile),
               );
             },
           );
         },
       ),
+      bottomNavigationBar: Material(
+        color: colorScheme.surface,
+        elevation: 8,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.s4,
+              AppTokens.s2,
+              AppTokens.s4,
+              AppTokens.s3,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  summary,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppTokens.s2),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    key: const ValueKey('done-button'),
+                    onPressed: _membersLoaded && !_committing ? _done : null,
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppTokens.s3,
+                      ),
+                    ),
+                    child: _committing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2.2),
+                          )
+                        : const Text(
+                            'Done',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
-  }
-
-  bool _sameMembers(Set<int> other) {
-    if (_members.length != other.length) return false;
-    return _members.containsAll(other);
   }
 }
 
@@ -386,19 +393,15 @@ class _PickerTile extends StatelessWidget {
   const _PickerTile({
     required this.tile,
     required this.isMember,
-    required this.busy,
     required this.onAction,
   });
 
   final SongTileData tile;
 
-  /// Whether the song is currently in the playlist. Drives the contextual
-  /// icon: `+` (ADD) when false, `-` (REMOVE) when true.
+  /// Whether the song is in the PENDING membership. Drives the contextual
+  /// icon: `+` (ADD) when false, `-` (REMOVE) when true. It only reflects the
+  /// user's in-progress selection — nothing is written until "Done".
   final bool isMember;
-
-  /// True while this song's operation is in flight; swaps the icon for a
-  /// spinner so a rapid second tap cannot double-apply.
-  final bool busy;
 
   final VoidCallback onAction;
 
@@ -460,19 +463,12 @@ class _PickerTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppTokens.s2),
-            if (busy)
-              const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2.2),
-              )
-            else
-              IconButton(
-                tooltip: tooltip,
-                key: ValueKey('${isMember ? 'remove' : 'add'}-song-${song.id}'),
-                onPressed: onAction,
-                icon: Icon(icon, size: 24, color: color),
-              ),
+            IconButton(
+              tooltip: tooltip,
+              key: ValueKey('${isMember ? 'remove' : 'add'}-song-${song.id}'),
+              onPressed: onAction,
+              icon: Icon(icon, size: 24, color: color),
+            ),
           ],
         ),
       ),
