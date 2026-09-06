@@ -61,7 +61,7 @@ void main() {
   }
 
   /// Pumps a host screen that pushes the picker as a real route, so a test can
-  /// prove "Done" / Back actually close the picker.
+  /// prove "Done" / the close button actually close the picker.
   Future<void> openPicker(
     WidgetTester tester, {
     required int pid,
@@ -116,47 +116,127 @@ void main() {
   final doneButton = find.byKey(const ValueKey('done-button'));
   final hostVisible = find.text('open picker');
 
-  testWidgets('Test 1 — initial rendering: members show -, non-members +', (
+  testWidgets('Test 1 — empty playlist: Select All visible, every song +', (
+    tester,
+  ) async {
+    db = await seedDb(songs: 4);
+    await pumpPicker(tester);
+
+    expect(selectAll, findsOneWidget);
+    for (var id = 1; id <= 4; id++) {
+      expect(addIcon(id), findsOneWidget);
+      expect(removeIcon(id), findsNothing);
+    }
+  });
+
+  testWidgets('Test 2 — non-empty playlist: Select All NOT visible', (
     tester,
   ) async {
     db = await seedDb(songs: 4);
     final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 4]); // A and D are members
+    await playlistRepo.addSongs(pid, [1]); // A is a member
 
     await openPicker(tester, pid: pid);
 
+    expect(selectAll, findsNothing);
     expect(removeIcon(1), findsOneWidget);
-    expect(addIcon(2), findsOneWidget);
-    expect(addIcon(3), findsOneWidget);
-    expect(removeIcon(4), findsOneWidget);
+    for (var id = 2; id <= 4; id++) {
+      expect(addIcon(id), findsOneWidget);
+    }
   });
 
-  testWidgets('Test 2 — tapping + only stages: no DB write, no snackbar', (
+  testWidgets(
+    'Test 3 — Select All on empty playlist: local only, DB stays empty',
+    (tester) async {
+      db = await seedDb(songs: 4);
+      final pid = await pumpPicker(tester);
+
+      await tester.tap(selectAll);
+      await tester.pumpAndSettle();
+
+      for (var id = 1; id <= 4; id++) {
+        expect(
+          removeIcon(id),
+          findsOneWidget,
+          reason: 'song $id pending-selected',
+        );
+      }
+      expect(await members(pid), isEmpty, reason: 'no database write');
+      expect(find.textContaining('Added'), findsNothing);
+      expect(find.textContaining('Removed'), findsNothing);
+    },
+  );
+
+  testWidgets('Test 4 — Select All, deselect C, Done: A/B/D added, C not', (
+    tester,
+  ) async {
+    db = await seedDb(songs: 4);
+    final pid = await pumpPicker(tester);
+
+    await tester.tap(selectAll);
+    await tester.pumpAndSettle();
+    await tester.tap(removeIcon(3)); // C
+    await tester.pumpAndSettle();
+
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+
+    expect(await members(pid), {1, 2, 4});
+    expect(await order(pid), hasLength(3));
+    expect(find.text('Added 3 songs to playlist'), findsOneWidget);
+    expect(hostVisible, findsOneWidget);
+  });
+
+  testWidgets('Test 5 — non-empty playlist: manual add B + remove A, Done', (
     tester,
   ) async {
     db = await seedDb(songs: 4);
     final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 4]);
+    await playlistRepo.addSongs(pid, [1]);
+
+    await openPicker(tester, pid: pid);
+    expect(selectAll, findsNothing);
+
+    await tester.tap(addIcon(2)); // B pending-add
+    await tester.tap(removeIcon(1)); // A pending-remove
+    await tester.pumpAndSettle();
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+
+    expect(await members(pid), {2});
+    expect(find.text('Added 1 song, removed 1 song.'), findsOneWidget);
+    expect(hostVisible, findsOneWidget);
+  });
+
+  testWidgets('Test 6 — pending toggles never touch DB; Done commits once', (
+    tester,
+  ) async {
+    db = await seedDb(songs: 4);
+    final pid = await playlistRepo.createPlaylist('Test');
+    await playlistRepo.addSongs(pid, [1]);
 
     await openPicker(tester, pid: pid);
     await tester.tap(addIcon(2));
     await tester.pumpAndSettle();
+    expect(await members(pid), {1}, reason: 'tap + does not write');
 
-    // Visual state flips to selected...
-    expect(removeIcon(2), findsOneWidget);
-    expect(addIcon(2), findsNothing);
-    // ...but nothing was committed anywhere.
-    expect(await members(pid), {1, 4});
-    expect(find.text('Added "Song 2" to playlist'), findsNothing);
-    expect(find.text('Added to playlist'), findsNothing);
+    await tester.tap(removeIcon(1));
+    await tester.pumpAndSettle();
+    expect(await members(pid), {1}, reason: 'tap - does not write');
+    expect(find.textContaining('Added'), findsNothing);
+
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+    expect(await members(pid), {2});
+    expect(hostVisible, findsOneWidget);
   });
 
-  testWidgets('Test 3 — tapping + again undoes the pending add', (
+  testWidgets('Test 7 — reverting a pending change restores the icon', (
     tester,
   ) async {
     db = await seedDb(songs: 4);
     final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 4]);
+    await playlistRepo.addSongs(pid, [1]);
 
     await openPicker(tester, pid: pid);
     await tester.tap(addIcon(2));
@@ -166,239 +246,61 @@ void main() {
 
     expect(addIcon(2), findsOneWidget);
     expect(removeIcon(2), findsNothing);
-    expect(await members(pid), {1, 4});
+    expect(await members(pid), {1});
   });
 
-  testWidgets('Test 4 — tapping - on a member stages a removal (shows +)', (
+  testWidgets('Test 8 — Select All again is a local toggle-off: no writes', (
     tester,
   ) async {
     db = await seedDb(songs: 4);
-    final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 4]);
+    final pid = await pumpPicker(tester);
 
-    await openPicker(tester, pid: pid);
-    await tester.tap(removeIcon(1));
-    await tester.pumpAndSettle();
-
-    expect(addIcon(1), findsOneWidget);
-    expect(removeIcon(1), findsNothing);
-    expect(await members(pid), {1, 4}, reason: 'DB untouched until Done');
-  });
-
-  testWidgets('Test 5 — tapping + on a pending-removed member restores it', (
-    tester,
-  ) async {
-    db = await seedDb(songs: 4);
-    final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 4]);
-
-    await openPicker(tester, pid: pid);
-    await tester.tap(removeIcon(1));
-    await tester.pumpAndSettle();
-    await tester.tap(addIcon(1));
-    await tester.pumpAndSettle();
-
-    expect(removeIcon(1), findsOneWidget);
-    expect(addIcon(1), findsNothing);
-    expect(await members(pid), {1, 4});
-  });
-
-  testWidgets('Test 6 — Select All is selection-only: zero database writes', (
-    tester,
-  ) async {
-    db = await seedDb(songs: 4);
-    final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 4]);
-
-    await openPicker(tester, pid: pid);
     await tester.tap(selectAll);
     await tester.pumpAndSettle();
-
     for (var id = 1; id <= 4; id++) {
-      expect(removeIcon(id), findsOneWidget, reason: 'song $id selected');
+      expect(removeIcon(id), findsOneWidget);
     }
-    expect(await members(pid), {1, 4}, reason: 'Select All must not write');
-    expect(find.textContaining('Added'), findsNothing);
-    expect(find.textContaining('Removed'), findsNothing);
-  });
 
-  testWidgets('Test 7 — Select All, deselect one, Done: mixed add+remove', (
-    tester,
-  ) async {
-    db = await seedDb(songs: 4);
-    final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 4]);
-
-    await openPicker(tester, pid: pid);
     await tester.tap(selectAll);
     await tester.pumpAndSettle();
-    await tester.tap(removeIcon(4));
-    await tester.pumpAndSettle();
-
-    await tester.tap(doneButton);
-    await tester.pumpAndSettle();
-
-    expect(await members(pid), {1, 2, 3});
-    expect(await order(pid), hasLength(3));
-    expect(find.text('Added 2 songs, removed 1 song.'), findsOneWidget);
-    expect(hostVisible, findsOneWidget, reason: 'Done closes the picker');
+    for (var id = 1; id <= 4; id++) {
+      expect(addIcon(id), findsOneWidget);
+    }
+    expect(await members(pid), isEmpty);
+    expect(find.textContaining('Added'), findsNothing);
   });
 
-  testWidgets(
-    'Test 8 — Select All then Done commits everything, reopens clean',
-    (tester) async {
-      db = await seedDb(songs: 4);
-      final pid = await playlistRepo.createPlaylist('Test');
-      await playlistRepo.addSongs(pid, [1, 4]);
-
-      await openPicker(tester, pid: pid);
-      await tester.tap(selectAll);
-      await tester.pumpAndSettle();
-      await tester.tap(doneButton);
-      await tester.pumpAndSettle();
-
-      expect(await members(pid), {1, 2, 3, 4});
-      expect((await order(pid)).take(2).toList(), [
-        1,
-        4,
-      ], reason: 'existing members keep their leading order');
-      expect(find.text('Added 2 songs to playlist'), findsOneWidget);
-      expect(hostVisible, findsOneWidget);
-
-      // Reopen: every song now renders as a member.
-      await openPicker(tester, pid: pid);
-      for (var id = 1; id <= 4; id++) {
-        expect(removeIcon(id), findsOneWidget, reason: 'song $id persisted');
-      }
-    },
-  );
-
-  testWidgets(
-    'Test 9 — Select All, deselect some back: net-zero closes silently',
-    (tester) async {
-      db = await seedDb(songs: 4);
-      final pid = await playlistRepo.createPlaylist('Test');
-      await playlistRepo.addSongs(pid, [1, 4]);
-
-      await openPicker(tester, pid: pid);
-      await tester.tap(selectAll);
-      await tester.pumpAndSettle();
-      await tester.tap(removeIcon(2));
-      await tester.tap(removeIcon(3));
-      await tester.pumpAndSettle();
-
-      await tester.tap(doneButton);
-      await tester.pumpAndSettle();
-
-      expect(await members(pid), {1, 4});
-      expect(find.textContaining('Added'), findsNothing);
-      expect(find.textContaining('Removed'), findsNothing);
-      expect(hostVisible, findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    'Test 10 — Select All then deselect every member: Done removes all',
-    (tester) async {
-      db = await seedDb(songs: 4);
-      final pid = await playlistRepo.createPlaylist('Test');
-      await playlistRepo.addSongs(pid, [1, 2, 3, 4]);
-
-      await openPicker(tester, pid: pid);
-      await tester.tap(selectAll);
-      await tester.pumpAndSettle();
-      for (var id = 1; id <= 4; id++) {
-        await tester.tap(removeIcon(id));
-      }
-      await tester.pumpAndSettle();
-
-      await tester.tap(doneButton);
-      await tester.pumpAndSettle();
-
-      expect(await members(pid), isEmpty);
-      expect(find.text('Removed 4 songs from playlist'), findsOneWidget);
-    },
-  );
-
-  testWidgets('Test 11 — Back discards pending: no database writes', (
-    tester,
-  ) async {
-    db = await seedDb(songs: 4);
-    final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 4]);
-
-    await openPicker(tester, pid: pid);
-    await tester.tap(addIcon(2));
-    await tester.tap(removeIcon(4));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byTooltip('Close'));
-    await tester.pumpAndSettle();
-
-    expect(hostVisible, findsOneWidget);
-    expect(await members(pid), {1, 4});
-  });
-
-  testWidgets('Test 12 — empty playlist: Select All + Done adds every song', (
+  testWidgets('Test 9 — Done with no pending changes just closes', (
     tester,
   ) async {
     db = await seedDb(songs: 3);
     final pid = await pumpPicker(tester);
 
-    for (var id = 1; id <= 3; id++) {
-      expect(addIcon(id), findsOneWidget);
-    }
-    await tester.tap(selectAll);
-    await tester.pumpAndSettle();
     await tester.tap(doneButton);
     await tester.pumpAndSettle();
 
-    expect(await members(pid), {1, 2, 3});
-    expect(find.text('Added 3 songs to playlist'), findsOneWidget);
+    expect(await members(pid), isEmpty);
+    expect(find.textContaining('Added'), findsNothing);
     expect(hostVisible, findsOneWidget);
   });
 
-  testWidgets('Test 13 — every visible song already member: Done is a no-op', (
+  testWidgets('Test 10 — duplicate safety: Select All + Done adds once each', (
     tester,
   ) async {
     db = await seedDb(songs: 3);
-    final pid = await playlistRepo.createPlaylist('Test');
-    await playlistRepo.addSongs(pid, [1, 2, 3]);
+    final pid = await pumpPicker(tester);
 
-    await openPicker(tester, pid: pid);
-    for (var id = 1; id <= 3; id++) {
-      expect(removeIcon(id), findsOneWidget);
-    }
     await tester.tap(selectAll);
     await tester.pumpAndSettle();
     await tester.tap(doneButton);
     await tester.pumpAndSettle();
 
     expect(await members(pid), {1, 2, 3});
-    expect(find.textContaining('Added'), findsNothing);
-    expect(find.textContaining('Removed'), findsNothing);
-    expect(hostVisible, findsOneWidget);
+    final rows = await db.select(db.playlistSongs).get();
+    expect(rows.where((r) => r.playlistId == pid), hasLength(3));
   });
 
-  testWidgets(
-    'Test 14 — duplicate safety: Select All + Done never duplicates',
-    (tester) async {
-      db = await seedDb(songs: 3);
-      final pid = await playlistRepo.createPlaylist('Test');
-      await playlistRepo.addSongs(pid, [1]);
-
-      await openPicker(tester, pid: pid);
-      await tester.tap(selectAll);
-      await tester.pumpAndSettle();
-      await tester.tap(doneButton);
-      await tester.pumpAndSettle();
-
-      expect(await members(pid), {1, 2, 3});
-      expect(await order(pid), hasLength(3), reason: 'no duplicate rows');
-    },
-  );
-
-  testWidgets('Test 15 — large song list: Select All covers every page', (
+  testWidgets('Test 11 — large empty playlist: Select All spans every page', (
     tester,
   ) async {
     db = await seedDb(songs: 205);
@@ -411,19 +313,57 @@ void main() {
 
     final expected = {for (var id = 1; id <= 205; id++) id};
     expect(await members(pid), expected);
-// Direct count of the playlist_songs rows: proves every song landed exactly
-    // once (songsOf caps at its default limit of 200, so it can't count here).
+    // Direct count of playlist_songs rows: exactly one row per song (songsOf
+    // caps at its default limit of 200, so it can't count here).
     final rows = await db.select(db.playlistSongs).get();
-    final rowCount = rows.where((r) => r.playlistId == pid).length;
-    expect(rowCount, expected.length);
+    expect(rows.where((r) => r.playlistId == pid), hasLength(205));
+  });
+
+  testWidgets('Test 12 — committed playlist then reopened: no Select All', (
+    tester,
+  ) async {
+    db = await seedDb(songs: 3);
+    final pid = await pumpPicker(tester);
+
+    await tester.tap(selectAll);
+    await tester.pumpAndSettle();
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+    expect(await members(pid), {1, 2, 3});
+
+    await openPicker(tester, pid: pid);
+    for (var id = 1; id <= 3; id++) {
+      expect(removeIcon(id), findsOneWidget);
+    }
+    expect(selectAll, findsNothing, reason: 'playlist no longer empty');
+  });
+
+  testWidgets('Test 13 — close button discards pending: no DB writes', (
+    tester,
+  ) async {
+    db = await seedDb(songs: 4);
+    final pid = await playlistRepo.createPlaylist('Test');
+    await playlistRepo.addSongs(pid, [1]);
+
+    await openPicker(tester, pid: pid);
+    await tester.tap(addIcon(2));
+    await tester.tap(removeIcon(1));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+
+    expect(hostVisible, findsOneWidget);
+    expect(await members(pid), {1});
   });
 
   testWidgets(
-    'Test 16 — failed Done commit: error snackbar, picker stays open',
+    'Test 14 — failed Done commit: error snackbar, picker stays open',
     (tester) async {
       db = await seedDb(songs: 3);
       final failing = _FailingPlaylistRepository(db);
       final pid = await playlistRepo.createPlaylist('Test');
+      await playlistRepo.addSongs(pid, [1]);
 
       await openPicker(tester, pid: pid, repository: failing);
       await tester.tap(addIcon(2));
@@ -435,23 +375,31 @@ void main() {
         find.text('Could not update the playlist. Please try again.'),
         findsOneWidget,
       );
-      expect(await members(pid), isEmpty);
+      expect(await members(pid), {1});
       expect(doneButton, findsOneWidget, reason: 'picker stays open to retry');
       expect(hostVisible, findsNothing);
     },
   );
 
-  testWidgets('Test 17 — Done with no pending changes just closes', (
+  testWidgets('Test 15 — mixed commit preserves existing member order', (
     tester,
   ) async {
-    db = await seedDb(songs: 3);
-    final pid = await pumpPicker(tester);
+    db = await seedDb(songs: 4);
+    final pid = await playlistRepo.createPlaylist('Test');
+    await playlistRepo.addSongs(pid, [1, 4]);
 
+    await openPicker(tester, pid: pid);
+    await tester.tap(addIcon(2)); // B pending-add
+    await tester.tap(removeIcon(4)); // D pending-remove
+    await tester.pumpAndSettle();
     await tester.tap(doneButton);
     await tester.pumpAndSettle();
 
-    expect(await members(pid), isEmpty);
-    expect(find.textContaining('Added'), findsNothing);
-    expect(hostVisible, findsOneWidget);
+    expect(await members(pid), {1, 2});
+    expect((await order(pid)).take(2).toList(), [
+      1,
+      2,
+    ], reason: 'existing member A keeps its leading position');
+    expect(find.text('Added 1 song, removed 1 song.'), findsOneWidget);
   });
 }

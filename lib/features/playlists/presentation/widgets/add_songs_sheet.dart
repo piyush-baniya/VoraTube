@@ -10,12 +10,23 @@ import '../providers/playlist_providers.dart';
 
 /// Opens a full-screen picker that edits which songs belong to a playlist.
 ///
-/// Every row shows a contextual +/− action and the single `Select All` action
-/// (in the app bar) ONLY change the LOCAL pending selection — nothing touches
-/// the database while the user is picking. The one "Done" button at the bottom
-/// commits the whole pending diff at once: songs selected but absent are
-/// added, songs deselected but previously members are removed. Tapping the
-/// app bar's back / pressing Back discards the pending changes entirely.
+/// Every row shows a contextual +/− action and — ONLY when the playlist
+/// started completely EMPTY — a `Select All` action in the app bar. Both just
+/// change the LOCAL pending selection: nothing touches the database while the
+/// user is picking. The one "Done" button at the bottom commits the whole
+/// pending diff at once: songs selected but absent are added, songs deselected
+/// but previously members are removed. Tapping the app bar's back / pressing
+/// Back discards the pending changes entirely.
+///
+/// The `Select All` visibility is a fixed screen-level rule decided once from
+/// the playlist's ACTUAL initial membership when the screen opens:
+///
+/// - empty playlist → `Select All` is available, ADD-only (it can never remove
+///   anything, because there was never anything in the playlist);
+/// - playlist with one or more songs → `Select All` is completely unavailable;
+///   every song is managed individually.
+///
+/// It is NOT derived from (and never changes with) the pending selection.
 ///
 /// [playlistRefreshTickProvider] is bumped after a successful commit so the
 /// playlist surfaces behind the sheet (detail screen, overviews) refresh
@@ -56,6 +67,16 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
   Set<int> _pendingIds = const <int>{};
   bool _membersLoaded = false;
 
+  /// Whether the playlist contained ZERO songs when the screen opened. This is
+  /// the FIXED screen-level rule for the `Select All` visibility: it is read
+  /// once from the actual initial membership and never recomputed from the
+  /// pending selection, so the button can never appear for a non-empty playlist
+  /// and can never turn Add/Remove as the user toggles rows.
+  ///
+  /// `false` until hydration succeeds; a failed membership read keeps it
+  /// `false` so Select All is never offered on unknown membership.
+  bool _playlistWasInitiallyEmpty = false;
+
   /// True while `Select All` is streaming the remaining pages of the picker
   /// dataset (an async, read-only operation).
   bool _applyingSelectAll = false;
@@ -80,6 +101,7 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
         setState(() {
           _originalIds = members;
           _pendingIds = members;
+          _playlistWasInitiallyEmpty = members.isEmpty;
           _membersLoaded = true;
         });
       }
@@ -115,13 +137,18 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
     });
   }
 
-  /// Marks every song in the picker dataset as selected for the playlist —
-  /// pending-only, never a database write. Streams every page (Select All
-  /// always means the WHOLE picker dataset, which matches the paginated
-  /// library source: only the currently visible window when the list is
-  /// short, every page streamed otherwise).
+  /// Applies the ADD-only `Select All`, available only when the playlist
+  /// started empty ([_playlistWasInitiallyEmpty], a fixed screen-level rule).
+  ///
+  /// Streams every page so it always means the WHOLE picker dataset — never the
+  /// currently visible window. Purely local: it only flips the pending
+  /// selection between "every song selected" and "nothing selected" and NEVER
+  /// writes, inserts, refreshes or confirms anything. It can't remove anything
+  /// because a playlist that started empty has nothing to remove.
   Future<void> _selectAll() async {
-    if (_applyingSelectAll || _committing) return;
+    if (!_playlistWasInitiallyEmpty || _applyingSelectAll || _committing) {
+      return;
+    }
     setState(() => _applyingSelectAll = true);
     try {
       final notifier = ref.read(pagedSongsProvider.notifier);
@@ -131,8 +158,13 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
       final tiles = ref.read(pagedSongsProvider).value;
       if (tiles == null || tiles.isEmpty) return;
       if (mounted) {
+        final allIds = {for (final t in tiles) t.song.id};
         setState(() {
-          _pendingIds = {for (final t in tiles) t.song.id};
+          // Local toggle: a second tap while everything is pending-selected
+          // deselects everything (still local-only, still zero DB writes).
+          final everythingSelected =
+              _pendingIds.isNotEmpty && allIds.containsAll(_pendingIds);
+          _pendingIds = everythingSelected ? const <int>{} : allIds;
         });
       }
     } finally {
@@ -229,8 +261,13 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
     final asyncValue = ref.watch(pagedSongsProvider);
 
     final hasSongs = asyncValue.value?.isNotEmpty ?? false;
+    // Select All exists ONLY for playlists that started empty, decided once at
+    // hydration. A non-empty playlist never gets the control, no matter what
+    // the pending selection is.
+    final showSelectAll =
+        _membersLoaded && _playlistWasInitiallyEmpty && hasSongs;
     final selectAllEnabled =
-        _membersLoaded && hasSongs && !_applyingSelectAll && !_committing;
+        showSelectAll && !_applyingSelectAll && !_committing;
     final count = _pendingIds.length;
     final summary = count == 0
         ? 'No songs will be in the playlist'
@@ -251,23 +288,26 @@ class _AddSongsPickerScreenState extends ConsumerState<AddSongsPickerScreen> {
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: AppTokens.s2),
-            child: TextButton(
-              onPressed: selectAllEnabled ? _selectAll : null,
-              style: TextButton.styleFrom(foregroundColor: colorScheme.primary),
-              child: _applyingSelectAll
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2.2),
-                    )
-                  : const Text(
-                      'Select All',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
+          if (showSelectAll)
+            Padding(
+              padding: const EdgeInsets.only(right: AppTokens.s2),
+              child: TextButton(
+                onPressed: selectAllEnabled ? _selectAll : null,
+                style: TextButton.styleFrom(
+                  foregroundColor: colorScheme.primary,
+                ),
+                child: _applyingSelectAll
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      )
+                    : const Text(
+                        'Select All',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+              ),
             ),
-          ),
         ],
       ),
       body: asyncValue.when(
