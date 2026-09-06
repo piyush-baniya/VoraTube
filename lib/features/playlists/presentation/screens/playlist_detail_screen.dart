@@ -226,59 +226,14 @@ class _PlaylistDetailScreenState extends ConsumerState<PlaylistDetailScreen> {
     ref.read(playerProvider).playQueue(ctx.refs, startIndex: ctx.startIndex);
   }
 
+  /// Opens the song-selection sheet. The sheet itself applies every add/remove
+  /// immediately and refreshes this screen reactively through
+  /// [playlistRefreshTickProvider]; nothing is applied here on return.
   Future<void> _addSongs() async {
-    final result = await showAddSongsSheet(
+    await showAddSongsSheet(
       context,
       playlistId: widget.playlistId,
     );
-    if (result == null || !mounted) {
-      return;
-    }
-    final notifier = ref.read(
-      playlistDetailProvider(widget.playlistId).notifier,
-    );
-    // Remove marked songs first (by their current index in the list).
-    if (result.toRemove.isNotEmpty) {
-      final songs = await ref.read(
-        playlistDetailProvider(widget.playlistId).future,
-      );
-      final indices = <int>[];
-      for (final id in result.toRemove) {
-        final idx = songs.indexWhere((s) => s.song.id == id);
-        if (idx >= 0) indices.add(idx);
-      }
-      // Remove from highest index first so earlier indices stay valid.
-      indices.sort((a, b) => b.compareTo(a));
-      for (final idx in indices) {
-        await notifier.removeAt(idx);
-      }
-    }
-    if (result.toAdd.isNotEmpty) {
-      await notifier.appendSongs(result.toAdd);
-    }
-    ref.read(playlistRefreshTickProvider.notifier).state++;
-    if (!mounted) return;
-    final added = result.toAdd.length;
-    final removed = result.toRemove.length;
-    if (added > 0 && removed > 0) {
-      VoraSnackbar.success(
-        context,
-        '$added song${added == 1 ? '' : 's'} added, $removed removed.',
-        title: 'Playlist updated',
-      );
-    } else if (added > 0) {
-      VoraSnackbar.success(
-        context,
-        '$added song${added == 1 ? '' : 's'} added to "${widget.name}".',
-        title: 'Added to playlist',
-      );
-    } else if (removed > 0) {
-      VoraSnackbar.success(
-        context,
-        "$removed song${removed == 1 ? "" : "s"} removed.",
-        title: 'Removed from playlist',
-      );
-    }
   }
 }
 

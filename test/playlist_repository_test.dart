@@ -219,6 +219,38 @@ void main() {
     });
   });
 
+  group('removeSongs / removeSongById (identity-based)', () {
+    test('removes one song by id and renumbers the rest', () async {
+      final pid = await playlistRepo.createPlaylist('ById');
+      await playlistRepo.addSongs(pid, [1, 2, 3, 4]);
+
+      await playlistRepo.removeSongById(pid, 2);
+
+      final songs = await playlistRepo.songsOf(pid);
+      expect(songs.map((s) => s.song.id).toList(), [1, 3, 4]);
+    });
+
+    test('removes several songs at once, preserving survivor order', () async {
+      final pid = await playlistRepo.createPlaylist('BulkRem');
+      await playlistRepo.addSongs(pid, [1, 2, 3, 4, 5]);
+
+      await playlistRepo.removeSongs(pid, [2, 4]);
+
+      final songs = await playlistRepo.songsOf(pid);
+      expect(songs.map((s) => s.song.id).toList(), [1, 3, 5]);
+    });
+
+    test('no-op for ids that are not members', () async {
+      final pid = await playlistRepo.createPlaylist('Missing');
+      await playlistRepo.addSongs(pid, [1, 2]);
+
+      await playlistRepo.removeSongs(pid, [4, 5]);
+
+      final songs = await playlistRepo.songsOf(pid);
+      expect(songs.map((s) => s.song.id).toList(), [1, 2]);
+    });
+  });
+
   group('moveSong (reorder)', () {
     test('moves song from start to end', () async {
       final pid = await playlistRepo.createPlaylist('Move');

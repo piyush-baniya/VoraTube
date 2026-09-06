@@ -252,6 +252,37 @@ class PlaylistRepository {
     return _renumberAfterRemoval(playlistId, index);
   }
 
+  /// Removes every playlist entry belonging to [songRowIds] (identity-based,
+  /// no position lookup), then renumbers the survivors so `position` stays
+  /// gapless. Idempotent: ids that are not members are ignored. Used by the
+  /// smart add/remove picker so a removal can never hit the wrong song while
+  /// the playlist is being edited.
+  Future<void> removeSongs(int playlistId, Iterable<int> songRowIds) {
+    return _db.transaction(() async {
+      final toRemove = songRowIds.toSet();
+      if (toRemove.isEmpty) return;
+      final entries = await _orderedEntries(playlistId);
+      final remaining = [
+        for (final e in entries)
+          if (!toRemove.contains(e.songRowId)) e.songRowId,
+      ];
+      if (remaining.length == entries.length) return;
+      await (_db.delete(
+        _db.playlistSongs,
+      )..where(
+          (tbl) =>
+              tbl.playlistId.equals(playlistId) &
+              tbl.songRowId.isIn(toRemove),
+        )).go();
+      await _rewritePositions(playlistId, remaining);
+    });
+  }
+
+  /// Removes every entry of [songRowId]; see [removeSongs].
+  Future<void> removeSongById(int playlistId, int songRowId) {
+    return removeSongs(playlistId, [songRowId]);
+  }
+
   Future<void> _renumberAfterRemoval(int playlistId, int index) async {
     await _db.transaction(() async {
       final entries = await _orderedEntries(playlistId);
