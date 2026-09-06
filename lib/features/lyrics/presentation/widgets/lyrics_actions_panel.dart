@@ -10,6 +10,7 @@ import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/models/lyrics.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../player/presentation/providers/player_providers.dart';
+import '../../../player/presentation/providers/connectivity_provider.dart';
 import '../../data/lrclib_client.dart';
 import '../providers/lyrics_providers.dart';
 
@@ -27,6 +28,7 @@ class LyricsActionsPanel extends ConsumerStatefulWidget {
     this.compact = false,
     this.row = false,
     this.grid = false,
+    this.offlineNoCache = false,
   });
 
   /// When true the buttons are sized for a tighter panel (used by the compact
@@ -43,6 +45,11 @@ class LyricsActionsPanel extends ConsumerStatefulWidget {
   /// buttons-first entry the lyrics surface opens with) and the online options
   /// list is shown inline rather than in a modal sheet.
   final bool grid;
+
+  /// When true, the device is offline and no cached lyrics exist. Only the
+  /// upload action is shown — "Online Lyrics" and "Search Lyrics" are hidden
+  /// because the user has no internet access.
+  final bool offlineNoCache;
 
   @override
   ConsumerState<LyricsActionsPanel> createState() => _LyricsActionsPanelState();
@@ -210,10 +217,7 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
         );
       }
     } catch (_) {
-      _snack(
-        'Could not open the browser.',
-        variant: VoraSnackbarVariant.error,
-      );
+      _snack('Could not open the browser.', variant: VoraSnackbarVariant.error);
     }
   }
 
@@ -339,9 +343,7 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: isDestructive
-                  ? TextStyle(color: colorScheme.error)
-                  : null,
+              style: isDestructive ? TextStyle(color: colorScheme.error) : null,
             ),
           ),
           SizedBox(width: iconSize + AppTokens.s1),
@@ -406,6 +408,9 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
   /// saved) "Remove .LRC File". A "Show uploaded lyrics" action is intentionally
   /// NOT offered: the shared pipeline already loads a saved LRC as the active
   /// lyrics for the song, so such a button would be redundant.
+  ///
+  /// When [LyricsActionsPanel.offlineNoCache] is true the device is offline
+  /// and no cached lyrics exist — only the upload action is returned.
   List<Widget> _actionTiles() {
     final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
     final uploadAction = uploaded != null
@@ -416,6 +421,10 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
             destructive: true,
           )
         : _button('Upload .lrc file', Icons.upload_file_rounded, _uploadLrc);
+
+    if (widget.offlineNoCache) {
+      return [uploadAction];
+    }
 
     return [
       _button(
@@ -572,8 +581,6 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
-
     final buttons = _actionTiles();
 
     if (widget.grid) {
@@ -581,27 +588,40 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     }
 
     if (widget.row) {
+      final uploaded = ref.watch(uploadedLrcProvider).valueOrNull;
+      final isOnline = ref.watch(isOnlineProvider);
       return SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: AppTokens.s3),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _chip(
-              'Show online',
-              Icons.cloud_download_outlined,
-              _showOnlineLyrics,
-              enabled: !_searchingOnline,
-            ),
-            const SizedBox(width: AppTokens.s1),
-            _chip(
-              'Search online',
-              Icons.travel_explore_rounded,
-              _searchLyricsOnWeb,
-            ),
-            const SizedBox(width: AppTokens.s1),
+            if (widget.offlineNoCache)
+              const SizedBox.shrink()
+            else if (!isOnline)
+              _chip('Offline Lyrics', Icons.wifi_off_rounded, () async {})
+            else ...[
+              _chip(
+                'Show online',
+                Icons.cloud_download_outlined,
+                _showOnlineLyrics,
+                enabled: !_searchingOnline,
+              ),
+              const SizedBox(width: AppTokens.s1),
+              _chip(
+                'Search online',
+                Icons.travel_explore_rounded,
+                _searchLyricsOnWeb,
+              ),
+            ],
+            if (!widget.offlineNoCache && !isOnline)
+              const SizedBox(width: AppTokens.s1),
             if (uploaded != null)
-              _chip('Remove .lrc', Icons.delete_outline_rounded, _removeUploadedLrc)
+              _chip(
+                'Remove .lrc',
+                Icons.delete_outline_rounded,
+                _removeUploadedLrc,
+              )
             else
               _chip('Upload .lrc', Icons.upload_file_rounded, _uploadLrc),
           ],
@@ -610,7 +630,10 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
     }
 
     if (widget.compact) {
-      return Column(mainAxisSize: MainAxisSize.min, children: _pairedRows(buttons));
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: _pairedRows(buttons),
+      );
     }
 
     return Column(
@@ -675,9 +698,8 @@ class _ResultTile extends StatelessWidget {
                       result.artistName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                      style: Theme.of(context).textTheme.bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -697,16 +719,11 @@ class _ResultTile extends StatelessWidget {
 /// The transient state of the inline online-option phase.
 class _OnlinePick {
   const _OnlinePick.searching()
-      : status = _OnlineStatus.searching,
-        results = null;
-  const _OnlinePick.offline()
-      : status = _OnlineStatus.offline,
-        results = null;
-  const _OnlinePick.error()
-      : status = _OnlineStatus.error,
-        results = null;
-  const _OnlinePick.done(this.results)
-      : status = _OnlineStatus.done;
+    : status = _OnlineStatus.searching,
+      results = null;
+  const _OnlinePick.offline() : status = _OnlineStatus.offline, results = null;
+  const _OnlinePick.error() : status = _OnlineStatus.error, results = null;
+  const _OnlinePick.done(this.results) : status = _OnlineStatus.done;
 
   final _OnlineStatus status;
   final List<LrclibResult>? results;

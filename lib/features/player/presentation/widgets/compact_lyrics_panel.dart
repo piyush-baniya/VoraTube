@@ -10,6 +10,7 @@ import '../../../../core/models/lyrics.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
 import '../../../lyrics/presentation/widgets/lyrics_actions_panel.dart';
 import '../../../player/presentation/providers/player_providers.dart';
+import '../../../player/presentation/providers/connectivity_provider.dart';
 
 /// Compact lyrics panel that sits at the bottom of the full player.
 ///
@@ -263,6 +264,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   Widget build(BuildContext context) {
     final lyricsAsync = ref.watch(currentLyricsProvider);
     final manual = ref.watch(manualLyricsProvider);
+    final isOnline = ref.watch(isOnlineProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final accent = AppColors.accent;
@@ -273,14 +275,19 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
         // of the available height and crush the lyrics card into invisibility.
         // Hide the row there so the card (and its pin-the-header collapse
         // control) gets the space it needs; the panel then focuses on lyrics.
-        final tightPanel = constraints.hasBoundedHeight &&
-            constraints.maxHeight < 200;
+        final tightPanel =
+            constraints.hasBoundedHeight && constraints.maxHeight < 200;
 
         // Lyrics action buttons live OUTSIDE the collapsible card:
         // - expanded + lyrics shown (+ enough room) → visible below the card
         //   (portrait AND landscape);
         // - collapsed, no lyrics, or a tight panel → hidden completely.
-        final showActionsBelow = _expanded && manual != null && !tightPanel;
+        final isOffline = !isOnline;
+        final hasLoadedLyrics =
+            manual != null ||
+            (isOffline &&
+                lyricsAsync.valueOrNull?.status == LyricsStatus.loaded);
+        final showActionsBelow = _expanded && hasLoadedLyrics && !tightPanel;
         var cardHeight = _desiredCardHeight(showActionsBelow);
         if (widget.fillRegion &&
             constraints.hasBoundedHeight &&
@@ -296,8 +303,9 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
           // than the region, and a fixed-height child inside the Flexible
           // below overflows the flex (RenderFlex overflow). Reserve the
           // actions row's height first so card + row always fit together.
-          final actionsH =
-              showActionsBelow ? _actionsReserve + AppTokens.s2 : 0;
+          final actionsH = showActionsBelow
+              ? _actionsReserve + AppTokens.s2
+              : 0;
           cardHeight = math.min(
             cardHeight,
             math.max(0.0, constraints.maxHeight - actionsH),
@@ -338,7 +346,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppTokens.rXl),
               child: _expanded
-                  ? _buildExpanded(lyricsAsync, manual)
+                  ? _buildExpanded(lyricsAsync, manual, !isOnline)
                   : _buildCollapsedPreview(lyricsAsync, manual),
             ),
           ),
@@ -400,12 +408,16 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
   Widget _buildExpanded(
     AsyncValue<LyricsResult> lyricsAsync,
     LyricsData? manual,
+    bool isOffline,
   ) {
-    final lyrics = manual != null
+    final lyrics =
+        (manual != null ||
+            (isOffline &&
+                lyricsAsync.valueOrNull?.status == LyricsStatus.loaded))
         // The buttons are rendered OUTSIDE the card by [build]; the
         // card body here is lyrics-only.
-        ? _buildManualLyrics(manual)
-        : _buildActionsIntro(lyricsAsync);
+        ? _buildManualLyrics(manual ?? lyricsAsync.value!.data!)
+        : _buildActionsIntro(lyricsAsync, isOffline);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -458,11 +470,46 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
 
   /// The buttons-first entry surface: three centred actions (two per row) with
   /// a short contextual hint drawn from the auto pipeline result.
-  Widget _buildActionsIntro(AsyncValue<LyricsResult> lyricsAsync) {
+  Widget _buildActionsIntro(
+    AsyncValue<LyricsResult> lyricsAsync,
+    bool isOffline,
+  ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final result = lyricsAsync.valueOrNull;
     final status = result?.status;
+
+    if (isOffline && status != LyricsStatus.loaded) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppTokens.s4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.wifi_off_rounded,
+                size: 26,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: AppTokens.s2),
+              Text(
+                'Please connect to the internet',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: AppTokens.s3),
+              const LyricsActionsPanel(
+                compact: true,
+                grid: true,
+                offlineNoCache: true,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     String hint;
     IconData icon;
@@ -578,9 +625,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
       _lastRequestedIndex = -1;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_disposed || !_scrollController.hasClients) return;
-        _scrollController.jumpTo(
-          _scrollController.position.minScrollExtent,
-        );
+        _scrollController.jumpTo(_scrollController.position.minScrollExtent);
       });
     }
     final theme = Theme.of(context);
@@ -691,30 +736,30 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
 
     // No gradient edge fade — plain scrolling list.
     return ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppTokens.s6,
-          vertical: AppTokens.s4,
-        ),
-        itemCount: lines.length,
-        itemBuilder: (context, index) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: _linePadH,
-              vertical: 6,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s6,
+        vertical: AppTokens.s4,
+      ),
+      itemCount: lines.length,
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: _linePadH,
+            vertical: 6,
+          ),
+          child: Text(
+            lines[index].text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.6,
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurface.withValues(alpha: 0.82),
             ),
-            child: Text(
-              lines[index].text,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 16,
-                height: 1.6,
-                fontWeight: FontWeight.w500,
-                color: colorScheme.onSurface.withValues(alpha: 0.82),
-              ),
-            ),
-          );
-        },
+          ),
+        );
+      },
     );
   }
 

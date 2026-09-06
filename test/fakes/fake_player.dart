@@ -7,18 +7,26 @@ import 'package:vora_tube/core/player/player_controller.dart';
 class FakePlayerController implements PlayerController {
   FakePlayerController({PlayerSnapshot? initial, List<SongRef>? queue})
     : current = initial ?? PlayerSnapshot.initial,
-      _queue = queue ?? const [];
+      _queue = queue ?? const [],
+      _snapshotController = StreamController<PlayerSnapshot>.broadcast();
 
   @override
   PlayerSnapshot current;
 
   final List<SongRef> _queue;
+  final StreamController<PlayerSnapshot> _snapshotController;
+
+  /// Pushes a new snapshot to listeners and updates [current].
+  void pushSnapshot(PlayerSnapshot snapshot) {
+    current = snapshot;
+    _snapshotController.add(snapshot);
+  }
 
   @override
   List<SongRef> get currentQueue => List<SongRef>.of(_queue);
 
   @override
-  Stream<PlayerSnapshot> get snapshot => Stream.value(current);
+  Stream<PlayerSnapshot> get snapshot => _snapshotController.stream;
 
   @override
   Stream<Duration> get positions => Stream.value(Duration.zero);
@@ -38,6 +46,9 @@ class FakePlayerController implements PlayerController {
   @override
   Future<void> clearSession() async {
     current = PlayerSnapshot.initial;
+    if (!_snapshotController.isClosed) {
+      _snapshotController.add(current);
+    }
   }
 
   @override
@@ -103,5 +114,7 @@ class FakePlayerController implements PlayerController {
   Future<void> setVolume(double volume) async {}
 
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    await _snapshotController.close();
+  }
 }

@@ -4,10 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/core/models/lyrics.dart';
 import 'package:vora_tube/core/player/player_controller.dart' as player;
-import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/features/lyrics/presentation/providers/lyrics_providers.dart';
 import 'package:vora_tube/features/lyrics/presentation/widgets/lyrics_actions_panel.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
+import 'package:vora_tube/features/player/presentation/providers/connectivity_provider.dart';
 import 'package:vora_tube/features/player/presentation/widgets/compact_lyrics_panel.dart';
 
 import 'fakes/fake_player.dart';
@@ -31,7 +31,11 @@ void main() {
     source: LyricsSource.lrclib,
   );
 
-  Widget buildPanel({LyricsResult? result, LyricsData? manual}) {
+  Widget buildPanel({
+    LyricsResult? result,
+    LyricsData? manual,
+    bool isOnline = true,
+  }) {
     return ProviderScope(
       overrides: [
         playerProvider.overrideWithValue(
@@ -47,6 +51,7 @@ void main() {
             ),
           ),
         ),
+        isOnlineProvider.overrideWithValue(isOnline),
         currentLyricsProvider.overrideWith((ref) async => result ?? synced),
         currentLyricLineIndexProvider.overrideWith((ref) => Stream.value(0)),
         if (manual != null) manualLyricsProvider.overrideWith((ref) => manual),
@@ -93,14 +98,21 @@ void main() {
     expect(find.byType(LyricsActionsPanel), findsWidgets);
   });
 
-  testWidgets('offline shows the buttons-first intro with a no-internet hint', (
+  testWidgets('offline with no cache shows Please connect to the internet', (
     tester,
   ) async {
-    await tester.pumpWidget(buildPanel(result: const LyricsResult.offline()));
+    await tester.pumpWidget(
+      buildPanel(result: const LyricsResult.offline(), isOnline: false),
+    );
     await tester.pump();
 
-    expect(find.text('Online Lyrics'), findsOneWidget);
-    expect(find.textContaining('offline'), findsOneWidget);
+    expect(
+      find.textContaining('Please connect to the internet'),
+      findsOneWidget,
+    );
+    expect(find.text('Upload .lrc file'), findsOneWidget);
+    expect(find.text('Online Lyrics'), findsNothing);
+    expect(find.text('Search Lyrics'), findsNothing);
   });
 
   testWidgets(

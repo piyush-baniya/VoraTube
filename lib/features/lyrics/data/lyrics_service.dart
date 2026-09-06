@@ -36,7 +36,7 @@ class LyricsService {
     return md5.convert(utf8.encode(normalized.toString())).toString();
   }
 
-  Future<LyricsResult> getLyrics(SongRef song) async {
+  Future<LyricsResult> getLyrics(SongRef song, {bool isOnline = true}) async {
     final embedded = await _tryEmbedded(song);
     if (embedded != null && !embedded.isEmpty) {
       return LyricsResult.loaded(embedded, LyricsSource.embedded);
@@ -53,6 +53,10 @@ class LyricsService {
     final cached = await _tryCache(song);
     if (cached != null) {
       return LyricsResult.loaded(cached, LyricsSource.cache);
+    }
+
+    if (!isOnline) {
+      return const LyricsResult.offline();
     }
 
     final online = await _tryOnline(song);

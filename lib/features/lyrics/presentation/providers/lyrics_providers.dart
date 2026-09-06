@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/models/lyrics.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 import '../../../player/presentation/providers/player_providers.dart';
+import '../../../player/presentation/providers/connectivity_provider.dart';
 import '../../data/lrclib_client.dart';
 import '../../data/lyrics_service.dart';
 
@@ -55,14 +56,25 @@ final uploadedLrcProvider = FutureProvider.autoDispose<String?>((ref) async {
 /// it does not expose a disposable listenable to widgets: a widget can outlive
 /// an asynchronous provider refresh during navigation or a track transition.
 ///
-/// It watches only the track identity, never the whole playback snapshot, so
-/// pausing or resuming never triggers a refetch.
+/// It watches only the track identity and connectivity, never the whole playback
+/// snapshot, so pausing or resuming never triggers a refetch.
 final currentLyricsProvider = FutureProvider.autoDispose<LyricsResult>((
   ref,
 ) async {
   final song = ref.watch(currentTrackProvider);
   if (song == null) {
     return const LyricsResult.notFound();
+  }
+
+  final isOnline = ref.watch(isOnlineProvider);
+
+  if (!isOnline) {
+    final service = ref.read(lyricsServiceProvider);
+    final cached = await service.getLyrics(song, isOnline: false);
+    if (cached.status == LyricsStatus.loaded) {
+      return cached;
+    }
+    return const LyricsResult.offline();
   }
 
   return ref.read(lyricsServiceProvider).getLyrics(song);
