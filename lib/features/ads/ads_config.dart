@@ -14,10 +14,10 @@ library;
 abstract final class VoraTubeAds {
   VoraTubeAds._();
 
-  /// When true (the development default), placements use Google's official
-  /// test ad units. Flip this (and fill in the production IDs) only when the
-  /// real VoraTube AdMob account is ready.
-  static const bool useTestAds = false;
+  /// When true, placements use Google's official test ad units. This is
+  /// enabled for the closed-testing build. Flip this back to `false` when the
+  /// real VoraTube AdMob account is ready for production.
+  static const bool useTestAds = true;
 
   // ── Production ad-unit IDs ─────────────────────────────────────────────
 
