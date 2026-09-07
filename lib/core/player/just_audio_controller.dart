@@ -46,6 +46,7 @@ const String kCloseIcon = 'drawable/ic_close';
 
 /// The custom-action name for the notification (un)favourite button.
 const String kNotificationFavoriteAction = 'favorite';
+
 /// The custom-action name for the notification X / close button.
 const String kNotificationCloseAction = 'close';
 
@@ -1057,10 +1058,8 @@ class JustAudioController extends BaseAudioHandler
     if (_queueRefs.isEmpty) {
       _wantPlayback = false;
       await _clearEngine();
-      _wantPlayback = false;
-      await _clearEngine();
-      await _teardownSystemState();
       _emit();
+      await _teardownSystemState();
       return;
     }
     // Persist the real snapshot so the latest position survives the teardown
@@ -1069,13 +1068,18 @@ class JustAudioController extends BaseAudioHandler
     _wantPlayback = false;
     await _persistNow();
     await _clearEngine();
+    _emit();
     // Post-stop, report a genuinely idle, not-playing state so the native
     // audio_service layer removes the foreground media notification for good.
     // A preserved queue alone maps to `ready`, which (unlike `idle`) keeps the
     // ongoing media notification posted and makes it reappear after the user
     // swipes it away.
+    //
+    // This teardown is the LAST broadcast: any engine-derived emit that could
+    // race in after it (a `ready`/`playing` straggler) would otherwise
+    // re-promote the pixel-perfect idle we just sent and resurrect the
+    // notification.
     await _teardownSystemState();
-    _emit();
   }
 
   /// Drives the native side into a stopped, idle state so the foreground media
@@ -1083,6 +1087,12 @@ class JustAudioController extends BaseAudioHandler
   /// queue or its persisted snapshot. Reporting `idle` makes native
   /// audio_service tear the service down (stopForeground REMOVE), which is the
   /// only path that permanently clears the ongoing media notification.
+  ///
+  /// This is the definitive shutdown for EVERY path that ends playback —
+  /// [stop] (system teardown, queue preserved) and [clearSession] (explicit
+  /// user stop via the notification X / Mini Player dismiss, queue cleared).
+  /// It explicitly forces the idle broadcast instead of waiting for an engine
+  /// event, because an engine that is already idle or paused never emits one.
   Future<void> _teardownSystemState() async {
     try {
       playbackState.add(
@@ -1097,9 +1107,20 @@ class JustAudioController extends BaseAudioHandler
     }
   }
 
-  /// Explicitly ends the listening session (user dismissed the Mini Player):
-  /// clears the queue and wipes the persisted snapshot so a restart does not
-  /// resurrect a session the user cleared.
+  /// Explicitly ends the listening session (user dismissed the Mini Player or
+  /// tapped the notification X / Close action): clears the queue, wipes the
+  /// persisted snapshot so a restart does not resurrect a session the user
+  /// cleared, then stops the engine and tears down the native playback service
+  /// so the foreground notification is dismissed for good.
+  ///
+  /// The [customAction] `close` path (the notification X button) routes here,
+  /// so this is the app's definitive "stop playback" pathway. It must therefore
+  /// deterministically drive audio_service native into a stopped/idle state via
+  /// [_teardownSystemState] — relying on incidental engine events (a stale
+  /// `playingStream`/`processingStateStream` emission) is unreliable: when the
+  /// engine is already idle or paused no event fires, the idle state is never
+  /// broadcast, and the foreground media service stays pinned with a stale,
+  /// undismissable notification.
   @override
   Future<void> clearSession() async {
     _wantPlayback = false;
@@ -1115,12 +1136,23 @@ class JustAudioController extends BaseAudioHandler
     _persistDebounce?.cancel();
     _persistDebounce = null;
     try {
-      await _persistence.write(_kSnapshotKey, const QueueSnapshot.empty().toJson());
+      await _persistence.write(
+        _kSnapshotKey,
+        const QueueSnapshot.empty().toJson(),
+      );
     } catch (e) {
       debugPrint('VoraTube snapshot clear failed: $e');
     }
     _emit();
     await _clearEngine();
+    _emit();
+    // Deterministic native teardown: report an idle, not-playing state (which
+    // permanently removes the foreground media notification) even when the
+    // engine never emitted a single event for our stop. This is deliberately
+    // the LAST broadcast — an engine-derived emit landing after it (a
+    // `ready`/`playing` straggler from `setAudioSources(empty)`) would override
+    // the idle teardown and resurrect the notification.
+    await _teardownSystemState();
   }
 
   @override
@@ -1582,7 +1614,8 @@ class JustAudioController extends BaseAudioHandler
       return;
     }
     try {
-      final isFav = await (_isFavorite?.call(currentKey) ?? Future.value(false));
+      final isFav =
+          await (_isFavorite?.call(currentKey) ?? Future.value(false));
       if (currentKey != _currentRef()?.identityKey) {
         return;
       }
