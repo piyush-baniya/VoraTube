@@ -15,7 +15,10 @@ abstract final class VoraTubeAds {
 
   /// When true, placements use Google's official test ad units. This is
   /// `false` in production: the real VoraTube AdMob units below are live.
-  static const bool useTestAds = false;
+  ///
+  /// For this testing build it is re-enabled so no live ad impressions are
+  /// generated; the production IDs below remain defined for the next release.
+  static const bool useTestAds = true;
 
   // ── Production ad-unit IDs ─────────────────────────────────────────────
 

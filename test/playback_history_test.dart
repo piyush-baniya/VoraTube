@@ -3,8 +3,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:vora_tube/core/player/just_audio_controller.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
+import 'package:vora_tube/features/ads/interstitial_ad_service.dart';
+import 'package:vora_tube/features/ads/interstitial_ads_provider.dart';
 
 import 'fakes/fake_audio_player.dart';
+
+class _RecordingAdService extends InterstitialAdService {
+  int showCalls = 0;
+
+  @override
+  void load() {}
+
+  @override
+  bool get hasAdReady => true;
+
+  @override
+  Future<bool> show() async {
+    showCalls++;
+    return true;
+  }
+
+  @override
+  void dispose() {}
+}
 
 class _MemoryPersistence implements PlayerPersistence {
   String? value;
@@ -261,6 +282,224 @@ void main() {
       // play again (the ad/stats lifecycle is reset).
       await controller.playQueue([_song(1), _song(2)]);
       expect(started, ['song-1', 'song-2', 'song-1', 'song-1']);
+    });
+  });
+
+  group('every playback entry point emits the one authoritative track-start', () {
+    test(
+      'a natural track finish auto-advances and counts the new song once',
+      () async {
+        final player = FakeAudioPlayer(
+          processing: ProcessingState.ready,
+          emitEvents: true,
+        );
+        final started = <String>[];
+        final controller = await start(_MemoryPersistence(), player, started);
+
+        await controller.playQueue([_song(1), _song(2), _song(3)]);
+        expect(started, ['song-1']);
+
+        // The engine completes song-1 naturally. With a repeat-off queue the
+        // finished song leaves and song-2 becomes current and plays — that is a
+        // genuine new start and must be reported exactly once.
+        player.simulateLoad(ProcessingState.completed, false);
+        await pumpEventQueue();
+        expect(currentKey(controller), 'song-2');
+        expect(started, ['song-1', 'song-2']);
+
+        player.simulateLoad(ProcessingState.completed, false);
+        await pumpEventQueue();
+        expect(currentKey(controller), 'song-3');
+        expect(started, ['song-1', 'song-2', 'song-3']);
+
+        // The finish left only song-3: a further natural finish empties the
+        // session and must not fabricate a start.
+        player.simulateLoad(ProcessingState.completed, false);
+        await pumpEventQueue();
+        expect(controller.currentQueue, isEmpty);
+        expect(started, ['song-1', 'song-2', 'song-3']);
+      },
+    );
+
+    test('a broken source is skipped and the replacement counts once', () async {
+      final player = FakeAudioPlayer(
+        processing: ProcessingState.ready,
+        emitEvents: true,
+      );
+      final started = <String>[];
+      final controller = await start(_MemoryPersistence(), player, started);
+
+      await controller.playQueue([_song(1), _song(2)]);
+      expect(started, ['song-1']);
+
+      // The engine drops song-1 to idle *while the user still wants playback*
+      // (a broken/unloadable source). The controller skips it, loads song-2 and
+      // starts it — another real start, not a reload of the same song.
+      player.simulateLoad(ProcessingState.idle, false);
+      await pumpEventQueue();
+      expect(currentKey(controller), 'song-2');
+      expect(started, ['song-1', 'song-2']);
+    });
+
+    test('removing the playing current song counts the replacement; '
+        'removing while paused does not', () async {
+      final player = FakeAudioPlayer(processing: ProcessingState.ready);
+      final started = <String>[];
+      final controller = await start(_MemoryPersistence(), player, started);
+
+      await controller.playQueue([_song(1), _song(2), _song(3)]);
+      expect(started, ['song-1']);
+
+      // Removing the current song while playing: song-2 takes over and starts.
+      await controller.removeAt(0);
+      expect(currentKey(controller), 'song-2');
+      expect(started, ['song-1', 'song-2']);
+
+      // Paused, then remove the current song again: song-3 becomes current but
+      // only loads — it never starts, so nothing is counted.
+      await controller.pause();
+      await controller.removeAt(0);
+      expect(currentKey(controller), 'song-3');
+      expect(started, hasLength(2));
+    });
+
+    test(
+      'removeByIdentityKeys of the current song counts the next start',
+      () async {
+        final player = FakeAudioPlayer(processing: ProcessingState.ready);
+        final started = <String>[];
+        final controller = await start(_MemoryPersistence(), player, started);
+
+        await controller.playQueue([_song(1), _song(2), _song(3)]);
+        expect(started, ['song-1']);
+
+        await controller.removeByIdentityKeys({'song-1'});
+        expect(currentKey(controller), 'song-2');
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-2',
+          'song-3',
+        ]);
+        expect(started, ['song-1', 'song-2']);
+      },
+    );
+
+    test(
+      'the first enqueue into an empty queue counts; later ones do not',
+      () async {
+        final player = FakeAudioPlayer(processing: ProcessingState.ready);
+        final started = <String>[];
+        final controller = await start(_MemoryPersistence(), player, started);
+        expect(started, isEmpty);
+
+        await controller.enqueue(_song(9));
+        expect(currentKey(controller), 'song-9');
+        expect(started, ['song-9']);
+
+        // A second enqueue only appends to the queue; nothing new starts.
+        await controller.enqueue(_song(8));
+        expect(started, hasLength(1));
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-9',
+          'song-8',
+        ]);
+      },
+    );
+
+    test('pause resume and seek never emit a track start', () async {
+      final player = FakeAudioPlayer(processing: ProcessingState.ready);
+      final started = <String>[];
+      final controller = await start(_MemoryPersistence(), player, started);
+      await controller.playQueue([_song(1), _song(2)]);
+      expect(started, ['song-1']);
+
+      await controller.pause(); // no count
+      await controller.seek(const Duration(seconds: 30)); // no count
+      await controller.togglePlay(); // resume same song: no count
+      await controller.seekBy(const Duration(seconds: 10)); // no count
+      await controller.togglePlay(); // pause again: no count
+      expect(started, ['song-1']);
+    });
+
+    test('a single-song queue finishing and looping (Repeat Off restart) '
+        'counts only the original start', () async {
+      // Repeat Off with one song: when it finishes naturally the queue empties
+      // and playback stops — no self-loop, no fabricated start.
+      final player = FakeAudioPlayer(
+        processing: ProcessingState.ready,
+        emitEvents: true,
+      );
+      final started = <String>[];
+      final controller = await start(_MemoryPersistence(), player, started);
+
+      await controller.playQueue([_song(1)]);
+      expect(started, ['song-1']);
+
+      player.simulateLoad(ProcessingState.completed, false);
+      await pumpEventQueue();
+      expect(controller.currentQueue, isEmpty);
+      expect(started, hasLength(1));
+    });
+
+    test('the ad milestone counts starts across mixed entry points through '
+        'the single authoritative event', () async {
+      final player = FakeAudioPlayer(
+        processing: ProcessingState.ready,
+        emitEvents: true,
+      );
+      final adService = _RecordingAdService();
+      final adController = InterstitialAdController(
+        isPremium: () => false,
+        service: adService,
+      )..debugSetInterval(2); // every 2nd distinct start -> interstitial
+      addTearDown(adController.dispose);
+
+      final started = <String>[];
+      final controller = JustAudioController(
+        playbackStorage: _MemoryPersistence(),
+        songResolver: (keys) async => [
+          for (final k in keys) _song(int.parse(k.split('-').last)),
+        ],
+        player: player,
+        onTrackStart: (key) {
+          started.add(key);
+          adController.onTrackStarted();
+        },
+      );
+      await pumpEventQueue();
+      addTearDown(controller.dispose);
+
+      // Selection: 1 start.
+      await controller.playQueue([_song(1), _song(2), _song(3), _song(4)]);
+      expect(adService.showCalls, 0);
+      expect(started, ['song-1']);
+
+      // Natural finish auto-advance: 2nd start -> first interstitial.
+      player.simulateLoad(ProcessingState.completed, false);
+      await pumpEventQueue();
+      await Future<void>.delayed(Duration.zero);
+      expect(currentKey(controller), 'song-2');
+      expect(started, ['song-1', 'song-2']);
+      expect(adService.showCalls, 1);
+
+      // Removing the current song: 3rd start.
+      await controller.removeAt(0);
+      expect(currentKey(controller), 'song-3');
+      expect(started, ['song-1', 'song-2', 'song-3']);
+      expect(adService.showCalls, 1);
+
+      // Natural finish auto-advance: 4th start -> second interstitial.
+      player.simulateLoad(ProcessingState.completed, false);
+      await pumpEventQueue();
+      await Future<void>.delayed(Duration.zero);
+      expect(currentKey(controller), 'song-4');
+      expect(started, ['song-1', 'song-2', 'song-3', 'song-4']);
+      expect(adService.showCalls, 2);
+
+      // Nothing new starts when the last song finishes (queue empties).
+      player.simulateLoad(ProcessingState.completed, false);
+      await pumpEventQueue();
+      expect(controller.currentQueue, isEmpty);
+      expect(adService.showCalls, 2);
     });
   });
 }

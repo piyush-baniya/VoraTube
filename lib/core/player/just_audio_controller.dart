@@ -542,6 +542,14 @@ class JustAudioController extends BaseAudioHandler
         _emit();
       }
     }
+    // A natural finish started a new current song only when the play intent
+    // survived to the boundary. When it did, exactly one authoritative
+    // track-start event is emitted for the newly-playing song (auto-advance
+    // was previously visible only through the engine's index stream, which a
+    // single-source engine never re-emits — see [_onNewTrackBegan]).
+    if (_wantPlayback && _queueRefs.isNotEmpty) {
+      _onNewTrackBegan(_currentRef());
+    }
   }
 
   /// Moves past a source the engine could not load.
@@ -586,6 +594,10 @@ class JustAudioController extends BaseAudioHandler
       await _loadCurrent();
       if (wasPlaying && _queueRefs.isNotEmpty) {
         unawaited(_player.play());
+        // The replacement song that actually starts after the broken one is
+        // dropped is a real track start and gets the same authoritative event
+        // as an explicit selection or skip.
+        _onNewTrackBegan(_currentRef());
       }
     } finally {
       _skipInFlight = false;
@@ -681,8 +693,7 @@ class JustAudioController extends BaseAudioHandler
         _queueTransition = false;
         _emit();
         if (_player.processingState != ProcessingState.idle) {
-          _maybeRecordStat(_currentRef());
-          _noteNewTrackPlayed(_currentRef());
+          _onNewTrackBegan(_currentRef());
         }
       }
     }
@@ -886,8 +897,7 @@ class JustAudioController extends BaseAudioHandler
     } finally {
       _queueTransition = false;
       _emit();
-      _maybeRecordStat(_currentRef());
-      _noteNewTrackPlayed(_currentRef());
+      _onNewTrackBegan(_currentRef());
     }
   }
 
@@ -961,8 +971,7 @@ class JustAudioController extends BaseAudioHandler
     } finally {
       _queueTransition = false;
       _emit();
-      _maybeRecordStat(_currentRef());
-      _noteNewTrackPlayed(_currentRef());
+      _onNewTrackBegan(_currentRef());
     }
   }
 
@@ -1002,8 +1011,7 @@ class JustAudioController extends BaseAudioHandler
     } finally {
       _queueTransition = false;
       _emit();
-      _maybeRecordStat(_currentRef());
-      _noteNewTrackPlayed(_currentRef());
+      _onNewTrackBegan(_currentRef());
     }
   }
 
@@ -1023,6 +1031,9 @@ class JustAudioController extends BaseAudioHandler
         _queueTransition = false;
         _emit();
       }
+      // The first song added to an empty queue starts playing immediately — a
+      // real track start, same authoritative event as a [playQueue] selection.
+      _onNewTrackBegan(_currentRef());
       await _syncQueueMetadata();
       _broadcastQueueChange();
       _schedulePersist(immediate: true);
@@ -1084,6 +1095,13 @@ class JustAudioController extends BaseAudioHandler
           _queueTransition = false;
           _emit();
         }
+        // Removing the current song makes the next one current and (while the
+        // play intent is live) starts it — a real track start, reported through
+        // the same authoritative event. Removed-while-paused only loads the
+        // replacement without playing it, which is not a start.
+        if (_wantPlayback && _queueRefs.isNotEmpty) {
+          _onNewTrackBegan(_currentRef());
+        }
       }
     }
     await _syncQueueMetadata();
@@ -1132,6 +1150,12 @@ class JustAudioController extends BaseAudioHandler
           _queueTransition = false;
           _emit();
         }
+        // Same semantics as [removeAt]: the next remaining track starts while
+        // the play intent is live, and that start goes through the single
+        // authoritative track-start event. Loaded-but-paused is not a start.
+        if (_wantPlayback && _queueRefs.isNotEmpty) {
+          _onNewTrackBegan(_currentRef());
+        }
       }
     }
     await _syncQueueMetadata();
@@ -1172,8 +1196,7 @@ class JustAudioController extends BaseAudioHandler
       } finally {
         _queueTransition = false;
         _emit();
-        _maybeRecordStat(_currentRef());
-        _noteNewTrackPlayed(_currentRef());
+        _onNewTrackBegan(_currentRef());
       }
     }
   }
@@ -1437,8 +1460,7 @@ class JustAudioController extends BaseAudioHandler
 
   void _onCurrentIndexChanged() {
     _syncCurrentMediaItem();
-    _maybeRecordStat(_currentRef());
-    _noteNewTrackPlayed(_currentRef());
+    _onNewTrackBegan(_currentRef());
     // Replay gain is per-track: reapply whenever the track changes.
     unawaited(_applyVolume());
     // Broadcast the new track so the MiniPlayer and full player refresh their
@@ -1448,11 +1470,43 @@ class JustAudioController extends BaseAudioHandler
     _emit();
   }
 
+  /// THE single authoritative "a new song has actually started playing" event.
+  ///
+  /// Every playback path that brings a *distinct* song to the front of the
+  /// queue and starts it funnels through here — user selection ([playQueue]),
+  /// in-app Next/Previous ([next]/[previous] via [_advance]/[_playHistoryKey]),
+  /// queue taps ([jumpTo]), queue reordering that makes another song current
+  /// ([move]), auto-advance on a natural finish ([_onTrackFinished]),
+  /// broken-source skip ([_skipBrokenSource]), removing the current song from
+  /// the queue ([removeAt]/[removeByIdentityKeys]), the first [enqueue] into an
+  /// empty queue, and engine-driven current-index changes
+  /// ([_onCurrentIndexChanged]). The same event fans out to the play-stat sink
+  /// ([_maybeRecordStat]), the ad milestone counter and the live playback
+  /// history ([_noteNewTrackPlayed]), so no path can silently miss a start.
+  ///
+  /// Exactly-once semantics: the event fires at most once per distinct song per
+  /// session. Both fan-outs deduplicate by identity key and ignore in-flight
+  /// queue transitions, so a pause/resume, seek, restart of the current song,
+  /// restore, or a post-transition engine echo of the same index can never
+  /// double-count — and with [`_wantPlayback`] required below, a song that is
+  /// merely loaded while paused (e.g. removing the current track while paused)
+  /// is not a start at all.
+  void _onNewTrackBegan(SongRef? ref) {
+    if (ref == null || !_wantPlayback) {
+      return;
+    }
+    _maybeRecordStat(ref);
+    _noteNewTrackPlayed(ref);
+  }
+
   /// Records a play when a *distinct* track starts. Suppressed while the
   /// persisted queue is being restored so launches never inflate counts.
   ///
   /// When switching away from a tracked song, it first credits that song's
   /// measured listening time, then records the fresh start of the new track.
+  ///
+  /// Only reached via [_onNewTrackBegan], the single authoritative track-start
+  /// event.
   void _maybeRecordStat(SongRef? ref) {
     if (ref == null || _suppressStats) {
       return;
@@ -1480,6 +1534,9 @@ class JustAudioController extends BaseAudioHandler
   /// once per distinct key) but with its own dedup and session lifecycle: an
   /// explicit [playQueue] resets the dedup, so pressing Play on the same first
   /// song again still counts as a fresh play.
+  ///
+  /// Only reached via [_onNewTrackBegan], the single authoritative track-start
+  /// event.
   void _noteNewTrackPlayed(SongRef? ref) {
     if (ref == null || _suppressStats || _queueTransition) {
       return;

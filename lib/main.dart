@@ -35,10 +35,13 @@ Future<void> main() async {
   // in sync. Late-bound because it must bump a provider that lives on the
   // container (created below).
   var notifyFavoritesChanged = () {};
-  // Pushes distinct track starts into the ad-interval controller. The engine —
-  // not the media-item stream — reports starts, so media-relation rebuilds,
-  // restores and metadata syncs never false-count. Late-bound for the same
-  // container reason as the callbacks above.
+  // Pushes distinct track starts into the ad-interval controller. Every
+  // playback path (selection, next/previous, queue, auto-advance, removal of
+  // the current song, first enqueue) funnels into the engine's single
+  // authoritative track-start event, which reports the start exactly once per
+  // distinct song — so media-relation rebuilds, restores, pause/resume and
+  // metadata syncs never false-count. Late-bound for the same container
+  // reason as the callbacks above.
   var notifyAdTrackStarted = (String identityKey) {};
   Future<bool> notificationIsFavorite(String identityKey) async {
     final rowId = (await repository.rowIdsByIdentityKeys({
