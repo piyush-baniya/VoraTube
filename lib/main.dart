@@ -8,6 +8,7 @@ import 'app/app.dart';
 import 'core/db/app_database.dart';
 import 'core/player/just_audio_controller.dart';
 import 'features/ads/ads_initializer.dart';
+import 'features/ads/interstitial_ads_provider.dart';
 import 'features/ads/premium_models.dart';
 import 'features/library/data/library_repository.dart';
 import 'features/library/presentation/providers/library_providers.dart';
@@ -34,16 +35,23 @@ Future<void> main() async {
   // in sync. Late-bound because it must bump a provider that lives on the
   // container (created below).
   var notifyFavoritesChanged = () {};
+  // Pushes distinct track starts into the ad-interval controller. The engine —
+  // not the media-item stream — reports starts, so media-relation rebuilds,
+  // restores and metadata syncs never false-count. Late-bound for the same
+  // container reason as the callbacks above.
+  var notifyAdTrackStarted = (String identityKey) {};
   Future<bool> notificationIsFavorite(String identityKey) async {
-    final rowId = (await repository.rowIdsByIdentityKeys({identityKey}))[
-        identityKey];
+    final rowId = (await repository.rowIdsByIdentityKeys({
+      identityKey,
+    }))[identityKey];
     if (rowId == null) return false;
     return repository.isFavorite(rowId);
   }
 
   Future<bool> notificationToggleFavorite(String identityKey) async {
-    final rowId = (await repository.rowIdsByIdentityKeys({identityKey}))[
-        identityKey];
+    final rowId = (await repository.rowIdsByIdentityKeys({
+      identityKey,
+    }))[identityKey];
     if (rowId == null) return false;
     final nowFavorite = await repository.toggleFavorite(rowId) == 1;
     notifyFavoritesChanged();
@@ -54,6 +62,7 @@ Future<void> main() async {
     persistence: DriftPlayerPersistence(repository),
     resolveSongs: repository.resolveSongsByIdentityKeys,
     onTrackStarted: statsBuffer.add,
+    onTrackStart: (key) => notifyAdTrackStarted(key),
     isFavorite: notificationIsFavorite,
     toggleFavorite: notificationToggleFavorite,
   );
@@ -75,6 +84,9 @@ Future<void> main() async {
   notifyFavoritesChanged = () {
     container.read(libraryRefreshTickProvider.notifier).state++;
   };
+  notifyAdTrackStarted = (key) {
+    container.read(interstitialAdControllerProvider).onTrackStarted();
+  };
 
   // Initialize the Mobile Ads SDK without blocking startup. If Premium is
   // already active, the persisted entitlement is read first so no ad request
@@ -82,8 +94,7 @@ Future<void> main() async {
   unawaited(() async {
     var premiumActive = false;
     try {
-      premiumActive =
-          (await repository.kvGet(PremiumKeys.activated)) == 'true';
+      premiumActive = (await repository.kvGet(PremiumKeys.activated)) == 'true';
     } catch (_) {
       premiumActive = false;
     }

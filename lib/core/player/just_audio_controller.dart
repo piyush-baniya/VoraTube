@@ -96,11 +96,13 @@ class JustAudioController extends BaseAudioHandler
     required Future<List<SongRef>> Function(List<String>) songResolver,
     AudioPlayer? player,
     PlaybackStatsSink? onTrackStarted,
+    void Function(String identityKey)? onTrackStart,
     Future<bool> Function(String identityKey)? isFavorite,
     Future<bool> Function(String identityKey)? toggleFavorite,
   }) : _persistence = playbackStorage,
        _resolveSongs = songResolver,
        _onTrackStarted = onTrackStarted,
+       _onTrackStart = onTrackStart,
        _isFavorite = isFavorite,
        _toggleFavorite = toggleFavorite,
        _player = player ?? AudioPlayer() {
@@ -112,6 +114,7 @@ class JustAudioController extends BaseAudioHandler
     required PlayerPersistence persistence,
     required Future<List<SongRef>> Function(List<String>) resolveSongs,
     PlaybackStatsSink? onTrackStarted,
+    void Function(String identityKey)? onTrackStart,
     Future<bool> Function(String identityKey)? isFavorite,
     Future<bool> Function(String identityKey)? toggleFavorite,
   }) async {
@@ -120,6 +123,7 @@ class JustAudioController extends BaseAudioHandler
         playbackStorage: persistence,
         songResolver: resolveSongs,
         onTrackStarted: onTrackStarted,
+        onTrackStart: onTrackStart,
         isFavorite: isFavorite,
         toggleFavorite: toggleFavorite,
       ),
@@ -163,6 +167,7 @@ class JustAudioController extends BaseAudioHandler
 
   final PlayerPersistence _persistence;
   final PlaybackStatsSink? _onTrackStarted;
+  final void Function(String identityKey)? _onTrackStart;
   final Future<List<SongRef>> Function(List<String>) _resolveSongs;
   final AudioPlayer _player;
 
@@ -251,6 +256,25 @@ class JustAudioController extends BaseAudioHandler
   /// controls and cleared by pause/stop; [`_skipBrokenSource`] leans on it so a
   /// failed first-play keeps going into the next queue item instead of pausing.
   bool _wantPlayback = false;
+
+  /// The live listening path: the identity keys of the songs actually played,
+  /// oldest first. Previous/Next walk this real history instead of rotating
+  /// the queue, so Previous always returns to songs the user truly heard (and
+  /// at the very start of a session it restarts the current song instead of
+  /// wrapping to the queue tail). Membership is re-checked against
+  /// [_queueRefs] on every walk so removals can never resurrect a gone song.
+  List<String> _history = const [];
+
+  /// Index into [_history] of the currently-playing song. Maintained as songs
+  /// are played, walked back/toward by Previous/Next, and re-anchored whenever
+  /// a genuinely new track starts.
+  int _historyCursor = -1;
+
+  /// The last key that fired a real track-start notification (ad counting +
+  /// history append). [playQueue] resets it so pressing Play on the same first
+  /// song again still counts as a fresh play, while navigation-triggered
+  /// replays of the current song never double-fire.
+  String? _historyLastPlayedKey;
 
   /// True between the start and end of a [`_skipBrokenSource`] pass, so a
   /// burst of idle events from one failed source does not fire multiple skips.
@@ -445,7 +469,15 @@ class JustAudioController extends BaseAudioHandler
       return;
     }
     if (state == ProcessingState.idle) {
-      unawaited(_skipBrokenSource());
+      // An idle engine is only "broken" while the user wants playback to
+      // continue. After pause/stop/notification-swipe teardown the engine
+      // legitimately lands on idle, and that must never auto-advance the queue
+      // or drop the current song — otherwise swiping the media notification
+      // away changes what plays next (and, with a current-first queue, skips
+      // the very song the user dismissed).
+      if (_wantPlayback) {
+        unawaited(_skipBrokenSource());
+      }
       return;
     }
     if (state == ProcessingState.completed) {
@@ -608,6 +640,12 @@ class JustAudioController extends BaseAudioHandler
     final safeIndex = startIndex.clamp(0, songs.length - 1);
     _queueTransition = true;
     _wantPlayback = true;
+    // A brand-new explicit session resets the live listening history and its
+    // play-dedup: the first song counts as a fresh play even when it is the
+    // exact same track that ended the previous session.
+    _history = const [];
+    _historyCursor = -1;
+    _historyLastPlayedKey = null;
     // A new explicit session: stop protecting the previously restored one so
     // genuinely broken tracks auto-skip as normal from here on.
     _protectingRestoredSession = false;
@@ -644,6 +682,7 @@ class JustAudioController extends BaseAudioHandler
         _emit();
         if (_player.processingState != ProcessingState.idle) {
           _maybeRecordStat(_currentRef());
+          _noteNewTrackPlayed(_currentRef());
         }
       }
     }
@@ -773,22 +812,46 @@ class JustAudioController extends BaseAudioHandler
   }
 
   @override
-  Future<void> next() => _advance(manual: true, backward: false);
+  Future<void> next() async {
+    _wantPlayback = true;
+    if (_queueRefs.isEmpty) {
+      return;
+    }
+    // First re-walk any recorded forward step in the live history — after a
+    // Previous walk-back, Next returns to the songs that were actually played
+    // next, not whatever the queue rotation happens to hold. Only when no
+    // recorded step remains does Next fall through to the queue order.
+    final forwardKey = _historyForwardKey();
+    if (forwardKey != null) {
+      await _playHistoryKey(forwardKey);
+      return;
+    }
+    await _advance();
+  }
 
   @override
   Future<void> previous() async {
-    // Previous always moves to the previous song — no "restart if more than
-    // ~3s in" behaviour. A single-source engine has no "previous sequence
-    // index", so the only way back is to replay from this first-position view
-    // via [_advance].
-    await _advance(manual: true, backward: true);
+    _wantPlayback = true;
+    if (_queueRefs.isEmpty) {
+      return;
+    }
+    // Previous walks the REAL history of what was actually played this session
+    // (never the queue rotation). At the very start of the listening path it
+    // restarts the current song from 0 instead of wrapping to the queue tail.
+    final backKey = _historyBackKey();
+    if (backKey != null) {
+      await _playHistoryKey(backKey);
+      return;
+    }
+    await _restartCurrent();
   }
 
-  /// Moves forward/back one logical track in the current-first queue and plays
-  /// the new #1. A manual skip never removes a song (only a natural Repeat-Off
-  /// finish removes); the departed song simply wraps to the end so the queue
-  /// stays a rotation and current stays at #1.
-  Future<void> _advance({required bool manual, required bool backward}) async {
+  /// Moves one logical track forward in the current-first queue and plays the
+  /// new #1. This is Next's fallback when the live history has no recorded
+  /// forward step. A manual skip never removes a song (only a natural
+  /// Repeat-Off finish removes); the departed song wraps to the end so the
+  /// queue stays a rotation and current stays at #1.
+  Future<void> _advance() async {
     _wantPlayback = true;
     if (_queueRefs.isEmpty) {
       return;
@@ -802,14 +865,11 @@ class JustAudioController extends BaseAudioHandler
     }
     _queueTransition = true;
     try {
-      // Rotate the current song (index 0) coherently: forward moves it to the
-      // end, backward brings the last song to the front. Either way a new song
-      // lands at index 0 and becomes current. A manual skip never removes a
-      // song (only a natural Repeat-Off finish removes), so the queue stays a
-      // rotation and current stays at #1.
-      _queueRefs = List.unmodifiable(
-        backward ? rotateBackward(_queueRefs) : rotateForward(_queueRefs),
-      );
+      // Rotate the current song (index 0) to the end so a new song lands at
+      // index 0 and becomes current. A manual skip never removes a song (only
+      // a natural Repeat-Off finish removes), so the queue stays a rotation
+      // and current stays at #1.
+      _queueRefs = List.unmodifiable(rotateForward(_queueRefs));
       _reconcileBase();
       _queueRevision++;
       _schedulePersist(immediate: true);
@@ -827,7 +887,97 @@ class JustAudioController extends BaseAudioHandler
       _queueTransition = false;
       _emit();
       _maybeRecordStat(_currentRef());
+      _noteNewTrackPlayed(_currentRef());
     }
+  }
+
+  /// The nearest playable song behind the current one in the live history, or
+  /// null when no playable entry sits before it (or it is not part of this
+  /// session's history). Entries whose songs left the queue are skipped, so a
+  /// Previous walk always lands on a song that is actually still in the queue.
+  String? _historyBackKey() {
+    if (_history.isEmpty) {
+      return null;
+    }
+    final currentKey = _currentRef()?.identityKey;
+    final idx = currentKey == null ? -1 : _history.indexOf(currentKey);
+    if (idx < 0) {
+      return null;
+    }
+    for (var i = idx - 1; i >= 0; i--) {
+      final key = _history[i];
+      if (_queueRefs.any((r) => r.identityKey == key)) {
+        _historyCursor = i;
+        return key;
+      }
+    }
+    return null;
+  }
+
+  /// The nearest playable song ahead of the current one in the live history —
+  /// a step the user previously walked back over — or null when no recorded
+  /// forward step remains. Next re-walks this tail before falling through to
+  /// the queue order.
+  String? _historyForwardKey() {
+    if (_history.isEmpty) {
+      return null;
+    }
+    final currentKey = _currentRef()?.identityKey;
+    final idx = currentKey == null ? -1 : _history.indexOf(currentKey);
+    if (idx < 0) {
+      return null;
+    }
+    for (var i = idx + 1; i < _history.length; i++) {
+      final key = _history[i];
+      if (_queueRefs.any((r) => r.identityKey == key)) {
+        _historyCursor = i;
+        return key;
+      }
+    }
+    return null;
+  }
+
+  /// Rotates the queue so [key] becomes #1, loads and plays it. Used to
+  /// (re)play a song reached through the Previous/Next history walk.
+  Future<void> _playHistoryKey(String key) async {
+    final idx = _queueRefs.indexWhere((r) => r.identityKey == key);
+    if (idx <= 0) {
+      // The walked-to song is gone from the queue (a removal raced the walk)
+      // or is already current: restart the current song instead of inventing
+      // a rotation step.
+      await _restartCurrent();
+      return;
+    }
+    _queueTransition = true;
+    try {
+      _queueRefs = List.unmodifiable(currentFirst(_queueRefs, idx)!);
+      _reconcileBase();
+      _queueRevision++;
+      _schedulePersist(immediate: true);
+      await _syncQueueMetadata();
+      await _loadCurrent();
+      _broadcastSystemState();
+      unawaited(_player.play());
+    } finally {
+      _queueTransition = false;
+      _emit();
+      _maybeRecordStat(_currentRef());
+      _noteNewTrackPlayed(_currentRef());
+    }
+  }
+
+  /// Restarts the current song from 0 — Previous at the very start of the live
+  /// history (and every no-op/fallback path). Reloads first if the engine
+  /// dropped to idle so playback always restarts the reported current song.
+  Future<void> _restartCurrent() async {
+    if (_queueRefs.isEmpty) {
+      return;
+    }
+    if (_player.processingState == ProcessingState.idle) {
+      await _loadCurrent();
+    }
+    await _player.seek(Duration.zero);
+    unawaited(_player.play());
   }
 
   @override
@@ -853,6 +1003,7 @@ class JustAudioController extends BaseAudioHandler
       _queueTransition = false;
       _emit();
       _maybeRecordStat(_currentRef());
+      _noteNewTrackPlayed(_currentRef());
     }
   }
 
@@ -1022,6 +1173,7 @@ class JustAudioController extends BaseAudioHandler
         _queueTransition = false;
         _emit();
         _maybeRecordStat(_currentRef());
+        _noteNewTrackPlayed(_currentRef());
       }
     }
   }
@@ -1125,6 +1277,9 @@ class JustAudioController extends BaseAudioHandler
   Future<void> clearSession() async {
     _wantPlayback = false;
     _statLastKey = null;
+    _history = const [];
+    _historyCursor = -1;
+    _historyLastPlayedKey = null;
     _queueRefs = const [];
     _reconcileBase();
     // Clear the UI state unconditionally, before touching the engine: the
@@ -1283,6 +1438,7 @@ class JustAudioController extends BaseAudioHandler
   void _onCurrentIndexChanged() {
     _syncCurrentMediaItem();
     _maybeRecordStat(_currentRef());
+    _noteNewTrackPlayed(_currentRef());
     // Replay gain is per-track: reapply whenever the track changes.
     unawaited(_applyVolume());
     // Broadcast the new track so the MiniPlayer and full player refresh their
@@ -1316,6 +1472,54 @@ class JustAudioController extends BaseAudioHandler
     _statAccumMs = 0;
     _statLastPosMs = -1;
     _onTrackStarted?.call(ref.identityKey, 0);
+  }
+
+  /// Records a play of a *distinct* track for the ad milestone counter and the
+  /// live-history path. Mirrors [_maybeRecordStat]'s semantics (suppressed
+  /// while the persisted session restores, inaudible inside queue transitions,
+  /// once per distinct key) but with its own dedup and session lifecycle: an
+  /// explicit [playQueue] resets the dedup, so pressing Play on the same first
+  /// song again still counts as a fresh play.
+  void _noteNewTrackPlayed(SongRef? ref) {
+    if (ref == null || _suppressStats || _queueTransition) {
+      return;
+    }
+    if (_historyLastPlayedKey == ref.identityKey) {
+      return;
+    }
+    _historyLastPlayedKey = ref.identityKey;
+    _onTrackStart?.call(ref.identityKey);
+    _trackHistory(ref.identityKey);
+  }
+
+  /// Appends [key] to the live listening history, truncating the re-forward
+  /// tail when a genuinely new song starts after a Previous walk-back. The
+  /// cursor is re-anchored to the current song first, so re-playing the entry
+  /// the cursor already marks never grows — or truncates — the history, and
+  /// mid-walk jumps branch the path from the song the user last heard.
+  void _trackHistory(String key) {
+    if (_history.isEmpty) {
+      _history = [key];
+      _historyCursor = 0;
+      return;
+    }
+    final currentKey = _currentRef()?.identityKey;
+    final currentIdx = currentKey == null ? -1 : _history.indexOf(currentKey);
+    if (currentIdx >= 0) {
+      _historyCursor = currentIdx;
+    }
+    var cursor = _historyCursor;
+    if (cursor < 0 || cursor >= _history.length) {
+      cursor = _history.length - 1;
+    }
+    if (_history[cursor] == key) {
+      return;
+    }
+    if (cursor < _history.length - 1) {
+      _history = _history.sublist(0, cursor + 1);
+    }
+    _history.add(key);
+    _historyCursor = _history.length - 1;
   }
 
   /// Accumulates real listening time for the current tracked song using
@@ -1759,6 +1963,13 @@ class JustAudioController extends BaseAudioHandler
       final restoredRef = _queueRefs.isEmpty ? null : _queueRefs.first;
       if (restoredRef != null) {
         _statLastKey = restoredRef.identityKey;
+        // Seed the live history with the restored current song so the first
+        // Previous restarts it instead of wrapping into the queue rotation.
+        // The restore itself never fires a track-start notification (the
+        // dedup key is seeded to match, and _suppressStats is still true).
+        _history = [restoredRef.identityKey];
+        _historyCursor = 0;
+        _historyLastPlayedKey = restoredRef.identityKey;
       }
       _queueRevision++;
       // Seed the position stream with the restored position so progress-

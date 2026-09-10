@@ -7,7 +7,6 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/top_toast.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
-import '../../../../features/ads/interstitial_ads_provider.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
@@ -56,16 +55,17 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   @override
   void initState() {
     super.initState();
-    _dismissAnim = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-    )..addListener(() {
-        if (_dismissAnim.value > 0) {
-          setState(() {
-            _dragOffset *= 1.0 - Curves.linear.transform(_dismissAnim.value);
-          });
-        }
-      });
+    _dismissAnim =
+        AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 250),
+        )..addListener(() {
+          if (_dismissAnim.value > 0) {
+            setState(() {
+              _dragOffset *= 1.0 - Curves.linear.transform(_dismissAnim.value);
+            });
+          }
+        });
   }
 
   @override
@@ -147,100 +147,111 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             child: Transform.scale(
               scale: 1.0 - _dragOffset / _maxDrag * 0.06,
               child: Opacity(
-                opacity:
-                    (1.0 - _dragOffset / _maxDrag * 0.55).clamp(0.35, 1.0),
+                opacity: (1.0 - _dragOffset / _maxDrag * 0.55).clamp(0.35, 1.0),
                 child: Stack(
-          children: [
-            // Immersive purple-atmosphere background. No Hero here: the
-            // artwork Hero tag belongs to exactly one widget per route.
-            const _ImmersiveBackground(),
-            // Main content
-            SafeArea(
-              bottom: false,
-              child: Column(
-                children: [
-                  // Top bar
-                  _TopBar(
-                    identityKey: current.identityKey,
-                    onQueueTap: () => QueueSheet.show(context),
-                    onPlaylistTap: () =>
-                        _openPlaylistPicker(current.identityKey),
-                    onLyricsTap: () =>
-                        setState(() => _showLyrics = !_showLyrics),
-                    onSleepTimerTap: () => showSleepTimerSheet(context),
-                    showLyricsActive: _showLyrics,
-                    isDark: isDark,
-                  ),
-                  // Player content (middle region swaps; the playback
-                  // controls below it stay in a fixed visual position).
-                  Expanded(
-                    child: _showLyrics
-                        ? _buildLyricsMode(context, current, snapshot)
-                        : _buildPlayerMode(context, current, snapshot),
-                  ),
-                  // Fixed playback control region — present identically in
-                  // both modes so toggling lyrics never moves the controls.
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppTokens.s6,
+                  children: [
+                    // Immersive purple-atmosphere background. No Hero here: the
+                    // artwork Hero tag belongs to exactly one widget per route.
+                    const _ImmersiveBackground(),
+                    // Main content
+                    SafeArea(
+                      bottom: false,
+                      child: Column(
+                        children: [
+                          // Top bar
+                          _TopBar(
+                            identityKey: current.identityKey,
+                            onQueueTap: () => QueueSheet.show(context),
+                            onPlaylistTap: () =>
+                                _openPlaylistPicker(current.identityKey),
+                            onLyricsTap: () =>
+                                setState(() => _showLyrics = !_showLyrics),
+                            onSleepTimerTap: () => showSleepTimerSheet(context),
+                            showLyricsActive: _showLyrics,
+                            isDark: isDark,
+                          ),
+                          // Player content (middle region swaps; the playback
+                          // controls below it stay in a fixed visual position).
+                          Expanded(
+                            child: _showLyrics
+                                ? _buildLyricsMode(context, current, snapshot)
+                                : _buildPlayerMode(context, current, snapshot),
+                          ),
+                          // Fixed playback control region — present identically in
+                          // both modes so toggling lyrics never moves the controls.
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppTokens.s6,
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Normal-height screens: repeat/shuffle sit above the
+                                // wave (repeat left, shuffle right). Compact-height
+                                // screens (landscape phones) fold them back into the
+                                // control row so nothing overflows.
+                                if (MediaQuery.sizeOf(context).height >= 480)
+                                  Consumer(
+                                    builder: (context, ref, _) {
+                                      final snapshot = ref.watch(
+                                        playbackStateProvider,
+                                      );
+                                      return PlayerModeRow(
+                                        snapshot: snapshot,
+                                        onToggleShuffle: () {
+                                          final enabling =
+                                              !snapshot.shuffleEnabled;
+                                          ref
+                                              .read(playerProvider)
+                                              .setShuffle(enabling);
+                                          showTopToast(
+                                            context,
+                                            icon: Icons.shuffle_rounded,
+                                            message: enabling
+                                                ? 'Shuffle on'
+                                                : 'Shuffle off',
+                                          );
+                                        },
+                                        onToggleRepeat: () {
+                                          final next = switch (snapshot
+                                              .repeatMode) {
+                                            RepeatMode.off => RepeatMode.all,
+                                            RepeatMode.all => RepeatMode.one,
+                                            RepeatMode.one => RepeatMode.off,
+                                          };
+                                          ref
+                                              .read(playerProvider)
+                                              .setRepeat(next);
+                                          showTopToast(
+                                            context,
+                                            icon: next == RepeatMode.one
+                                                ? Icons.repeat_one_rounded
+                                                : Icons.repeat_rounded,
+                                            message: switch (next) {
+                                              RepeatMode.off => 'Repeat off',
+                                              RepeatMode.all => 'Repeat all',
+                                              RepeatMode.one => 'Repeat one',
+                                            },
+                                          );
+                                        },
+                                      );
+                                    },
+                                  ),
+                                _PositionConsumer(),
+                                const SizedBox(height: AppTokens.s3),
+                                _ControlsConsumer(
+                                  showModeToggles:
+                                      MediaQuery.sizeOf(context).height < 480,
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: bottomPadding + AppTokens.s5),
+                        ],
+                      ),
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Normal-height screens: repeat/shuffle sit above the
-                        // wave (repeat left, shuffle right). Compact-height
-                        // screens (landscape phones) fold them back into the
-                        // control row so nothing overflows.
-                        if (MediaQuery.sizeOf(context).height >= 480)
-                          Consumer(builder: (context, ref, _) {
-                            final snapshot = ref.watch(playbackStateProvider);
-                            return PlayerModeRow(
-                              snapshot: snapshot,
-                              onToggleShuffle: () {
-                                final enabling = !snapshot.shuffleEnabled;
-                                ref.read(playerProvider).setShuffle(enabling);
-                                showTopToast(
-                                  context,
-                                  icon: Icons.shuffle_rounded,
-                                  message: enabling ? 'Shuffle on' : 'Shuffle off',
-                                );
-                              },
-                              onToggleRepeat: () {
-                                final next = switch (snapshot.repeatMode) {
-                                  RepeatMode.off => RepeatMode.all,
-                                  RepeatMode.all => RepeatMode.one,
-                                  RepeatMode.one => RepeatMode.off,
-                                };
-                                ref.read(playerProvider).setRepeat(next);
-                                showTopToast(
-                                  context,
-                                  icon: next == RepeatMode.one
-                                      ? Icons.repeat_one_rounded
-                                      : Icons.repeat_rounded,
-                                  message: switch (next) {
-                                    RepeatMode.off => 'Repeat off',
-                                    RepeatMode.all => 'Repeat all',
-                                    RepeatMode.one => 'Repeat one',
-                                  },
-                                );
-                              },
-                            );
-                          }),
-                        _PositionConsumer(),
-                        const SizedBox(height: AppTokens.s3),
-                        _ControlsConsumer(
-                          showModeToggles:
-                              MediaQuery.sizeOf(context).height < 480,
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(height: bottomPadding + AppTokens.s5),
-                ],
-              ),
-            ),
-          ],
-        ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -256,11 +267,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     }
     final changed = await showAddToPlaylistSheet(context, rowId);
     if (changed && mounted) {
-      VoraSnackbar.success(
-        context,
-        'Playlist updated',
-        title: 'Success',
-      );
+      VoraSnackbar.success(context, 'Playlist updated', title: 'Success');
     }
   }
 
@@ -342,10 +349,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         // (landscape) viewports. The panel itself clamps to its incoming
         // constraints as a second line of defence, so this can never overflow
         // the flex even if the estimate is generous.
-        final panelHeight = (constraints.maxHeight * 0.62).clamp(
-          180.0,
-          300.0,
-        );
+        final panelHeight = (constraints.maxHeight * 0.62).clamp(180.0, 300.0);
         return Column(
           children: [
             if (!compact) const SizedBox(height: AppTokens.s3),
@@ -471,13 +475,11 @@ class _CurrentLyricLine extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final index = ref.watch(currentLyricLineIndexProvider).valueOrNull ?? -1;
-    final current =
-        (index >= 0 && index < lyrics.lines.length)
-            ? lyrics.lines[index].text
-            : null;
+    final current = (index >= 0 && index < lyrics.lines.length)
+        ? lyrics.lines[index].text
+        : null;
     final text =
-        current ??
-        (lyrics.lines.isNotEmpty ? lyrics.lines.first.text : null);
+        current ?? (lyrics.lines.isNotEmpty ? lyrics.lines.first.text : null);
     if (text == null) {
       return const SizedBox.shrink();
     }
@@ -1106,14 +1108,8 @@ class _ControlsConsumer extends ConsumerWidget {
         );
       },
       onTogglePlay: () => ref.read(playerProvider).togglePlay(),
-      onPrevious: () {
-        ref.read(interstitialAdControllerProvider).onSkipClicked();
-        ref.read(playerProvider).previous();
-      },
-      onNext: () {
-        ref.read(interstitialAdControllerProvider).onSkipClicked();
-        ref.read(playerProvider).next();
-      },
+      onPrevious: () => ref.read(playerProvider).previous(),
+      onNext: () => ref.read(playerProvider).next(),
       onRewind10: () =>
           ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
       onForward10: () =>

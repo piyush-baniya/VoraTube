@@ -6,16 +6,21 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../../app/theme/app_tokens.dart';
 import 'ads_config.dart';
+import 'interstitial_ads_provider.dart';
 import 'premium_providers.dart';
 
 /// A small, unobtrusive AdMob banner that obeys VoraTube's centralized Premium
-/// state.
+/// state and its banner milestone.
 ///
 /// * When Premium is active this widget builds to [SizedBox.shrink] and the
 ///   underlying [BannerAd] (if any) is disposed because the stateful element
 ///   leaves the tree — so no ad shows and no ad request is made.
-/// * When Premium is off it loads a banner and shows a compact, thematically
-///   muted placeholder while loading so the layout does not jump.
+/// * Before [InterstitialAdController.bannerPlayThreshold] songs have been
+///   played this widget also builds to [SizedBox.shrink], so the Library and
+///   detail pages do not surface ads to brand-new users.
+/// * When Premium is off and the threshold is met it loads a banner and shows
+///   a compact, thematically muted placeholder while loading so the layout
+///   does not jump.
 /// * On load/display failure the banner collapses gracefully to nothing rather
 ///   than reserving a blank area or crashing.
 ///
@@ -46,10 +51,12 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
 
   bool get _premiumActive => ref.read(isPremiumProvider);
 
+  bool get _bannerEligible => ref.read(bannerEligibleProvider);
+
   @override
   void initState() {
     super.initState();
-    if (!_premiumActive) {
+    if (!_premiumActive && _bannerEligible) {
       _loadAd();
     }
   }
@@ -72,13 +79,37 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
           _loadFailed = false;
         });
       }
-    } else if (!premium && _bannerAd == null && !_loadFailed) {
+    } else if (!premium &&
+        _bannerAd == null &&
+        !_loadFailed &&
+        _bannerEligible) {
       _loadAd();
     }
   }
 
+  /// Fires when the 30-song milestone flips. Becoming eligible mid-session
+  /// loads the banner (which initState skipped); losing eligibility never
+  /// happens while live, but handle it defensively.
+  void _handleEligibilityChange(bool eligible) {
+    if (eligible) {
+      if (!_premiumActive && _bannerAd == null && !_loadFailed) {
+        _loadAd();
+      }
+    } else {
+      _loadTimeout?.cancel();
+      _loadTimeout = null;
+      _disposeAd();
+      if (mounted) {
+        setState(() {
+          _loaded = false;
+          _loadFailed = false;
+        });
+      }
+    }
+  }
+
   void _loadAd() {
-    if (_premiumActive || _disposed) return;
+    if (_premiumActive || _disposed || !_bannerEligible) return;
     final adUnitId = VoraTubeAds.bannerAndroidId;
     late BannerAd ad;
     ad = BannerAd(
@@ -146,12 +177,17 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
   @override
   Widget build(BuildContext context) {
     final premium = ref.watch(isPremiumProvider);
+    final bannerEligible = ref.watch(bannerEligibleProvider);
     ref.listen<bool>(isPremiumProvider, (previous, next) {
       _handlePremiumChange(next);
     });
-    if (premium || _loadFailed) {
-      // Premium active, or the ad failed to load: collapse to nothing so we
-      // neither show ads nor reserve a blank area.
+    ref.listen<bool>(bannerEligibleProvider, (previous, next) {
+      if (next != previous) _handleEligibilityChange(next);
+    });
+    if (premium || !bannerEligible || _loadFailed) {
+      // Premium active, the banner milestone not yet reached, or the ad failed
+      // to load: collapse to nothing so we neither show ads nor reserve a
+      // blank area.
       return const SizedBox.shrink();
     }
 

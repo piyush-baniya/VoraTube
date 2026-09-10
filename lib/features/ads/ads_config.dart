@@ -7,17 +7,15 @@
 ///
 /// During development VoraTube intentionally ships with Google's official
 /// *test* ad units (see `useTestAds` and [VoraTubeAds.testBannerAndroidId]).
-/// A release APK must NOT switch to live ads automatically: it stays on test
-/// ads until the production IDs below are filled in explicitly.
+/// The release build uses the production IDs below.
 library;
 
 abstract final class VoraTubeAds {
   VoraTubeAds._();
 
   /// When true, placements use Google's official test ad units. This is
-  /// enabled for the closed-testing build. Flip this back to `false` when the
-  /// real VoraTube AdMob account is ready for production.
-  static const bool useTestAds = true;
+  /// `false` in production: the real VoraTube AdMob units below are live.
+  static const bool useTestAds = false;
 
   // ── Production ad-unit IDs ─────────────────────────────────────────────
 

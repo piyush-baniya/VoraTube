@@ -60,18 +60,28 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
     collectionKind: widget.collectionKind,
   );
 
-  /// True while a shuffled playback session started from this screen is
-  /// active. Only used to highlight the Shuffle button.
-  bool _shuffleActive = false;
+  /// True while a shuffled playback session started from this screen is being
+  /// set up. During that window the Shuffle button disables itself so a double
+  /// tap cannot start two interleaved shuffled sessions; it re-enables the
+  /// moment the session is committed (highlighting follows global playback
+  /// state, not this local flag).
+  bool _shuffleLoading = false;
 
   Future<void> _playShuffled(List<SongTileData> tiles) async {
-    final player = ref.read(playerProvider);
-    await player.setShuffle(true);
-    player.playQueue([
-      for (final t in (List.of(tiles)..shuffle())) songTileToRef(t),
-    ]);
-    if (mounted) {
-      setState(() => _shuffleActive = true);
+    if (_shuffleLoading) {
+      return;
+    }
+    setState(() => _shuffleLoading = true);
+    try {
+      final player = ref.read(playerProvider);
+      await player.setShuffle(true);
+      await player.playQueue([
+        for (final t in (List.of(tiles)..shuffle())) songTileToRef(t),
+      ]);
+    } finally {
+      if (mounted) {
+        setState(() => _shuffleLoading = false);
+      }
     }
   }
 
@@ -92,6 +102,10 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
     final artistAlbumsAsync = widget.artist == null
         ? null
         : ref.watch(artistAlbumsProvider(widget.artist!.artistRowId));
+    // The Shuffle button reflects the player's global shuffle state — it stays
+    // lit whenever a shuffle is in effect, even after a track finished, and
+    // un-lights only when the user toggles shuffle off elsewhere.
+    final shuffleEnabled = ref.watch(playbackStateProvider).shuffleEnabled;
 
     return Scaffold(
       appBar: AppBar(title: Text(title)),
@@ -106,13 +120,13 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                 }
                 return _ArtistPlayerButtons(
                   tiles: tiles,
-                  shuffleActive: _shuffleActive,
-                  onShuffle: _shuffleActive
+                  shuffleActive: shuffleEnabled,
+                  onShuffle: _shuffleLoading
                       ? null
                       : () => _playShuffled(tiles),
                   onPlay: () => ref.read(playerProvider).playQueue([
-                        for (final t in tiles) songTileToRef(t),
-                      ]),
+                    for (final t in tiles) songTileToRef(t),
+                  ]),
                 );
               },
               orElse: () => const SizedBox.shrink(),
@@ -133,160 +147,165 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
               )
             : CustomScrollView(
                 slivers: [
-              SliverToBoxAdapter(
-                child: _EntryHeader(
-                  album: widget.album,
-                  artist: widget.artist,
-                  genre: widget.genre,
-                  collectionKind: widget.collectionKind,
-                  collectionLabel: widget.collectionLabel,
-                  subtitle: subtitle,
-                ),
-              ),
-              // Artist detail page: albums the artist appears on, shown as a
-              // horizontally scrolling strip (like the Home playlist strip),
-              // separated from the song list by a divider.
-              if (widget.artist != null && artistAlbumsAsync != null)
-                SliverToBoxAdapter(
-                  child: artistAlbumsAsync.maybeWhen(
-                    data: (albums) {
-                      if (albums.isEmpty) return const SizedBox.shrink();
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppTokens.s5,
-                              AppTokens.s1,
-                              AppTokens.s5,
-                              AppTokens.s2,
-                            ),
-                            child: Text(
-                              'Albums',
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 176,
-                            child: ListView.separated(
-                              scrollDirection: Axis.horizontal,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppTokens.s4,
-                              ),
-                              itemCount: albums.length,
-                              separatorBuilder: (_, _) =>
-                                  const SizedBox(width: AppTokens.s3),
-                              itemBuilder: (context, index) => _AlbumStripCard(
-                                album: albums[index],
-                                onTap: () => Navigator.of(context).push(
-                                  pushSharedAxis<void>(
-                                    context,
-                                    FilteredSongsScreen.album(albums[index]),
+                  SliverToBoxAdapter(
+                    child: _EntryHeader(
+                      album: widget.album,
+                      artist: widget.artist,
+                      genre: widget.genre,
+                      collectionKind: widget.collectionKind,
+                      collectionLabel: widget.collectionLabel,
+                      subtitle: subtitle,
+                    ),
+                  ),
+                  // Artist detail page: albums the artist appears on, shown as a
+                  // horizontally scrolling strip (like the Home playlist strip),
+                  // separated from the song list by a divider.
+                  if (widget.artist != null && artistAlbumsAsync != null)
+                    SliverToBoxAdapter(
+                      child: artistAlbumsAsync.maybeWhen(
+                        data: (albums) {
+                          if (albums.isEmpty) return const SizedBox.shrink();
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  AppTokens.s5,
+                                  AppTokens.s1,
+                                  AppTokens.s5,
+                                  AppTokens.s2,
+                                ),
+                                child: Text(
+                                  'Albums',
+                                  style: theme.textTheme.labelLarge?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                    letterSpacing: 0.5,
                                   ),
                                 ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: AppTokens.s2),
-                          Divider(
-                            height: AppTokens.borderHairline,
-                            thickness: AppTokens.borderHairline,
-                            color: colorScheme.outlineVariant,
-                          ),
-                        ],
-                      );
-                    },
-                    orElse: () => const SizedBox.shrink(),
-                  ),
-                ),
-              if (widget.genre != null)
-                const SliverToBoxAdapter(child: GenreDisclaimer()),
-              if (tiles.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppTokens.s5,
-                      AppTokens.s1,
-                      AppTokens.s5,
-                      AppTokens.s1,
+                              SizedBox(
+                                height: 176,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: AppTokens.s4,
+                                  ),
+                                  itemCount: albums.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(width: AppTokens.s3),
+                                  itemBuilder: (context, index) =>
+                                      _AlbumStripCard(
+                                        album: albums[index],
+                                        onTap: () => Navigator.of(context).push(
+                                          pushSharedAxis<void>(
+                                            context,
+                                            FilteredSongsScreen.album(
+                                              albums[index],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(height: AppTokens.s2),
+                              Divider(
+                                height: AppTokens.borderHairline,
+                                thickness: AppTokens.borderHairline,
+                                color: colorScheme.outlineVariant,
+                              ),
+                            ],
+                          );
+                        },
+                        orElse: () => const SizedBox.shrink(),
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${tiles.length} ${tiles.length == 1 ? 'song' : 'songs'}',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
+                  if (widget.genre != null)
+                    const SliverToBoxAdapter(child: GenreDisclaimer()),
+                  if (tiles.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppTokens.s5,
+                          AppTokens.s1,
+                          AppTokens.s5,
+                          AppTokens.s1,
                         ),
-                        // The artist page floats these buttons above the Mini
-                        // Player instead of keeping them inline here.
-                        if (widget.artist == null) ...[
-                          FilledButton.tonalIcon(
-                            onPressed: _shuffleActive
-                                ? null
-                                : () => _playShuffled(tiles),
-                            icon: const Icon(Icons.shuffle_rounded, size: 20),
-                            label: const Text('Shuffle'),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _shuffleActive
-                                  ? colorScheme.primary
-                                  : null,
-                              foregroundColor: _shuffleActive
-                                  ? colorScheme.onPrimary
-                                  : null,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${tiles.length} ${tiles.length == 1 ? 'song' : 'songs'}',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: AppTokens.s3),
-                          FilledButton.icon(
-                            onPressed: () => ref
-                                .read(playerProvider)
-                                .playQueue([
-                                  for (final t in tiles) songTileToRef(t),
-                                ]),
-                            icon: const Icon(
-                              Icons.play_arrow_rounded,
-                              size: 22,
-                            ),
-                            label: const Text('Play all'),
-                          ),
-                        ],
-                      ],
+                            // The artist page floats these buttons above the Mini
+                            // Player instead of keeping them inline here.
+                            if (widget.artist == null) ...[
+                              FilledButton.tonalIcon(
+                                onPressed: _shuffleLoading
+                                    ? null
+                                    : () => _playShuffled(tiles),
+                                icon: const Icon(
+                                  Icons.shuffle_rounded,
+                                  size: 20,
+                                ),
+                                label: const Text('Shuffle'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: shuffleEnabled
+                                      ? colorScheme.primary
+                                      : null,
+                                  foregroundColor: shuffleEnabled
+                                      ? colorScheme.onPrimary
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(width: AppTokens.s3),
+                              FilledButton.icon(
+                                onPressed: () =>
+                                    ref.read(playerProvider).playQueue([
+                                      for (final t in tiles) songTileToRef(t),
+                                    ]),
+                                icon: const Icon(
+                                  Icons.play_arrow_rounded,
+                                  size: 22,
+                                ),
+                                label: const Text('Play all'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  SliverList.separated(
+                    itemCount: tiles.length,
+                    separatorBuilder: (_, _) => const Divider(
+                      height: 0.5,
+                      indent: 80,
+                      endIndent: AppTokens.s4,
+                    ),
+                    itemBuilder: (context, index) => SongTile(
+                      key: ValueKey(tiles[index].song.id),
+                      tile: tiles[index],
+                      index: index,
+                      onPlay: (_) => ref.read(playerProvider).playQueue([
+                        for (final t in tiles) songTileToRef(t),
+                      ], startIndex: index),
                     ),
                   ),
-                ),
-              SliverList.separated(
-                itemCount: tiles.length,
-                separatorBuilder: (_, _) => const Divider(
-                  height: 0.5,
-                  indent: 80,
-                  endIndent: AppTokens.s4,
-                ),
-                itemBuilder: (context, index) => SongTile(
-                  key: ValueKey(tiles[index].song.id),
-                  tile: tiles[index],
-                  index: index,
-                  onPlay: (_) => ref.read(playerProvider).playQueue([
-                    for (final t in tiles) songTileToRef(t),
-                  ], startIndex: index),
-                ),
-              ),
-              const SliverToBoxAdapter(
-                child: SizedBox(height: AppTokens.s8),
-              ),
-              // Extra clearance so the floating Play/Shuffle buttons never
-              // cover the last song of an artist page.
-              if (widget.artist != null)
-                const SliverToBoxAdapter(
-                  child: SizedBox(height: AppTokens.s2),
-                ),
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: AppTokens.s8),
+                  ),
+                  // Extra clearance so the floating Play/Shuffle buttons never
+                  // cover the last song of an artist page.
+                  if (widget.artist != null)
+                    const SliverToBoxAdapter(
+                      child: SizedBox(height: AppTokens.s2),
+                    ),
                 ],
               ),
-        ),
+      ),
     );
   }
 }
@@ -309,11 +328,11 @@ class _EntryHeader extends StatelessWidget {
   final String? subtitle;
 
   static IconData collectionIconFor(CollectionKind kind) => switch (kind) {
-        CollectionKind.favorites => Icons.favorite_rounded,
-        CollectionKind.mostPlayed => Icons.local_fire_department_rounded,
-        CollectionKind.recentlyPlayed => Icons.history_rounded,
-        CollectionKind.recentlyAdded => Icons.schedule_rounded,
-      };
+    CollectionKind.favorites => Icons.favorite_rounded,
+    CollectionKind.mostPlayed => Icons.local_fire_department_rounded,
+    CollectionKind.recentlyPlayed => Icons.history_rounded,
+    CollectionKind.recentlyAdded => Icons.schedule_rounded,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -323,12 +342,7 @@ class _EntryHeader extends StatelessWidget {
     // Collections (Favourites / Most played / Recently played) and genre
     // pages have no album/artist art, so they fall back to a themed icon or
     // the genre's initial instead of an empty InitialsAvatar ("?").
-    final title =
-        album?.name ??
-        artist?.name ??
-        collectionLabel ??
-        genre ??
-        '';
+    final title = album?.name ?? artist?.name ?? collectionLabel ?? genre ?? '';
     final isAlbum = album != null;
     final artPath = album?.artPath ?? artist?.artPath;
 
@@ -420,8 +434,9 @@ class _EntryHeader extends StatelessWidget {
 
 /// The floating Shuffle + Play buttons above the Mini Player on the artist
 /// detail page - the same prominent controls the Library's Songs section and
-/// playlist detail use. Shuffle stays enabled unless a shuffled playback is
-/// already active from this screen (mirroring the inline row it replaced).
+/// playlist detail use. Shuffle disables only while a shuffled session is
+/// being set up, then stays lit while the player's shuffle state is on
+/// (mirroring the inline row it replaced).
 class _ArtistPlayerButtons extends ConsumerWidget {
   const _ArtistPlayerButtons({
     required this.tiles,
