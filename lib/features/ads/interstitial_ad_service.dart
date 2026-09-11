@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ads_config.dart';
@@ -8,6 +9,9 @@ import 'ads_config.dart';
 /// An interstitial is loaded ahead of time so it is ready the moment the user
 /// crosses the song threshold; if none is ready it is simply skipped — an
 /// intermission that fails to load must never interrupt playback.
+///
+/// Lifecycle is made observable via [debugPrint] so ad-region issues (wrong
+/// unit ID, wrong app ID, no fill) are visible without shipping a debug screen.
 class InterstitialAdService {
   InterstitialAd? _interstitial;
   bool _loading = false;
@@ -20,6 +24,7 @@ class InterstitialAdService {
     if (_interstitial != null || _loading) return;
 
     final adUnitId = VoraTubeAds.interstitialAndroidId;
+    debugPrint('VoraTubeAds: interstitial load requested (unit $adUnitId)');
     _loading = true;
     InterstitialAd.load(
       adUnitId: adUnitId,
@@ -28,11 +33,16 @@ class InterstitialAdService {
         onAdLoaded: (ad) {
           _loading = false;
           _interstitial = ad;
+          debugPrint('VoraTubeAds: interstitial loaded ($adUnitId)');
         },
         onAdFailedToLoad: (error) {
           _loading = false;
           _interstitial?.dispose();
           _interstitial = null;
+          debugPrint(
+            'VoraTubeAds: interstitial load FAILED ($adUnitId) -> '
+            '${error.code} ${error.message}',
+          );
         },
       ),
     );
@@ -45,17 +55,31 @@ class InterstitialAdService {
   Future<bool> show() async {
     final ad = _interstitial;
     _interstitial = null;
-    if (ad == null) return false;
+    if (ad == null) {
+      debugPrint(
+        'VoraTubeAds: interstitial show SKIPPED (no ad cached; '
+        'premium off, threshold crossed, but nothing was ready)',
+      );
+      return false;
+    }
 
     var presented = true;
     ad.fullScreenContentCallback = FullScreenContentCallback(
-      onAdDismissedFullScreenContent: (ad) => ad.dispose(),
+      onAdDismissedFullScreenContent: (ad) {
+        debugPrint('VoraTubeAds: interstitial dismissed');
+        ad.dispose();
+      },
       onAdFailedToShowFullScreenContent: (ad, error) {
+        debugPrint(
+          'VoraTubeAds: interstitial show FAILED -> ${error.code} '
+          '${error.message}',
+        );
         ad.dispose();
         presented = false;
       },
     );
     try {
+      debugPrint('VoraTubeAds: interstitial shown');
       await ad.show();
     } catch (_) {
       ad.dispose();

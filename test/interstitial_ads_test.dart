@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:vora_tube/features/ads/ads_config.dart';
 import 'package:vora_tube/features/ads/interstitial_ad_service.dart';
 import 'package:vora_tube/features/ads/interstitial_ads_provider.dart';
 
@@ -33,6 +34,34 @@ class _FakeService extends InterstitialAdService {
 }
 
 void main() {
+  group('VoraTubeAds test-unit selection', () {
+    test('useTestAds=true serves Google official test IDs exclusively',
+        () {
+      // The manifest ships the matching sample App ID, and every placement
+      // resolves to Google's demo units so no real impressions are generated.
+      expect(VoraTubeAds.useTestAds, isTrue);
+      expect(VoraTubeAds.appId, VoraTubeAds.testAppId);
+      expect(VoraTubeAds.appId,
+          'ca-app-pub-3940256099942544~3347511713');
+      expect(VoraTubeAds.bannerAndroidId,
+          VoraTubeAds.testBannerAndroidId);
+      expect(VoraTubeAds.bannerAndroidId,
+          'ca-app-pub-3940256099942544/9214589741');
+      expect(VoraTubeAds.interstitialAndroidId,
+          VoraTubeAds.testInterstitialAndroidId);
+      expect(VoraTubeAds.interstitialAndroidId,
+          'ca-app-pub-3940256099942544/1033173712');
+      // The production units must stay defined (and distinct) for the next
+      // release.
+      expect(VoraTubeAds.productionAppId,
+          isNot(VoraTubeAds.testAppId));
+      expect(VoraTubeAds.productionBannerAndroidId,
+          isNot(VoraTubeAds.testBannerAndroidId));
+      expect(VoraTubeAds.productionInterstitialAndroidId,
+          isNot(VoraTubeAds.testInterstitialAndroidId));
+    });
+  });
+
   group('InterstitialAdController', () {
     test(
       'presents an interstitial on exactly the 5th, 10th, … song start',

@@ -111,6 +111,10 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
   void _loadAd() {
     if (_premiumActive || _disposed || !_bannerEligible) return;
     final adUnitId = VoraTubeAds.bannerAndroidId;
+    debugPrint(
+      'VoraTubeAds: banner load requested (unit $adUnitId, '
+      'banner milestone reached, premium off)',
+    );
     late BannerAd ad;
     ad = BannerAd(
       adUnitId: adUnitId,
@@ -120,6 +124,7 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
         onAdLoaded: (_) {
           _loadTimeout?.cancel();
           _loadTimeout = null;
+          debugPrint('VoraTubeAds: banner loaded ($adUnitId)');
           if (_disposed || _premiumActive) {
             ad.dispose();
             return;
@@ -135,6 +140,10 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
         onAdFailedToLoad: (Ad failedAd, LoadAdError error) {
           _loadTimeout?.cancel();
           _loadTimeout = null;
+          debugPrint(
+            'VoraTubeAds: banner load FAILED ($adUnitId) -> '
+            '${error.code} ${error.message}',
+          );
           failedAd.dispose();
           if (!_disposed && mounted) {
             setState(() => _loadFailed = true);
@@ -151,6 +160,7 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
   /// than leaving an indeterminate spinner up indefinitely.
   void _onLoadTimeout() {
     if (_disposed || _premiumActive || _loaded) return;
+    debugPrint('VoraTubeAds: banner load TIMEOUT — collapsing gracefully');
     _disposeAd();
     if (mounted) {
       setState(() {

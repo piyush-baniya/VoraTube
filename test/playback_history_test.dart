@@ -152,7 +152,9 @@ void main() {
     });
 
     test(
-      'history reads skip songs that left the queue (membership filter)',
+      'removing a song from the queue does not erase its history: Previous '
+      'still returns to it via a temporary placeholder, and leaving it again '
+      'drops it without re-inserting it permanently',
       () async {
         final player = FakeAudioPlayer(processing: ProcessingState.ready);
         final started = <String>[];
@@ -168,27 +170,49 @@ void main() {
           'song-2',
         ]);
 
-        // Remove song-1 from the middle: it must become unreachable via the
-        // history walk even though the history still records it.
+        // Remove song-1 from the queue (swipe or library delete). The history
+        // still records it as heard — removal is NOT a history erasure.
         await controller.removeAt(1);
         expect(controller.currentQueue.map((r) => r.identityKey), [
           'song-3',
           'song-2',
         ]);
 
-        // Previous skips the departed song-1 and lands on song-2 directly.
+        // Previous lands on song-2 (still queued, so it rotates normally).
         await controller.previous();
         expect(currentKey(controller), 'song-2');
-        expect(
-          controller.currentQueue.map((r) => r.identityKey),
-          isNot(contains('song-1')),
-        );
 
-        // Behind song-2 only the departed song-1 remains: Previous restarts
-        // song-2 instead of trying to resurrect song-1 (or wrapping).
+        // The next Previous returns to the departed-but-still-playable song-1
+        // as a TEMPORARY placeholder: it is reachable again even though it left
+        // the queue, and its history membership is intact.
         await controller.previous();
+        expect(currentKey(controller), 'song-1');
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-1',
+          'song-2',
+          'song-3',
+        ]);
+
+        // Next re-walks the forward history (song-2, then song-3). Each
+        // placeholder is dropped as it is left, so when the session winds down
+        // the departed song-1 is never re-inserted into the permanent rotation.
+        await controller.next();
         expect(currentKey(controller), 'song-2');
-        expect(started, hasLength(4)); // playQueue + 2 next + the walk step
+        await controller.next();
+        expect(currentKey(controller), 'song-3');
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-3',
+          'song-2',
+        ]);
+        expect(started, [
+          'song-1',
+          'song-2',
+          'song-3',
+          'song-2',
+          'song-1',
+          'song-2',
+          'song-3',
+        ]);
       },
     );
 
@@ -283,6 +307,248 @@ void main() {
       await controller.playQueue([_song(1), _song(2)]);
       expect(started, ['song-1', 'song-2', 'song-1', 'song-1']);
     });
+
+    test(
+      'a Repeat-Off finish removes from the queue but Previous still returns '
+      'to the departed songs; leaving them again drops the placeholders so '
+      'nothing is ever re-inserted into the permanent rotation',
+      () async {
+        final player = FakeAudioPlayer(
+          processing: ProcessingState.ready,
+          emitEvents: true,
+        );
+        final started = <String>[];
+        final controller = await start(_MemoryPersistence(), player, started);
+
+        await controller.playQueue([_song(1), _song(2), _song(3)]);
+        // Two natural finishes (Repeat Off): each finished song LEAVES the
+        // queue — only the still-unplayed song-3 remains.
+        player.simulateLoad(ProcessingState.completed, false);
+        await pumpEventQueue();
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-2',
+          'song-3',
+        ]);
+        player.simulateLoad(ProcessingState.completed, false);
+        await pumpEventQueue();
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-3',
+        ]);
+        expect(started, ['song-1', 'song-2', 'song-3']);
+
+        // Previous reaches song-2 even though it finished and left the queue.
+        await controller.previous();
+        expect(currentKey(controller), 'song-2');
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-2',
+          'song-3',
+        ]);
+
+        // Previous again reaches song-1 (also long gone) — the walk-back is
+        // unlimited: every song that was actually heard is reachable.
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+
+        // At the very start of the history, Previous restarts song-1 in place.
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+        expect(started, hasLength(5)); // 1,2,3 + walk-backs of 2 and 1
+
+        // Next re-walks the forward history (song-2, then song-3). Each
+        // placeholder is dropped as it is left — never rotated to the tail —
+        // so the finished-and-removed songs cannot recirculate.
+        await controller.next();
+        expect(currentKey(controller), 'song-2');
+        await controller.next();
+        expect(currentKey(controller), 'song-3');
+        await controller.next(); // no forward step: single real song restarts
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-3',
+        ]);
+        expect(
+          controller.currentQueue.map((r) => r.identityKey),
+          isNot(contains('song-1')),
+        );
+        expect(
+          controller.currentQueue.map((r) => r.identityKey),
+          isNot(contains('song-2')),
+        );
+      },
+    );
+
+    test(
+      'shuffle: Previous follows the actual listening order, not the queue '
+      'rotation (all walked songs stay real queue members)',
+      () async {
+        final player = FakeAudioPlayer(processing: ProcessingState.ready);
+        final started = <String>[];
+        final controller = await start(_MemoryPersistence(), player, started);
+
+        await controller.playQueue([_song(1), _song(2), _song(3), _song(4)]);
+        await controller.setShuffle(true); // current keeps #1, tail shuffled
+        expect(currentKey(controller), 'song-1');
+
+        await controller.next();
+        final second = currentKey(controller);
+        await controller.next();
+        final third = currentKey(controller);
+        await controller.next();
+        final fourth = currentKey(controller);
+        expect(started, ['song-1', second, third, fourth]);
+        expect(started, hasLength(4));
+
+        // History = song-1, second, third, fourth. Previous must retrace that
+        // exact listening order, no matter how the shuffled queue is ordered.
+        await controller.previous();
+        expect(currentKey(controller), third);
+        await controller.previous();
+        expect(currentKey(controller), second);
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+        // History start: restart song-1 in place.
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+        expect(
+          controller.currentQueue.map((r) => r.identityKey),
+          containsAll(['song-1', second, third, fourth]),
+        );
+      },
+    );
+
+    test(
+      'a historically-recorded song deleted from the library is skipped, not '
+      'guessed, on the Previous walk',
+      () async {
+        final player = FakeAudioPlayer(processing: ProcessingState.ready);
+        final started = <String>[];
+        // The resolver cannot resolve 'song-2' anymore: it was deleted.
+        final controller = JustAudioController(
+          playbackStorage: _MemoryPersistence(),
+          songResolver: (keys) async => [
+            for (final k in keys)
+              if (k != 'song-2') _song(int.parse(k.split('-').last)),
+          ],
+          player: player,
+          onTrackStart: started.add,
+        );
+        await pumpEventQueue();
+
+        await controller.playQueue([_song(1), _song(2), _song(3), _song(4)]);
+        await controller.next(); // song-2
+        await controller.next(); // song-3
+        await controller.next(); // song-4
+        expect(started, ['song-1', 'song-2', 'song-3', 'song-4']);
+
+        // "Delete" song-2: it leaves the queue AND no longer resolves.
+        await controller.removeByIdentityKeys({'song-2'});
+
+        // Previous from song-4 lands on song-3 (still queued)…
+        await controller.previous();
+        expect(currentKey(controller), 'song-3');
+
+        // …and the next Previous SKIPS the deleted song-2 and lands on
+        // song-1 — a graceful dead-away, never a random replacement.
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+      },
+    );
+
+    test(
+      'branching: after walking back, directly selecting a queued song '
+      'truncates the re-forward tail instead of replaying it',
+      () async {
+        final player = FakeAudioPlayer(processing: ProcessingState.ready);
+        final started = <String>[];
+        final controller = await start(_MemoryPersistence(), player, started);
+
+        await controller.playQueue([_song(1), _song(2), _song(3), _song(4)]);
+        await controller.next(); // song-2
+        await controller.next(); // song-3
+        expect(started, ['song-1', 'song-2', 'song-3']);
+
+        // Walk back one step (song-3 -> song-2).
+        await controller.previous();
+        expect(currentKey(controller), 'song-2');
+
+        // Directly select the still-unplayed queued song-4 via the queue sheet
+        // (display index 2 in the current queue [song-2, song-3, song-4,
+        // song-1]).
+        await controller.jumpTo(2);
+        expect(currentKey(controller), 'song-4');
+
+        // The history must BRANCH — song-1 -> song-2 -> song-4 — the forward
+        // tail through song-3 was truncated by the new selection.
+        await controller.previous();
+        expect(currentKey(controller), 'song-2');
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+        // And Next re-walks the branch forward: song-2, then song-4.
+        await controller.next();
+        expect(currentKey(controller), 'song-2');
+        await controller.next();
+        expect(currentKey(controller), 'song-4');
+        // No forward step remains: Next falls through to the queue rotation
+        // instead of cooking up a duplicate step.
+        await controller.next();
+        expect(currentKey(controller), 'song-1');
+      },
+    );
+
+    test(
+      'Repeat All: Previous walks the history and a natural finish still '
+      'rotates the real songs (walk-backs never corrupt the rotation)',
+      () async {
+        final player = FakeAudioPlayer(
+          processing: ProcessingState.ready,
+          emitEvents: true,
+        );
+        final started = <String>[];
+        final controller = await start(_MemoryPersistence(), player, started);
+
+        await controller.playQueue([_song(1), _song(2), _song(3)]);
+        await controller.setRepeat(RepeatMode.all);
+        await controller.next(); // song-2
+        await controller.next(); // song-3
+        expect(started, ['song-1', 'song-2', 'song-3']);
+
+        // Walk back twice, then walk forward again — all real members rotate.
+        await controller.previous();
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+
+        // A natural finish under Repeat All rotates the finished song to the
+        // end: song-2 becomes current and every song stays queued.
+        player.simulateLoad(ProcessingState.completed, false);
+        await pumpEventQueue();
+        expect(currentKey(controller), 'song-2');
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-2',
+          'song-3',
+          'song-1',
+        ]);
+        expect(started, [
+          'song-1',
+          'song-2',
+          'song-3',
+          'song-2',
+          'song-1',
+          'song-2',
+        ]);
+
+        // Previous still follows what was HEARD before song-2 (song-1), not
+        // what the rotation happens to hold.
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+        // History start: restart song-1.
+        await controller.previous();
+        expect(currentKey(controller), 'song-1');
+        expect(controller.currentQueue.map((r) => r.identityKey), [
+          'song-1',
+          'song-2',
+          'song-3',
+        ]);
+      },
+    );
   });
 
   group('every playback entry point emits the one authoritative track-start', () {
