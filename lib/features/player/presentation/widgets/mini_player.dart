@@ -282,8 +282,25 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                         ],
                       ),
                     ),
-                    // Transport cluster: previous | play/pause | next
+                    // Transport cluster: shuffle | previous | play/pause | next
                     const SizedBox(width: AppTokens.s1),
+                    Semantics(
+                      button: true,
+                      label: 'Shuffle',
+                      child: _TransportButton(
+                        icon: snapshot.shuffleEnabled
+                            ? Icons.shuffle_on_rounded
+                            : Icons.shuffle_rounded,
+                        enabled: true,
+                        active: snapshot.shuffleEnabled,
+                        onTap: () {
+                          final enabling = !snapshot.shuffleEnabled;
+                          ref.read(playerProvider).setShuffle(enabling);
+                        },
+                        colorScheme: colorScheme,
+                      ),
+                    ),
+                    const SizedBox(width: AppTokens.s2),
                     Semantics(
                       button: true,
                       label: 'Previous',
@@ -395,13 +412,15 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
   }
 }
 
-/// A compact circular transport button with a disabled state.
+/// A compact circular transport button with a disabled state and an optional
+/// active ("on") highlight shared with the Full Player's mode toggles.
 class _TransportButton extends StatelessWidget {
   const _TransportButton({
     required this.icon,
     required this.enabled,
     required this.onTap,
     required this.colorScheme,
+    this.active = false,
   });
 
   final IconData icon;
@@ -409,8 +428,14 @@ class _TransportButton extends StatelessWidget {
   final VoidCallback onTap;
   final ColorScheme colorScheme;
 
+  /// Tints the icon [colorScheme.primary] instead of the muted inactive shade.
+  final bool active;
+
   @override
   Widget build(BuildContext context) {
+    final iconColor = active
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant.withValues(alpha: enabled ? 0.9 : 0.35);
     return PressableScale(
       onTap: enabled ? onTap : null,
       child: SizedBox(
@@ -434,13 +459,7 @@ class _TransportButton extends StatelessWidget {
                 width: AppTokens.borderHairline,
               ),
             ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: colorScheme.onSurfaceVariant.withValues(
-                alpha: enabled ? 0.9 : 0.35,
-              ),
-            ),
+            child: Icon(icon, size: 20, color: iconColor),
           ),
         ),
       ),

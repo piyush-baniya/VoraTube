@@ -10,7 +10,11 @@ import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
 import 'package:vora_tube/features/library/presentation/providers/library_providers.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
+import 'package:vora_tube/features/player/presentation/screens/full_player_screen.dart';
 import 'package:vora_tube/features/player/presentation/widgets/mini_player.dart';
+import 'package:vora_tube/features/player/presentation/widgets/player_progress.dart';
+import 'package:vora_tube/features/player/presentation/widgets/rotating_artwork.dart';
+import 'package:vora_tube/shared/widgets/artwork_view.dart';
 
 import 'fakes/fake_player.dart';
 
@@ -73,9 +77,52 @@ class _RecordingPlayer extends FakePlayerController {
   Future<void> togglePlay() async => calls.add('togglePlay');
 }
 
+/// Applies shuffle toggles to its snapshot and broadcasts them through the
+/// authoritative snapshot stream, exactly as the engine does, so the surfaces
+/// that watch playback state re-render without any manual pushing.
+class _ShufflePlayer extends _RecordingPlayer {
+  _ShufflePlayer({required super.initial, super.queue = const []});
+
+  final List<bool> shuffleCalls = [];
+
+  @override
+  Future<void> setShuffle(bool enabled) async {
+    calls.add('setShuffle');
+    shuffleCalls.add(enabled);
+    pushSnapshot(current.copyWith(shuffleEnabled: enabled));
+  }
+}
+
+_ShufflePlayer _shufflePlayer({
+  required bool shuffleEnabled,
+  bool isPlaying = false,
+}) {
+  return _ShufflePlayer(
+    initial: PlayerSnapshot(
+      status: PlayerStatus.ready,
+      isPlaying: isPlaying,
+      repeatMode: RepeatMode.off,
+      shuffleEnabled: shuffleEnabled,
+      queueLength: 2,
+      currentIndex: 0,
+      durationMs: 200000,
+      current: _song(),
+    ),
+    queue: [_song(id: 1), _song(id: 2, title: 'Song 2')],
+  );
+}
+
 void main() {
   late AppDatabase db;
   late LibraryRepository repository;
+
+  setUpAll(() {
+    // The FullPlayerScreen animations must settle for the cross-surface
+    // shuffle-sync tests to pump cleanly.
+    disableBackgroundPulseForTesting();
+    disableRotatingArtworkForTesting();
+    disableWaveTimelineForTesting();
+  });
 
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
@@ -122,6 +169,7 @@ void main() {
 
     expect(find.text('Test Song'), findsOneWidget);
     expect(find.text('Test Artist'), findsOneWidget);
+    expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
     expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
@@ -330,5 +378,164 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.bySemanticsLabel('Pause'), findsOneWidget);
+  });
+
+  group('Shuffle button', () {
+    testWidgets('renders shuffle OFF when shuffle is disabled', (tester) async {
+      await tester.pumpWidget(_wrap(_shufflePlayer(shuffleEnabled: false)));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.shuffle_on_rounded), findsNothing);
+      expect(find.bySemanticsLabel('Shuffle'), findsOneWidget);
+    });
+
+    testWidgets('renders shuffle ON when shuffle is enabled', (tester) async {
+      await tester.pumpWidget(_wrap(_shufflePlayer(shuffleEnabled: true)));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.shuffle_on_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.shuffle_rounded), findsNothing);
+    });
+
+    testWidgets(
+      'tapping shuffle toggles the authoritative player state but never '
+      'opens the full player',
+      (tester) async {
+        final player = _shufflePlayer(shuffleEnabled: false);
+        await tester.pumpWidget(_wrap(player));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.shuffle_rounded));
+        await tester.pump();
+        expect(player.shuffleCalls, [true]);
+        expect(find.byIcon(Icons.shuffle_on_rounded), findsOneWidget);
+
+        await tester.tap(find.byIcon(Icons.shuffle_on_rounded));
+        await tester.pumpAndSettle();
+        expect(player.shuffleCalls, [true, false]);
+        expect(player.current.shuffleEnabled, isFalse);
+        expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
+        expect(find.byType(FullPlayerScreen), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'shuffle state pushed by the Full Player is reflected immediately',
+      (tester) async {
+        final player = _shufflePlayer(shuffleEnabled: false);
+        await tester.pumpWidget(_wrap(player));
+        await tester.pumpAndSettle();
+        expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
+
+        // Exactly what the Full Player does when its shuffle button is tapped.
+        await player.setShuffle(true);
+        await tester.pumpAndSettle();
+
+        expect(find.byIcon(Icons.shuffle_on_rounded), findsOneWidget);
+        expect(player.current.shuffleEnabled, isTrue);
+      },
+    );
+
+    testWidgets(
+      'shuffle enabled in the Mini Player shows ON in the Full Player',
+      (tester) async {
+        final player = _shufflePlayer(shuffleEnabled: false);
+        await tester.pumpWidget(_wrap(player));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byIcon(Icons.shuffle_rounded));
+        await tester.pump();
+        expect(player.current.shuffleEnabled, isTrue);
+
+        await tester.tap(find.byType(CompactArtwork));
+        await tester.pumpAndSettle();
+        expect(find.byType(FullPlayerScreen), findsOneWidget);
+
+        expect(
+          find.descendant(
+            of: find.byType(FullPlayerScreen),
+            matching: find.byIcon(Icons.shuffle_on_rounded),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'shuffle toggled in the Full Player shows ON in the Mini Player after '
+      'returning',
+      (tester) async {
+        final player = _shufflePlayer(shuffleEnabled: false);
+        await tester.pumpWidget(_wrap(player));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(CompactArtwork));
+        await tester.pumpAndSettle();
+        expect(find.byType(FullPlayerScreen), findsOneWidget);
+
+        final fullShuffle = find.descendant(
+          of: find.byType(FullPlayerScreen),
+          matching: find.byIcon(Icons.shuffle_rounded),
+        );
+        expect(fullShuffle, findsOneWidget);
+        await tester.tap(fullShuffle);
+        await tester.pumpAndSettle();
+        expect(player.shuffleCalls, [true]);
+
+        // Let the Full Player's "Shuffle on" toast auto-dismiss so no timer
+        // outlives the test.
+        await tester.pump(const Duration(seconds: 2));
+
+        // Close the full player back onto the Mini Player.
+        await tester.tap(
+          find
+              .descendant(
+                of: find.byType(FullPlayerScreen),
+                matching: find.byIcon(Icons.keyboard_arrow_down_rounded),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(FullPlayerScreen), findsNothing);
+
+        expect(
+          find.descendant(
+            of: find.byType(MiniPlayer),
+            matching: find.byIcon(Icons.shuffle_on_rounded),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'rapid toggling settles on the last request without interrupting '
+      'playback',
+      (tester) async {
+        final player = _shufflePlayer(shuffleEnabled: false, isPlaying: true);
+        await tester.pumpWidget(_wrap(player));
+        await tester.pumpAndSettle();
+
+        // Four alternating taps with no settle between them.
+        await tester.tap(find.byIcon(Icons.shuffle_rounded));
+        await tester.pump();
+        await tester.tap(find.byIcon(Icons.shuffle_on_rounded));
+        await tester.pump();
+        await tester.tap(find.byIcon(Icons.shuffle_rounded));
+        await tester.pump();
+        await tester.tap(find.byIcon(Icons.shuffle_on_rounded));
+        await tester.pumpAndSettle();
+
+        expect(player.shuffleCalls, [true, false, true, false]);
+        expect(player.current.shuffleEnabled, isFalse);
+        expect(player.current.isPlaying, isTrue);
+        expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
+        // Only the shuffle action was dispatched: playback was never paused,
+        // seeked, restarted or skipped.
+        expect(player.calls.where((c) => c != 'setShuffle'), isEmpty);
+        expect(find.byType(FullPlayerScreen), findsNothing);
+      },
+    );
   });
 }
