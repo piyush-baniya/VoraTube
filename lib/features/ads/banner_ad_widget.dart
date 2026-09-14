@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../../app/theme/app_tokens.dart';
+import '../../../services/analytics_service.dart';
 import 'ads_config.dart';
 import 'interstitial_ads_provider.dart';
 import 'premium_providers.dart';
@@ -124,6 +125,7 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
         onAdLoaded: (_) {
           _loadTimeout?.cancel();
           _loadTimeout = null;
+          AnalyticsService.instance.adBannerLoaded();
           debugPrint('VoraTubeAds: banner loaded ($adUnitId)');
           if (_disposed || _premiumActive) {
             ad.dispose();
@@ -140,6 +142,7 @@ class _VoraTubeBannerAdState extends ConsumerState<VoraTubeBannerAd> {
         onAdFailedToLoad: (Ad failedAd, LoadAdError error) {
           _loadTimeout?.cancel();
           _loadTimeout = null;
+          AnalyticsService.instance.adBannerFailed();
           debugPrint(
             'VoraTubeAds: banner load FAILED ($adUnitId) -> '
             '${error.code} ${error.message}',

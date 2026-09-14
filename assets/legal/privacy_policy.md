@@ -64,7 +64,13 @@ VoraTube is a fully released application and integrates the **Google Mobile Ads 
 
 ## 6. Analytics and crash reporting
 
-VoraTube does **not** include its own analytics service and does **not** include its own crash-reporting service. VoraTube does not build user profiles and does not track you across apps or websites.
+VoraTube uses **Firebase Analytics** (from Google) to measure general feature usage. This helps us understand which features are used and how the app performs, so we can improve VoraTube.
+
+What Analytics collects: small, non-personal feature usage events only. Examples include "shuffle toggled", "playlist created", "repeat mode changed", "ad shown", and "ringtone exported." No song title, artist, album, filename, file path, MediaStore URI, playlist name, lyrics text, search query, email, personal text, precise location, or local music library contents is ever sent to Analytics. Analytics does not build user profiles and does not track you across apps or websites for advertising purposes through our implementation.
+
+Firebase Analytics data is governed by [Google's Privacy Policy](https://policies.google.com/technologies/ads).
+
+VoraTube does **not** include its own crash-reporting service. VoraTube does not use Crashlytics, Sentry, or any other crash-reporting package.
 
 Note that the advertising SDK described in Section 5 is a third-party component and may perform its own measurement as described by Google's policies.
 
@@ -80,7 +86,8 @@ VoraTube itself does not sell, rent, or share your personal data, because it doe
 - song title/artist sent to Apple's iTunes Search API for genre lookup;
 - a YouTube search you explicitly trigger;
 - the donation webpage you explicitly open;
-- data processed by Google's advertising SDK when live ads are displayed.
+- data processed by Google's advertising SDK when live ads are displayed;
+- non-personal feature usage events sent to Firebase Analytics (see Section 6).
 
 Each of those third parties processes information under its own privacy policy. VoraTube does not control their practices.
 
@@ -101,7 +108,7 @@ Each of those third parties processes information under its own privacy policy. 
 
 Where VoraTube deletes media on your behalf (such as deleting a song), it follows Android's standard storage and media deletion mechanisms, including Android's own user-consent confirmation where required.
 
-**Third-party data.** VoraTube cannot delete data retained by third parties such as LRCLIB, Apple, YouTube, Buy Me a Momo, or Google's advertising infrastructure. Their retention practices are governed by their respective privacy policies.
+**Third-party data.** VoraTube cannot delete data retained by third parties such as LRCLIB, Apple, YouTube, Buy Me a Momo, Google's advertising infrastructure, or Firebase Analytics. Their retention practices are governed by their respective privacy policies.
 
 ## 11. Children's privacy
 
@@ -116,6 +123,7 @@ VoraTube is a general-audience local music player. It does not knowingly collect
 | YouTube | "Find on YouTube" action | Only when you tap it | Song title and artist as a search query |
 | Buy Me a Momo (buymemomo.com) | Donations | Only when you open it | Whatever the website itself processes |
 | Google Mobile Ads | Live advertising (production AdMob) | When ads are shown (Premium off) | As described by Google's ad policies |
+| Firebase Analytics (Google) | General feature usage measurement | Always (when analytics initializes) | Non-personal feature usage events only; no personal or local music data |
 
 These services are governed by their own privacy policies; VoraTube is not responsible for their content or practices.
 

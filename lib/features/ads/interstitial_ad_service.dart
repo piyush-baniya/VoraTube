@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import '../../services/analytics_service.dart';
 import 'ads_config.dart';
 
 /// Loads and shows a full-screen interstitial ad, gated by VoraTube's Premium
@@ -39,6 +40,7 @@ class InterstitialAdService {
           _loading = false;
           _interstitial?.dispose();
           _interstitial = null;
+          AnalyticsService.instance.adInterstitialFailed();
           debugPrint(
             'VoraTubeAds: interstitial load FAILED ($adUnitId) -> '
             '${error.code} ${error.message}',
@@ -70,6 +72,7 @@ class InterstitialAdService {
         ad.dispose();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
+        AnalyticsService.instance.adInterstitialFailed();
         debugPrint(
           'VoraTubeAds: interstitial show FAILED -> ${error.code} '
           '${error.message}',
@@ -81,6 +84,7 @@ class InterstitialAdService {
     try {
       debugPrint('VoraTubeAds: interstitial shown');
       await ad.show();
+      if (presented) AnalyticsService.instance.adInterstitialShown();
     } catch (_) {
       ad.dispose();
       return false;

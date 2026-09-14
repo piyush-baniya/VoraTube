@@ -5,20 +5,23 @@
 /// units before a Google Play release — without touching any of the ad
 /// placements.
 ///
-/// During development VoraTube intentionally ships with Google's official
-/// *test* ad units (see `useTestAds` and [VoraTubeAds.testBannerAndroidId]).
-/// The release build uses the production IDs below.
+/// During development (debug/profile builds and `flutter test`) VoraTube
+/// intentionally serves Google's official *test* ad units (see `useTestAds`).
+/// Release builds resolve every ID to VoraTube's production AdMob units below,
+/// so a released app can never fall back to a demo/test ID.
 library;
+
+import 'package:flutter/foundation.dart';
 
 abstract final class VoraTubeAds {
   VoraTubeAds._();
 
-  /// When true, placements use Google's official test ad units. This is
-  /// `false` in production: the real VoraTube AdMob units below are live.
+  /// When true, placements use Google's official test ad units.
   ///
-  /// For this testing build it is re-enabled so no live ad impressions are
-  /// generated; the production IDs below remain defined for the next release.
-  static const bool useTestAds = true;
+  /// True in debug/profile builds (including `flutter test`), false in release
+  /// builds — so the release AAB unquestionably serves the production IDs and
+  /// no debug/test ID can leak into what users install from Google Play.
+  static bool get useTestAds => kDebugMode;
 
   // ── Production ad-unit IDs ─────────────────────────────────────────────
 

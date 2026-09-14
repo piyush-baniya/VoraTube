@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../services/analytics_service.dart';
 import '../../library/data/library_models.dart';
 import 'playlist_models.dart';
 
@@ -161,6 +162,7 @@ class PlaylistRepository {
       final id = await _db
           .into(_db.playlists)
           .insert(PlaylistsCompanion.insert(name: name));
+      AnalyticsService.instance.playlistCreated();
       return id;
     } catch (_) {
       final existing = await (_db.select(
@@ -245,11 +247,13 @@ class PlaylistRepository {
       });
       await _touch(playlistId);
     });
+    AnalyticsService.instance.playlistSongAdded();
   }
 
   /// Removes the entry at [index] (position order) and renumbers the tail.
-  Future<void> removeSongAt(int playlistId, int index) {
-    return _renumberAfterRemoval(playlistId, index);
+  Future<void> removeSongAt(int playlistId, int index) async {
+    await _renumberAfterRemoval(playlistId, index);
+    AnalyticsService.instance.playlistSongRemoved();
   }
 
   /// Removes every playlist entry belonging to [songRowIds] (identity-based,
@@ -257,16 +261,18 @@ class PlaylistRepository {
   /// gapless. Idempotent: ids that are not members are ignored. Used by the
   /// smart add/remove picker so a removal can never hit the wrong song while
   /// the playlist is being edited.
-  Future<void> removeSongs(int playlistId, Iterable<int> songRowIds) {
-    return _db.transaction(() async {
-      final toRemove = songRowIds.toSet();
-      if (toRemove.isEmpty) return;
+  Future<void> removeSongs(int playlistId, Iterable<int> songRowIds) async {
+    final toRemove = songRowIds.toSet();
+    if (toRemove.isEmpty) return;
+    var didRemove = false;
+    await _db.transaction(() async {
       final entries = await _orderedEntries(playlistId);
       final remaining = [
         for (final e in entries)
           if (!toRemove.contains(e.songRowId)) e.songRowId,
       ];
       if (remaining.length == entries.length) return;
+      didRemove = true;
       await (_db.delete(
         _db.playlistSongs,
       )..where(
@@ -276,6 +282,7 @@ class PlaylistRepository {
         )).go();
       await _rewritePositions(playlistId, remaining);
     });
+    if (didRemove) AnalyticsService.instance.playlistSongRemoved();
   }
 
   /// Removes every entry of [songRowId]; see [removeSongs].

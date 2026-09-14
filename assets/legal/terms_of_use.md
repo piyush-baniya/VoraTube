@@ -18,6 +18,8 @@ The App reads audio files already present on your device through your device's m
 
 To provide certain features, the App may send small, non-identifying details about a song (such as its title and artist) to third-party services for lyrics and genre lookup. The App may also open external websites you explicitly choose to visit, such as YouTube or a donation page. Those services are governed by their own terms and privacy policies, and VoraTube is not responsible for them. See the App's Privacy Policy for details of what is sent and when.
 
+The App also uses **Firebase Analytics** (Google) to measure general, non-personal feature usage — for example which features are used and how often. It never sends song details, your library, or any personal information to Analytics. See the App's Privacy Policy for details.
+
 ## 4. Advertising
 
 VoraTube is a fully released app and displays live, production advertisements served through the Google Mobile Ads SDK (Google AdMob), unless you activate Premium. Ads are provided by third parties under their own policies. Activating Premium is a local entitlement within the App and disables all ad placements; it involves no payment processing by or account system in VoraTube itself.

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "771714400704",
+    "project_id": "voratube-98bf9",
+    "storage_bucket": "voratube-98bf9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:771714400704:android:b6a9603c37bd75619f8825",
+        "android_client_info": {
+          "package_name": "com.piyushbaniya.vora_tube"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD6Hvs5l6PrMVVYK3WiDvAlfr8ZwIJ4G-8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

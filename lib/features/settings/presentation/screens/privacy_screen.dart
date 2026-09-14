@@ -37,8 +37,8 @@ class PrivacyScreen extends StatelessWidget {
           ),
           _PrivacySection(
             icon: Icons.insights_outlined,
-            title: 'No built-in analytics',
-            body: 'This app has no analytics or account system in its code. It does not upload your music library, listening history, or playlists.',
+            title: 'Minimal analytics',
+            body: 'VoraTube uses Firebase Analytics to count general feature usage (for example which features are used). It never sends song metadata, filenames, lyrics, search queries, playlists, or any personal information. The app has no account system and never uploads your music library, listening history, or playlists.',
           ),
         ],
       ),

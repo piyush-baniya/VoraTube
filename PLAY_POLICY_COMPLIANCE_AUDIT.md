@@ -8,7 +8,7 @@ September 3, 2026
 
 **READY WITH WARNINGS.**
 
-No policy BLOCKER was found. VoraTube is a local-first music player with narrowly scoped permissions, a legitimate media-playback foreground service, no accounts/analytics/cloud, an accurate published privacy policy, and a compliant target API. Remaining items before submission: (1) the WRITE_SETTINGS flow should route users to the special-access settings screen instead of only showing an error, (2) production AdMob/UMP decisions must be made before enabling real ads (current build is test-ads-only), (3) standard Play Console declarations (Data Safety, content rating, listing assets) still need to be completed, (4) a few verification-only items.
+No policy BLOCKER was found. VoraTube is a local-first music player with narrowly scoped permissions, a legitimate media-playback foreground service, no accounts/cloud, a minimal best-effort Firebase Analytics integration (non-personal usage events only), an accurate published privacy policy, and a compliant target API. Remaining items before submission: (1) the WRITE_SETTINGS flow should route users to the special-access settings screen instead of only showing an error, (2) an AdMob UMP/consent flow must be added before serving ads to EEA/UK users (production AdMob IDs are now configured for release builds), (3) standard Play Console declarations (Data Safety, content rating, listing assets) still need to be completed, (4) a few verification-only items.
 
 ## Severity definitions
 
@@ -83,11 +83,11 @@ No policy BLOCKER was found. VoraTube is a local-first music player with narrowl
 
 ## Privacy Policy
 
-**PASS.** `PRIVACY_POLICY.md` and the live page `https://voratube.vercel.app/privacy-policy` (verified reachable on Sept 3, 2026; public HTML, no login) match the code: local storage, no uploads, LRCLIB/iTunes automatic lookups vs user-initiated YouTube/Buy Me a Momo, test-only advertising, no analytics/crash/accounts, retention/deletion, children's privacy, contact (Piyush Das / baniyapiyushwork@gmail.com). The app links the policy centrally via `kPrivacyPolicyUrl` (single constant), opening externally with failure handling. One minor gap (not a false claim): Android Auto Backup of local data is not mentioned in the policy — see Data Safety.
+**PASS.** `PRIVACY_POLICY.md` and the live page `https://voratube.vercel.app/privacy-policy` (verified reachable on Sept 3, 2026; public HTML, no login) match the code: local storage, no uploads, LRCLIB/iTunes automatic lookups vs user-initiated YouTube/Buy Me a Momo, live production advertising (via AdMob) with a disclosed ad SDK, non-personal Firebase Analytics disclosed in §6, no crash reporting/accounts, retention/deletion, children's privacy, contact (Piyush Das / baniyapiyushwork@gmail.com). The app links the policy centrally via `kPrivacyPolicyUrl` (single constant), opening externally with failure handling, and also renders `assets/legal/privacy_policy.md` in-app. One minor gap (not a false claim): Android Auto Backup of local data is not mentioned in the policy — see Data Safety.
 
 ## Data Safety
 
-**PASS (with the existing open checklist).** `DATA_SAFETY_AUDIT.md` conclusions re-verified against the source: LRCLIB, iTunes, YouTube, Buy Me a Momo, AdMob, identifiers, absence of analytics/crash reporting/accounts/cloud all still match. Open items remain the ad-SDK vendor-doc verification and backup behavior — already tracked in that document's manual checklist. Nothing needed correction.
+**PASS (with the existing open checklist).** `DATA_SAFETY_AUDIT.md` conclusions re-verified against the source: LRCLIB, iTunes, YouTube, Buy Me a Momo, AdMob, identifiers all match; Firebase Analytics is now integrated and disclosed in both the policy and the Data Safety audit (non-personal usage events only); crash reporting/accounts/cloud remain absent. Open items remain the ad-SDK vendor-doc verification and backup behavior — already tracked in that document's manual checklist.
 
 ## External services
 
@@ -125,11 +125,11 @@ No policy BLOCKER was found. VoraTube is a local-first music player with narrowl
 
 ## Release build
 
-**PASS (with verification item).** Release build type: minify + resource shrinking enabled with `proguard-android-optimize.txt` plus project rules (documented as covering Flutter/just_audio/audio_service); signing config loaded from `key.properties` (present locally, untracked); `debuggable` not set (defaults false); version 1.1.6+10 from pubspec; test ad IDs intentionally used until production config. No manifest placeholders. Nothing found that would block Play upload; a real signed-AAB build test remains (future task).
+**PASS (with verification item).** Release build type: minify + resource shrinking enabled with `proguard-android-optimize.txt` plus project rules (documented as covering Flutter/just_audio/audio_service); signing config loaded from `key.properties` (present locally, untracked); `debuggable` not set (defaults false); version 1.2.1+18 from pubspec; production AdMob app/banner/interstitial IDs are now configured for release builds via `${admobAppId}` manifest placeholder (defaultConfig/debug/profile/test builds keep Google's official test app ID). Nothing found that would block Play upload; a real signed-AAB build test remains (future task).
 
 ## Dependencies/SDKs
 
-**PASS (no action required now).** 17 direct dependencies inventoried in `DATA_SAFETY_AUDIT.md`; all current major versions from pub.dev with no known Play-policy issues. `google_mobile_ads 9.1.0` is the only SDK with policy implications (advertising — handled via future UMP/production task). No abandoned libraries, hidden analytics, tracking, or extra ad SDKs found. No upgrades performed or required for this audit.
+**PASS (no action required now).** Direct dependencies inventoried in `DATA_SAFETY_AUDIT.md`; all current major versions from pub.dev with no known Play-policy issues. `google_mobile_ads 9.1.0` (advertising — UMP task still pending for EEA/UK) and `firebase_core`/`firebase_analytics` (non-personal usage events only, disclosed in the privacy policy) are the only policy-relevant SDKs. No abandoned libraries, hidden analytics, tracking, or extra ad SDKs found. No upgrades performed or required for this audit.
 
 ## WebViews
 
@@ -187,7 +187,7 @@ Missing items for a future listing (nothing created in this task):
 - Version-capped legacy storage permission; no dangerous permissions
 - Media deletion with Android consent flow
 - Privacy policy: content, hosting, and in-app linking
-- Local-first architecture: no accounts, analytics, crash reporting, cloud, uploads
+- Local-first architecture: no accounts, crash reporting, cloud, uploads; best-effort non-personal Firebase Analytics only (no personal or local music data)
 - Security posture: no exposed secrets, no cleartext, no dangerous exported components
 - Honest functionality and labeling (no deceptive behavior)
 - UGC confined to private local storage

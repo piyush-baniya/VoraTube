@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
 import 'core/db/app_database.dart';
+import 'firebase_options.dart';
+import 'services/analytics_service.dart';
 import 'core/player/just_audio_controller.dart';
 import 'features/ads/ads_initializer.dart';
 import 'features/ads/interstitial_ads_provider.dart';
@@ -17,6 +20,13 @@ import 'features/player/presentation/providers/player_providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Firebase Analytics is best-effort and non-critical. It is initialized
+  // without blocking startup, and a failure here (offline first run, missing
+  // native config, unsupported platform) must never stop the app opening or
+  // any player/database/UI/ad work. When initialization fails, the analytics
+  // service silently no-ops for the session.
+  unawaited(_initializeAnalytics());
 
   final db = AppDatabase(driftDatabase(name: 'voratube'));
   final repository = LibraryRepository(db);
@@ -88,6 +98,7 @@ Future<void> main() async {
     container.read(libraryRefreshTickProvider.notifier).state++;
   };
   notifyAdTrackStarted = (key) {
+    AnalyticsService.instance.trackPlayed();
     container.read(interstitialAdControllerProvider).onTrackStarted();
   };
 
@@ -123,4 +134,20 @@ Future<void> main() async {
   runApp(
     UncontrolledProviderScope(container: container, child: const VoraTubeApp()),
   );
+}
+
+/// Initializes Firebase and the analytics facade without ever blocking or
+/// failing startup. Firebase/analytics problems are deliberately non-fatal.
+Future<void> _initializeAnalytics() async {
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (_) {
+    // Firebase is unavailable (unsupported platform, missing native config,
+    // transient failure). VoraTube must still launch fully functional.
+  }
+  // Independent of the native Firebase outcome: the facade no-ops safely when
+  // the underlying instance is missing.
+  AnalyticsService.instance.initialize();
 }

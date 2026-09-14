@@ -7,6 +7,7 @@ import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/top_toast.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
+import '../../../../services/analytics_service.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
@@ -164,8 +165,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                             onQueueTap: () => QueueSheet.show(context),
                             onPlaylistTap: () =>
                                 _openPlaylistPicker(current.identityKey),
-                            onLyricsTap: () =>
-                                setState(() => _showLyrics = !_showLyrics),
+                            onLyricsTap: () {
+    setState(() => _showLyrics = !_showLyrics);
+    if (_showLyrics) AnalyticsService.instance.lyricsOpened();
+  },
                             onSleepTimerTap: () => showSleepTimerSheet(context),
                             showLyricsActive: _showLyrics,
                             isDark: isDark,

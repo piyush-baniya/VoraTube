@@ -9,6 +9,7 @@ import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/models/lyrics.dart';
 import '../../../../core/player/player_controller.dart';
+import '../../../../services/analytics_service.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/providers/connectivity_provider.dart';
 import '../../data/lrclib_client.dart';
@@ -271,6 +272,7 @@ class _LyricsActionsPanelState extends ConsumerState<LyricsActionsPanel> {
       return;
     }
 
+    AnalyticsService.instance.lyricsUploaded();
     ref.invalidate(uploadedLrcProvider);
     _useLyrics(data);
     _snack(

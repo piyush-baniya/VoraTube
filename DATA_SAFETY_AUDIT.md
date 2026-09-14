@@ -24,7 +24,7 @@ September 3, 2026
 - **Local storage:** Yes — everything (library metadata, playlists, favorites, history, stats, queue, settings, premium state, lyrics/artwork caches) is stored on-device via Drift SQLite + app caches. No VoraTube server or cloud storage exists.
 - **Third-party SDKs:** Yes — Google Mobile Ads is the only SDK with meaningful data-handling capability; the remaining plugins are standard Flutter platform plugins.
 - **Ads:** Banner + interstitial via Google Mobile Ads, **Google official TEST ad units**, `useTestAds = true`, no mediation, no UMP/consent flow, no production ad configuration.
-- **Accounts:** None. **Analytics:** none (verified absent in first-party code and direct dependencies). **Crash reporting:** none (verified absent). **User content uploads:** none (music never leaves the device). **Cloud sync:** none.
+- **Accounts:** None. **Analytics:** Firebase Analytics — non-personal feature usage only (no song/artist/file data; see the new §6 of the privacy policy). **Crash reporting:** none (verified absent). **User content uploads:** none (music never leaves the device). **Cloud sync:** none.
 
 ## Data flow inventory
 
@@ -36,6 +36,7 @@ September 3, 2026
 | 4 | Buy Me a Momo | User-initiated (in-app WebView, connectivity pre-check) | Off-device | Standard WebView traffic to `buymemomo.com`; anything the site itself collects (cookies, etc.) |
 | 5 | Google Mobile Ads SDK | Automatic when ads shown (Premium off) | Off-device | Device/advertising identifiers, ad request data, diagnostics — governed by Google's SDK behavior (see Advertising section) |
 | 6 | Privacy policy link | User-initiated (external browser) | Off-device | Standard browser request to `https://voratube.vercel.app/privacy-policy` |
+| 7 | Firebase Analytics | Initialization at app start; event logging during normal use (non-blocking, fails silently) | Off-device | Non-personal feature usage events only (e.g. shuffle toggled, playlist created, ad shown); never song/artist/album/filename/path/URI/playlist names/lyrics/search queries/email/location |
 
 No other endpoints exist. Repository-wide searches for `http`/`https` in Dart source found only: `lrclib.net/api`, `itunes.apple.com/search`, `youtube.com/results`, `buymemomo.com`, `voratube.vercel.app`, plus Google's test ad IDs and documentation comments.
 
@@ -85,8 +86,9 @@ Verified **absent** (manifest + code search): `MANAGE_EXTERNAL_STORAGE` / all-fi
 | `crypto` | 3.0.7 | Lyrics cache hashing (MD5 of title/artist/album) | No | No | Local hash only | `lyrics_service.dart` |
 | `package_info_plus` | 10.2.1 | App version display | No | Yes | App's own version | Settings version tile |
 | `flutter_riverpod`, `meta`, `flutter_lints`, `drift_dev`, `build_runner` | — | State / tooling | No | No | None | — |
+| `firebase_core` / `firebase_analytics` | (see pubspec.lock) | Firebase core + Analytics (non-personal feature usage) | **Yes** | Yes | **Medium** — non-personal usage events only | `lib/firebase_options.dart`, `lib/services/analytics_service.dart`; no auth, no crash reporting |
 
-**Verified absent (code + dependency search):** Firebase (all), Crashlytics, Sentry, Mixpanel, Amplitude, PostHog, Datadog, AppsFlyer, Adjust, `device_info`, any analytics/telemetry/attribution package. Search hits for `amplitude`/`adjust` were false positives (ReplayGain audio amplitude code, "Adjust volume" UI string).
+**Verified absent (code + dependency search):** Crashlytics, Sentry, Mixpanel, Amplitude, PostHog, Datadog, AppsFlyer, Adjust, `device_info`, any other analytics/telemetry/attribution package beyond the declared Firebase Analytics. Search hits for `amplitude`/`adjust` were false positives (ReplayGain audio amplitude code, "Adjust volume" UI string).
 
 ## Advertising (Google Mobile Ads) — A vs B
 
@@ -161,7 +163,7 @@ Verified **absent** (manifest + code search): `MANAGE_EXTERNAL_STORAGE` / all-fi
 ## Accounts / cloud
 
 - `No account creation/authentication found.` No OAuth, Sign-In, email collection, profiles, or backends.
-- No Firebase/Supabase/Appwrite/S3/Drive/Dropbox/sync code (verified absent by search).
+- No Firebase Auth/Supabase/Appwrite/S3/Drive/Dropbox/sync code exists; Firebase is used solely for App Check-free Core + Analytics (non-personal usage events).
 - Music files, playlists, favorites, history, settings, lyrics, artwork are **not uploaded** anywhere.
 
 ## Privacy policy consistency check
@@ -175,7 +177,7 @@ Verified **absent** (manifest + code search): `MANAGE_EXTERNAL_STORAGE` / all-fi
 | YouTube user-initiated search | §4 | Accurate |
 | Buy Me a Momo WebView, third-party policy | §4, §12 | Accurate |
 | Test-only advertising; production later; Premium disables ads | §5 | Accurate |
-| No analytics / crash reporting / accounts | §6, §7 | Accurate |
+| Firebase Analytics disclosed (non-personal usage events), no crash reporting / accounts | §6, §7 | Accurate |
 | HTTPS, no absolute security claims | §9 | Accurate |
 | Retention/deletion incl. Android consent flow; third-party retention | §10 | Accurate |
 | **Android Auto Backup of local data** | **Not mentioned** | **Minor gap** — recommended one-sentence addition to §2/§10 noting Android may include app data in device backups governed by Android/Google policies |

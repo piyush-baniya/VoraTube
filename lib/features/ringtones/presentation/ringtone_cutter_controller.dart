@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../services/analytics_service.dart';
 import '../data/audio_util_service.dart';
 import '../domain/ringtone_selection.dart';
 
@@ -197,6 +198,7 @@ class RingtoneCutterController extends ChangeNotifier {
   /// success — if the clip cannot be registered or assigned the outcome is
   /// [SetRingtoneOutcome.failed].
   Future<SetRingtoneOutcome> setAsRingtone() async {
+    AnalyticsService.instance.setRingtoneStarted();
     try {
       await export();
     } catch (_) {
@@ -229,6 +231,7 @@ class RingtoneCutterController extends ChangeNotifier {
     }
     try {
       await _service.setDefaultRingtone(clip.contentUri);
+      AnalyticsService.instance.setRingtoneCompleted();
       _lastSetRingtoneOutcome = SetRingtoneOutcome.assigned;
       notifyListeners();
       return _lastSetRingtoneOutcome!;

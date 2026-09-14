@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../services/analytics_service.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/library_repository.dart';
 import '../../../library/presentation/providers/library_providers.dart';
@@ -15,7 +16,11 @@ class _SearchDebounce extends StateNotifier<String> {
   void submit(String text) {
     _timer?.cancel();
     _timer = Timer(const Duration(milliseconds: 250), () {
-      state = text.trim();
+      final trimmed = text.trim();
+      state = trimmed;
+      // Only an actually-performed (non-empty) search counts; the query text
+      // itself is never logged.
+      if (trimmed.isNotEmpty) AnalyticsService.instance.searchUsed();
     });
   }
 

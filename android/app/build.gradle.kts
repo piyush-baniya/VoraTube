@@ -13,6 +13,8 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
+
 }
 
 android {
@@ -49,10 +51,21 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // AdMob app ID defaults to Google's test app ID for debug builds and
+        // is overridden to VoraTube's production app ID in the release
+        // buildType — mirroring VoraTubeAds.useTestAds (kDebugMode) so a
+        // released app always serves live ads and never a demo app ID.
+        manifestPlaceholders["admobAppId"] =
+            "ca-app-pub-3940256099942544~3347511713"
     }
 
     buildTypes {
         release {
+            // Production AdMob app ID: a released build must serve live IDs.
+            // (VoraTubeAds.useTestAds is false in release and every unit +
+            // this app-level ID resolves to the production AdMob app.)
+            manifestPlaceholders["admobAppId"] =
+                "ca-app-pub-5203454754912425~2417374767"
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("release")

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' hide RepeatMode;
 import 'package:just_audio/just_audio.dart';
 
+import '../../services/analytics_service.dart';
 import 'player_controller.dart';
 import 'queue_order.dart';
 
@@ -870,6 +871,7 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> next() async {
+    AnalyticsService.instance.trackNext();
     _wantPlayback = true;
     if (_queueRefs.isEmpty) {
       return;
@@ -889,6 +891,7 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> previous() async {
+    AnalyticsService.instance.trackPrevious();
     _wantPlayback = true;
     if (_queueRefs.isEmpty) {
       return;
@@ -1569,6 +1572,7 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> setShuffle(bool enabled) async {
+    AnalyticsService.instance.shuffleChanged(enabled);
     _shuffleEnabled = enabled;
     // Never engage just_audio's own shuffle: it would create a second, hidden
     // ordering. Shuffling happens solely on [_queueRefs]; the engine's
@@ -1639,6 +1643,7 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> setRepeat(RepeatMode mode) async {
+    AnalyticsService.instance.repeatChanged(mode.name);
     _repeatMode = mode;
     // Engine loop only matters for Repeat One (repeat the single loaded source
     // in place). Repeat All is implemented by rotating [_queueRefs] on finish,
