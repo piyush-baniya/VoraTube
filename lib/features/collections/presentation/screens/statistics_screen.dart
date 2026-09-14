@@ -518,6 +518,7 @@ class _WeeklyReportSection extends ConsumerWidget {
         bars: breakdown?.weekDaily,
         barLabel: (d) =>
             const ['M', 'T', 'W', 'T', 'F', 'S', 'S'][d.weekday - 1],
+        barTooltip: (d) => _weekdayShort[d.weekday - 1],
       ),
     );
   }
@@ -550,6 +551,7 @@ class _YearlyReportSection extends ConsumerWidget {
           'N',
           'D',
         ][d.month - 1],
+        barTooltip: (d) => _monthName(d.month),
       ),
     );
   }
@@ -562,6 +564,7 @@ class _ReportBody extends StatelessWidget {
     required this.period,
     required this.bars,
     required this.barLabel,
+    required this.barTooltip,
     this.barsLabel = 'By day',
   });
 
@@ -570,6 +573,9 @@ class _ReportBody extends StatelessWidget {
   final PeriodStats? period;
   final List<DayListen>? bars;
   final String Function(DateTime day) barLabel;
+
+  /// Human-readable name shown when hovering/tapping a bar ("Mon", "June").
+  final String Function(DateTime day) barTooltip;
 
   /// Caption shown above the bar chart. Weeks aggregate by day; the yearly
   /// report aggregates by month, so its section passes 'By month'.
@@ -633,7 +639,11 @@ class _ReportBody extends StatelessWidget {
                   const SizedBox(height: AppTokens.s3),
                   _SubLabel(barsLabel),
                   const SizedBox(height: AppTokens.s2),
-                  _BarChart(bars: bars!, barLabel: barLabel),
+                  _BarChart(
+                    bars: bars!,
+                    barLabel: barLabel,
+                    barTooltip: barTooltip,
+                  ),
                 ],
               ],
             ),
@@ -835,10 +845,15 @@ class _HistoryRow extends StatelessWidget {
 }
 
 class _BarChart extends StatelessWidget {
-  const _BarChart({required this.bars, required this.barLabel});
+  const _BarChart({
+    required this.bars,
+    required this.barLabel,
+    required this.barTooltip,
+  });
 
   final List<DayListen> bars;
   final String Function(DateTime day) barLabel;
+  final String Function(DateTime day) barTooltip;
 
   @override
   Widget build(BuildContext context) {
@@ -855,37 +870,45 @@ class _BarChart extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    height:
-                        (maxMs == 0
-                            ? 0
-                            : (b.listenedMs / maxMs).clamp(0.06, 1.0)) *
-                        72,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(6),
-                      color: b.listenedMs > 0
-                          ? accent.withValues(
-                              alpha:
-                                  0.35 +
-                                  0.65 *
-                                      (b.listenedMs / (maxMs == 0 ? 1 : maxMs)),
-                            )
-                          : theme.colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.5),
+              child: Tooltip(
+                message:
+                    '${barTooltip(b.day)} · '
+                    '${b.plays} ${b.plays == 1 ? 'play' : 'plays'} · '
+                    '${formatListeningDuration(b.listenedMs)}',
+                waitDuration: const Duration(milliseconds: 250),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      height:
+                          (maxMs == 0
+                              ? 0
+                              : (b.listenedMs / maxMs).clamp(0.06, 1.0)) *
+                          72,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        color: b.listenedMs > 0
+                            ? accent.withValues(
+                                alpha:
+                                    0.35 +
+                                    0.65 *
+                                        (b.listenedMs /
+                                            (maxMs == 0 ? 1 : maxMs)),
+                              )
+                            : theme.colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.5),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    barLabel(b.day),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: 10,
-                      color: theme.colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 4),
+                    Text(
+                      barLabel(b.day),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontSize: 10,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -894,20 +917,24 @@ class _BarChart extends StatelessWidget {
   }
 }
 
-String _formatDay(DateTime day) {
-  const months = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  return '${months[day.month - 1]} ${day.day}, ${day.year}';
-}
+const _weekdayShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const _monthLong = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+String _monthName(int month) => _monthLong[month - 1];
+
+String _formatDay(DateTime day) =>
+    '${_monthLong[day.month - 1]} ${day.day}, ${day.year}';

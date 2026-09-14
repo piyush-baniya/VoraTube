@@ -2027,6 +2027,8 @@ extension CollectionQueries on LibraryRepository {
     final dayPlays = <String, int>{};
     // year+monthKey -> ms
     final monthMs = <String, int>{};
+    // year+monthKey -> plays
+    final monthPlays = <String, int>{};
     // period key -> artistKey normalized -> plays
     final weekArtistPlays = <String, int>{};
     final yearArtistPlays = <String, int>{};
@@ -2057,6 +2059,7 @@ extension CollectionQueries on LibraryRepository {
         (v) => v + listenedMs,
         ifAbsent: () => listenedMs,
       );
+      monthPlays.update(monthKey, (v) => v + 1, ifAbsent: () => 1);
 
       final inWeek = !day.isBefore(weekStart) && day.isBefore(weekEnd);
       final songKey = _songHistoryKey(title, artist);
@@ -2167,6 +2170,7 @@ extension CollectionQueries on LibraryRepository {
         DayListen(
           day: DateTime(reference.year, m, 1),
           listenedMs: monthMs[key] ?? 0,
+          plays: monthPlays[key] ?? 0,
         ),
       );
     }

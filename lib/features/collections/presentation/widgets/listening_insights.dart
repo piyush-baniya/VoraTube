@@ -93,9 +93,9 @@ class ListeningInsightsStrip extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: _CompactCard(
-                        icon: Icons.library_music_rounded,
-                        label: 'Songs listened',
-                        value: '${breakdown?.totalUniqueSongs ?? 0}',
+                        icon: Icons.play_circle_outline_rounded,
+                        label: 'Songs played',
+                        value: '${breakdown?.year.plays ?? 0}',
                         tint: AppColors.accent,
                       ),
                     ),
@@ -105,7 +105,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                         icon: Icons.schedule_rounded,
                         label: 'Duration listened',
                         value: formatListeningDuration(
-                          breakdown?.totalListenedMs ?? 0,
+                          breakdown?.year.listenedMs ?? 0,
                         ),
                         tint: AppColors.accent,
                       ),
