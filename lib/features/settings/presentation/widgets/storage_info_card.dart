@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../providers/settings_providers.dart';
 
@@ -22,18 +22,17 @@ class StorageInfoCard extends ConsumerWidget {
 
   Widget _buildLoading(BuildContext context) {
     final theme = Theme.of(context);
+    final surfaces = context.surfaces;
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
       padding: const EdgeInsets.all(AppTokens.s5),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        color: surfaces.card,
         borderRadius: BorderRadius.circular(AppTokens.rLg),
         border: Border.all(
-          color: isDark
-              ? AppColors.borderSubtleDark
-              : AppColors.borderSubtleLight,
+          color: surfaces.outlineVariant,
           width: AppTokens.borderHairline,
         ),
         boxShadow: [
@@ -69,18 +68,17 @@ class StorageInfoCard extends ConsumerWidget {
 
   Widget _buildError(BuildContext context) {
     final theme = Theme.of(context);
+    final surfaces = context.surfaces;
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
       padding: const EdgeInsets.all(AppTokens.s5),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        color: surfaces.card,
         borderRadius: BorderRadius.circular(AppTokens.rLg),
         border: Border.all(
-          color: isDark
-              ? AppColors.borderSubtleDark
-              : AppColors.borderSubtleLight,
+          color: surfaces.outlineVariant,
           width: AppTokens.borderHairline,
         ),
         boxShadow: [
@@ -110,17 +108,16 @@ class StorageInfoCard extends ConsumerWidget {
   Widget _buildData(BuildContext context, StorageInfo info) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final surfaces = context.surfaces;
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        color: surfaces.card,
         borderRadius: BorderRadius.circular(AppTokens.rLg),
         border: Border.all(
-          color: isDark
-              ? AppColors.borderSubtleDark
-              : AppColors.borderSubtleLight,
+          color: surfaces.outlineVariant,
           width: AppTokens.borderHairline,
         ),
         boxShadow: [

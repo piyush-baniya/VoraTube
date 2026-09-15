@@ -61,7 +61,7 @@ class _ToastChipContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const purple = Color(0xFF7C4DFF);
+    final purple = Theme.of(context).colorScheme.primary;
     return Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),

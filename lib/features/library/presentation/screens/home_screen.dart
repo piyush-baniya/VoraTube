@@ -6,7 +6,6 @@ import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/scroll_reveal.dart';
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../ads/banner_ad_widget.dart';
@@ -125,7 +124,7 @@ class _NowPlayingBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
 
     return PressableScale(
       // The full player is immersive: push it on the root navigator so it
@@ -304,7 +303,7 @@ class _ContinueListeningHero extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
     final isPlaying = ref.watch(playbackIsPlayingProvider);
 
     return Container(
@@ -481,7 +480,7 @@ class _EmptyStateHero extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(
@@ -603,7 +602,7 @@ class _ScanningState extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
     final scanState = ref.watch(scanControllerProvider);
     final running = scanState is ScanRunning;
     final processed = running ? scanState.processedCount : 0;
@@ -653,7 +652,7 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -728,7 +727,7 @@ class _SkeletonSongTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
 
     return Padding(
       padding: const EdgeInsets.symmetric(

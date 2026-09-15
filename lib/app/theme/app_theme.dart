@@ -2,80 +2,173 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 import 'app_tokens.dart';
+import 'palettes.dart';
+
+export 'palettes.dart'
+    show
+        AppPalette,
+        AppPalettes,
+        AppSurfaceRamp,
+        AppThemePreset;
+
+/// The theme extension resolved for the active [AppPalette] and brightness so
+/// individual widgets can reach the named neutral colors the presets override
+/// (Midnight navy-black, OLED true black, Sepia parchment/charcoal).
+@immutable
+class VoraTheme extends ThemeExtension<VoraTheme> {
+  const VoraTheme({
+    required this.palette,
+    required this.surfaces,
+    required this.isDark,
+  });
+
+  final AppPalette palette;
+  final AppSurfaceRamp surfaces;
+  final bool isDark;
+
+  @override
+  VoraTheme copyWith({
+    AppPalette? palette,
+    AppSurfaceRamp? surfaces,
+    bool? isDark,
+  }) {
+    return VoraTheme(
+      palette: palette ?? this.palette,
+      surfaces: surfaces ?? this.surfaces,
+      isDark: isDark ?? this.isDark,
+    );
+  }
+
+  @override
+  VoraTheme lerp(ThemeExtension<VoraTheme>? other, double t) {
+    if (other is! VoraTheme) return this;
+    // Theme switches are instant (themeAnimationDuration is zero), so pick
+    // the nearest side instead of animating color fields.
+    return t < 0.5 ? this : other;
+  }
+}
+
+extension VoraThemeContext on BuildContext {
+  /// The active [AppPalette] (accent identity). Falls back to the default
+  /// Purple preset outside the app theme so standalone widgets/tests never
+  /// crash.
+  AppPalette get palette =>
+      Theme.of(this).extension<VoraTheme>()?.palette ?? AppPalette.purple;
+
+  /// The resolved neutral [AppSurfaceRamp] for the current brightness. Falls
+  /// back to the shared neutral ramp outside the app theme.
+  AppSurfaceRamp get surfaces {
+    final resolved = Theme.of(this).extension<VoraTheme>()?.surfaces;
+    if (resolved != null) return resolved;
+    return Theme.of(this).brightness == Brightness.dark
+        ? AppPalettes.darkNeutral
+        : AppPalettes.lightNeutral;
+  }
+}
 
 abstract final class AppTheme {
-  /// Memoized so MaterialApp rebuilds (theme switches, root provider churn)
-  /// reuse the identical ThemeData instead of reconstructing the whole theme
-  /// graph every time.
-  static final ThemeData dark = _build(_darkScheme, isDark: true);
+  /// Memoized per-preset ThemeData pairs so MaterialApp rebuilds (theme
+  /// switches, root provider churn) reuse identical ThemeData instances.
+  static final Map<AppThemePreset, ({ThemeData light, ThemeData dark})>
+  _cache = {};
 
-  static final ThemeData light = _build(_lightScheme, isDark: false);
+  /// Builds (or returns the cached) light + dark ThemeData pair for [preset].
+  static ({ThemeData light, ThemeData dark}) of(AppThemePreset preset) {
+    return _cache.putIfAbsent(preset, () {
+      final palette = AppPalette.of(preset);
+      return (
+        light: _build(palette, isDark: false),
+        dark: _build(palette, isDark: true),
+      );
+    });
+  }
 
-  static ColorScheme get _darkScheme => const ColorScheme.dark(
-    primary: AppColors.accent,
-    onPrimary: AppColors.textPrimaryDark,
-    primaryContainer: AppColors.accentDeep,
-    onPrimaryContainer: AppColors.textPrimaryDark,
-    secondary: AppColors.accentBright,
-    secondaryContainer: AppColors.surfaceHighDark,
-    onSecondaryContainer: AppColors.textPrimaryDark,
-    tertiary: AppColors.success,
-    tertiaryContainer: AppColors.surfaceRaisedDark,
-    onTertiaryContainer: AppColors.textPrimaryDark,
-    error: AppColors.error,
-    onError: AppColors.textPrimaryDark,
-    surface: AppColors.voidBlack,
-    onSurface: AppColors.textPrimaryDark,
-    surfaceContainerLowest: AppColors.voidBlack,
-    surfaceContainerLow: AppColors.surfaceDark,
-    surfaceContainer: AppColors.surfaceDark,
-    surfaceContainerHigh: AppColors.surfaceRaisedDark,
-    surfaceContainerHighest: AppColors.surfaceHighDark,
-    onSurfaceVariant: AppColors.textSecondaryDark,
-    outline: AppColors.outlineDark,
-    outlineVariant: AppColors.borderSubtleDark,
-    scrim: AppColors.overlayDark,
-    shadow: AppColors.voidBlack,
-    inverseSurface: AppColors.inverseSurfaceDark,
-    onInverseSurface: AppColors.inverseOnSurfaceDark,
-    inversePrimary: AppColors.accentDeep,
-  );
+  static ThemeData light(AppThemePreset preset) => of(preset).light;
+  static ThemeData dark(AppThemePreset preset) => of(preset).dark;
 
-  static ColorScheme get _lightScheme => const ColorScheme.light(
-    primary: AppColors.accentDeep,
-    // Light mode uses a deep-purple primary; its content must be white for
-    // contrast (near-black text on the dark-violet button looked muddy).
-    onPrimary: AppColors.textPrimaryDark,
-    primaryContainer: Color(0xFFE9D5FF),
-    onPrimaryContainer: AppColors.accentDeep,
-    secondary: AppColors.accentDeep,
-    secondaryContainer: AppColors.surfaceHighLight,
-    onSecondaryContainer: AppColors.textPrimaryLight,
-    tertiary: AppColors.success,
-    tertiaryContainer: AppColors.surfaceRaisedLight,
-    onTertiaryContainer: AppColors.textPrimaryLight,
-    error: AppColors.error,
-    onError: AppColors.textPrimaryLight,
-    surface: AppColors.paperLight,
-    onSurface: AppColors.textPrimaryLight,
-    surfaceContainerLowest: AppColors.surfaceLight,
-    surfaceContainerLow: AppColors.paperLight,
-    surfaceContainer: AppColors.paperLight,
-    surfaceContainerHigh: AppColors.surfaceRaisedLight,
-    surfaceContainerHighest: AppColors.surfaceHighLight,
-    onSurfaceVariant: AppColors.textSecondaryLight,
-    outline: AppColors.outlineLight,
-    outlineVariant: AppColors.borderSubtleLight,
-    scrim: AppColors.overlayLight,
-    shadow: AppColors.voidBlack,
-    inverseSurface: AppColors.inverseSurfaceLight,
-    onInverseSurface: AppColors.inverseOnSurfaceLight,
-    inversePrimary: AppColors.accent,
-  );
+  static ColorScheme _darkScheme(AppPalette p, AppSurfaceRamp r) {
+    return ColorScheme.dark(
+      primary: p.primary,
+      // Dark-mode on-primary stays white; accent chips/buttons use white text
+      // even on vivid accents like Ember amber.
+      onPrimary: const Color(0xFFFFFFFF),
+      primaryContainer: p.lightDeep,
+      onPrimaryContainer: r.textPrimary,
+      secondary: p.highlight,
+      secondaryContainer: r.surfaceContainerHighest,
+      onSecondaryContainer: r.textPrimary,
+      tertiary: AppColors.success,
+      tertiaryContainer: r.cardElevated,
+      onTertiaryContainer: r.textPrimary,
+      error: AppColors.error,
+      onError: r.textPrimary,
+      surface: r.surface,
+      onSurface: r.textPrimary,
+      surfaceContainerLowest: r.surface,
+      surfaceContainerLow: r.surfaceLow,
+      surfaceContainer: r.surfaceContainer,
+      surfaceContainerHigh: r.surfaceContainerHigh,
+      surfaceContainerHighest: r.surfaceContainerHighest,
+      onSurfaceVariant: r.textSecondary,
+      outline: r.outline,
+      outlineVariant: r.outlineVariant,
+      scrim: r.overlay,
+      shadow: AppColors.voidBlack,
+      inverseSurface: r.inverseSurface,
+      onInverseSurface: r.inverseOnSurface,
+      inversePrimary: p.lightDeep,
+    );
+  }
 
-  static ThemeData _build(ColorScheme scheme, {required bool isDark}) {
-    final baseText = Typography.material2021(colorScheme: scheme).black
-        .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
+  static ColorScheme _lightScheme(AppPalette p, AppSurfaceRamp r) {
+    return ColorScheme.light(
+      primary: p.lightDeep,
+      // Light mode uses a deep primary; its content must stay white for
+      // contrast on the dark-violet button (near-black was muddy).
+      onPrimary: const Color(0xFFFFFFFF),
+      primaryContainer: Color.alphaBlend(
+        p.primary.withValues(alpha: 0.16),
+        r.surface,
+      ),
+      onPrimaryContainer: p.lightDeep,
+      secondary: p.lightDeep,
+      secondaryContainer: r.surfaceContainerHighest,
+      onSecondaryContainer: r.textPrimary,
+      tertiary: AppColors.success,
+      tertiaryContainer: r.cardElevated,
+      onTertiaryContainer: r.textPrimary,
+      error: AppColors.error,
+      onError: r.textPrimary,
+      surface: r.surface,
+      onSurface: r.textPrimary,
+      surfaceContainerLowest: r.surfaceLow,
+      surfaceContainerLow: r.surface,
+      surfaceContainer: r.surface,
+      surfaceContainerHigh: r.surfaceContainerHigh,
+      surfaceContainerHighest: r.surfaceContainerHighest,
+      onSurfaceVariant: r.textSecondary,
+      outline: r.outline,
+      outlineVariant: r.outlineVariant,
+      scrim: r.overlay,
+      shadow: AppColors.voidBlack,
+      inverseSurface: r.inverseSurface,
+      onInverseSurface: r.inverseOnSurface,
+      inversePrimary: p.primary,
+    );
+  }
+
+  static ThemeData _build(AppPalette palette, {required bool isDark}) {
+    final scheme =
+        isDark ? _darkScheme(palette, palette.darkRamp) : _lightScheme(
+          palette,
+          palette.lightRamp,
+        );
+    final ramp = isDark ? palette.darkRamp : palette.lightRamp;
+
+    final baseText = Typography.material2021(colorScheme: scheme).black.apply(
+      bodyColor: scheme.onSurface,
+      displayColor: scheme.onSurface,
+    );
 
     final textTheme = baseText.copyWith(
       displayLarge: baseText.displayLarge?.copyWith(
@@ -160,8 +253,9 @@ abstract final class AppTheme {
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
       hoverColor: Colors.transparent,
+      extensions: [VoraTheme(palette: palette, surfaces: ramp, isDark: isDark)],
       dividerTheme: DividerThemeData(
-        color: isDark ? AppColors.dividerDark : AppColors.dividerLight,
+        color: ramp.divider,
         thickness: AppTokens.borderHairline,
         space: AppTokens.borderHairline,
         indent: 0,
@@ -265,9 +359,7 @@ abstract final class AppTheme {
         elevation: 4,
       ),
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: isDark
-            ? AppColors.surfaceDark
-            : AppColors.surfaceLight,
+        backgroundColor: isDark ? ramp.surfaceContainer : ramp.surfaceLow,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(
@@ -276,15 +368,13 @@ abstract final class AppTheme {
         ),
         showDragHandle: true,
         dragHandleSize: const Size(36, 4),
-        dragHandleColor: isDark
-            ? AppColors.textTertiaryDark.withValues(alpha: 0.4)
-            : AppColors.textTertiaryLight.withValues(alpha: 0.4),
+        dragHandleColor: ramp.textTertiary.withValues(alpha: 0.4),
         constraints: const BoxConstraints(maxWidth: AppTokens.contentMaxWidth),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: isDark
-            ? AppColors.surfaceRaisedDark
-            : AppColors.surfaceLight,
+            ? ramp.surfaceContainerHigh
+            : ramp.surfaceLow,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTokens.rXxl),
@@ -298,9 +388,7 @@ abstract final class AppTheme {
           borderRadius: BorderRadius.circular(AppTokens.rFull),
         ),
         side: BorderSide(
-          color: isDark
-              ? AppColors.borderSubtleDark
-              : AppColors.borderSubtleLight,
+          color: ramp.outlineVariant,
           width: AppTokens.borderThin,
         ),
         labelStyle: textTheme.labelMedium,
@@ -309,9 +397,7 @@ abstract final class AppTheme {
           vertical: AppTokens.s1,
         ),
         labelPadding: EdgeInsets.zero,
-        backgroundColor: isDark
-            ? AppColors.surfaceRaisedDark
-            : AppColors.surfaceRaisedLight,
+        backgroundColor: ramp.cardElevated,
         selectedColor: scheme.primary.withValues(alpha: 0.16),
         secondarySelectedColor: scheme.secondary.withValues(alpha: 0.16),
         pressElevation: 0,
@@ -319,16 +405,14 @@ abstract final class AppTheme {
         shadowColor: Colors.transparent,
       ),
       cardTheme: CardThemeData(
-        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        color: ramp.card,
         elevation: 0,
         shadowColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTokens.rLg),
           side: BorderSide(
-            color: isDark
-                ? AppColors.borderSubtleDark
-                : AppColors.borderSubtleLight,
+            color: ramp.outlineVariant,
             width: AppTokens.borderHairline,
           ),
         ),
@@ -357,9 +441,7 @@ abstract final class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: isDark
-            ? AppColors.surfaceRaisedDark
-            : AppColors.surfaceRaisedLight,
+        fillColor: ramp.cardElevated,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s5,
           vertical: AppTokens.s3,
@@ -399,18 +481,12 @@ abstract final class AppTheme {
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
         color: scheme.primary,
-        linearTrackColor: isDark
-            ? AppColors.surfaceHighDark
-            : AppColors.surfaceHighLight,
-        circularTrackColor: isDark
-            ? AppColors.surfaceHighDark
-            : AppColors.surfaceHighLight,
+        linearTrackColor: ramp.surfaceContainerHighest,
+        circularTrackColor: ramp.surfaceContainerHighest,
       ),
       sliderTheme: SliderThemeData(
         activeTrackColor: scheme.primary,
-        inactiveTrackColor: isDark
-            ? AppColors.surfaceHighDark
-            : AppColors.surfaceHighLight,
+        inactiveTrackColor: ramp.surfaceContainerHighest,
         thumbColor: scheme.primary,
         overlayColor: scheme.primary.withValues(alpha: 0.12),
         valueIndicatorColor: scheme.primary,
@@ -426,23 +502,19 @@ abstract final class AppTheme {
           if (states.contains(WidgetState.selected)) {
             return scheme.primary;
           }
-          return isDark
-              ? AppColors.textTertiaryDark
-              : AppColors.textTertiaryLight;
+          return ramp.textTertiary;
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return scheme.primary.withValues(alpha: 0.32);
           }
-          return isDark
-              ? AppColors.surfaceHighDark
-              : AppColors.surfaceHighLight;
+          return ramp.surfaceContainerHighest;
         }),
         trackOutlineColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return Colors.transparent;
           }
-          return isDark ? AppColors.outlineDark : AppColors.outlineLight;
+          return ramp.outline;
         }),
         overlayColor: WidgetStateProperty.resolveWith((states) {
           return scheme.primary.withValues(alpha: 0.12);
@@ -458,7 +530,7 @@ abstract final class AppTheme {
         }),
         checkColor: WidgetStateProperty.all(scheme.onPrimary),
         side: BorderSide(
-          color: isDark ? AppColors.outlineDark : AppColors.outlineLight,
+          color: ramp.outline,
           width: AppTokens.borderThin,
         ),
         shape: RoundedRectangleBorder(
@@ -478,60 +550,50 @@ abstract final class AppTheme {
       menuTheme: MenuThemeData(
         style: MenuStyle(
           backgroundColor: WidgetStateProperty.all(
-            isDark ? AppColors.surfaceRaisedDark : AppColors.surfaceLight,
+            isDark ? ramp.cardElevated : ramp.surfaceLow,
           ),
           surfaceTintColor: WidgetStateProperty.all(Colors.transparent),
           shape: WidgetStateProperty.all(
             RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppTokens.rLg),
               side: BorderSide(
-                color: isDark
-                    ? AppColors.borderSubtleDark
-                    : AppColors.borderSubtleLight,
+                color: ramp.outlineVariant,
                 width: AppTokens.borderHairline,
               ),
             ),
           ),
           elevation: WidgetStateProperty.all(8),
           shadowColor: WidgetStateProperty.all(
-            AppColors.voidBlack.withValues(alpha: 0.4),
+            Colors.black.withValues(alpha: 0.4),
           ),
         ),
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: isDark ? AppColors.surfaceRaisedDark : AppColors.surfaceLight,
+        color: isDark ? ramp.cardElevated : ramp.surfaceLow,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTokens.rLg),
           side: BorderSide(
-            color: isDark
-                ? AppColors.borderSubtleDark
-                : AppColors.borderSubtleLight,
+            color: ramp.outlineVariant,
             width: AppTokens.borderHairline,
           ),
         ),
         elevation: 8,
-        shadowColor: AppColors.voidBlack.withValues(alpha: 0.4),
+        shadowColor: Colors.black.withValues(alpha: 0.4),
         textStyle: textTheme.bodyMedium,
         labelTextStyle: WidgetStateProperty.all(textTheme.bodyMedium),
       ),
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
-          color: isDark
-              ? AppColors.surfaceHighestDark
-              : AppColors.surfaceHighestLight,
+          color: ramp.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(AppTokens.rMd),
           border: Border.all(
-            color: isDark
-                ? AppColors.borderSubtleDark
-                : AppColors.borderSubtleLight,
+            color: ramp.outlineVariant,
             width: AppTokens.borderHairline,
           ),
         ),
         textStyle: textTheme.labelSmall?.copyWith(
-          color: isDark
-              ? AppColors.textSecondaryDark
-              : AppColors.textSecondaryLight,
+          color: ramp.textSecondary,
         ),
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s3,
@@ -562,12 +624,8 @@ abstract final class AppTheme {
           borderRadius: BorderRadius.circular(AppTokens.rMd),
           side: BorderSide.none,
         ),
-        backgroundColor: isDark
-            ? AppColors.surfaceRaisedDark
-            : AppColors.surfaceRaisedLight,
-        collapsedBackgroundColor: isDark
-            ? AppColors.surfaceDark
-            : AppColors.surfaceLight,
+        backgroundColor: ramp.cardElevated,
+        collapsedBackgroundColor: ramp.surfaceContainer,
         textColor: scheme.onSurface,
         collapsedTextColor: scheme.onSurface,
         iconColor: scheme.onSurfaceVariant,

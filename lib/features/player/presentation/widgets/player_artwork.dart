@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/ingest/artwork/artwork_file_cache.dart';
 
@@ -183,14 +182,14 @@ class _ArtworkFallback extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: isDark
               ? [
-                  AppColors.voidBlack,
-                  AppColors.surfaceDark,
-                  AppColors.surfaceRaisedDark,
+                  colorScheme.surfaceContainerLowest,
+                  colorScheme.surfaceContainer,
+                  colorScheme.surfaceContainerHigh,
                 ]
               : [
-                  AppColors.paperLight,
-                  AppColors.surfaceLight,
-                  AppColors.surfaceRaisedLight,
+                  colorScheme.surface,
+                  colorScheme.surfaceContainerLowest,
+                  colorScheme.surfaceContainerHigh,
                 ],
           stops: const [0.0, 0.5, 1.0],
         ),

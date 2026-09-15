@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../player/presentation/providers/player_providers.dart';
@@ -163,10 +162,12 @@ class RotatingArtworkState extends ConsumerState<RotatingArtwork>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      AppColors.accent.withValues(
+                      Theme.of(context).colorScheme.primary.withValues(
                         alpha: 0.06 + 0.02 * _glowController.value,
                       ),
-                      AppColors.accent.withValues(alpha: 0.01),
+                      Theme.of(context).colorScheme.primary.withValues(
+                        alpha: 0.01,
+                      ),
                       Colors.transparent,
                     ],
                     stops: const [0.0, 0.5, 1.0],
@@ -307,14 +308,14 @@ class _ArtworkFallback extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: isDark
               ? [
-                  AppColors.voidBlack,
-                  AppColors.surfaceDark,
-                  AppColors.surfaceRaisedDark,
+                  colorScheme.surfaceContainerLowest,
+                  colorScheme.surfaceContainer,
+                  colorScheme.surfaceContainerHigh,
                 ]
               : [
-                  AppColors.paperLight,
-                  AppColors.surfaceLight,
-                  AppColors.surfaceRaisedLight,
+                  colorScheme.surface,
+                  colorScheme.surfaceContainerLowest,
+                  colorScheme.surfaceContainerHigh,
                 ],
           stops: const [0.0, 0.5, 1.0],
         ),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../../../shared/widgets/pressable_scale.dart';
 
@@ -35,7 +35,7 @@ class SettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
+    final surfaces = context.surfaces;
     final effectivePadding =
         contentPadding ??
         const EdgeInsets.symmetric(
@@ -105,7 +105,7 @@ class SettingsTile extends StatelessWidget {
             child: Divider(
               height: AppTokens.borderHairline,
               thickness: AppTokens.borderHairline,
-              color: isDark ? AppColors.dividerDark : AppColors.dividerLight,
+              color: surfaces.divider,
               indent: 0,
               endIndent: 0,
             ),
@@ -140,7 +140,7 @@ class SettingsSwitchTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
+    final surfaces = context.surfaces;
 
     return SettingsTile(
       isLastInSection: isLastInSection,
@@ -152,12 +152,8 @@ class SettingsSwitchTile extends StatelessWidget {
         onChanged: onChanged,
         activeColor: colorScheme.primary,
         activeTrackColor: colorScheme.primary.withValues(alpha: 0.32),
-        inactiveThumbColor: isDark
-            ? AppColors.textTertiaryDark
-            : AppColors.textTertiaryLight,
-        inactiveTrackColor: isDark
-            ? AppColors.surfaceHighDark
-            : AppColors.surfaceHighLight,
+        inactiveThumbColor: surfaces.textTertiary,
+        inactiveTrackColor: surfaces.surfaceContainerHighest,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       onTap: onTap ?? () => onChanged(!value),

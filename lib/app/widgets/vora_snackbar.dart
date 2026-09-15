@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
 import '../theme/app_tokens.dart';
 
 /// The semantic variants supported by [VoraSnackbar].
@@ -163,14 +164,10 @@ class VoraSnackbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final surfaces = context.surfaces;
     final style = _style(scheme);
-    final isDark = scheme.brightness == Brightness.dark;
-    final surface = isDark
-        ? AppColors.cardElevatedDark
-        : AppColors.cardElevatedLight;
-    final outline = isDark
-        ? AppColors.borderSubtleDark
-        : AppColors.borderSubtleLight;
+    final surface = surfaces.cardElevated;
+    final outline = surfaces.outlineVariant;
 
     return Container(
       decoration: BoxDecoration(
@@ -256,9 +253,7 @@ class VoraSnackbar extends StatelessWidget {
               child: LinearProgressIndicator(
                 value: progress,
                 minHeight: 3,
-                backgroundColor: isDark
-                    ? AppColors.surfaceHighDark
-                    : AppColors.surfaceHighLight,
+                backgroundColor: surfaces.surfaceContainerHighest,
                 valueColor: AlwaysStoppedAnimation<Color>(style.color),
               ),
             ),

@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../../core/storage/device_storage_service.dart';
 import '../../../../features/library/data/library_repository.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
+import '../../../../app/theme/app_theme.dart';
 import '../../data/settings_models.dart';
 
 // ── Storage info ────────────────────────────────────────────────────────
@@ -180,6 +181,11 @@ class AppearanceSettingsController extends StateNotifier<AppearanceSettings> {
     state = state.copyWith(themeMode: mode);
     await _repository.kvSet(SettingsKeys.appearance, state.toJson());
   }
+
+  Future<void> setThemePreset(AppThemePreset preset) async {
+    state = state.copyWith(themePreset: preset);
+    await _repository.kvSet(SettingsKeys.appearance, state.toJson());
+  }
 }
 
 final appearanceSettingsProvider =
@@ -197,6 +203,10 @@ final themeModeProvider = Provider<ThemeMode>((ref) {
     AppThemeMode.light => ThemeMode.light,
     AppThemeMode.system => ThemeMode.system,
   };
+});
+
+final themePresetProvider = Provider<AppThemePreset>((ref) {
+  return ref.watch(appearanceSettingsProvider).themePreset;
 });
 
 // ── App version ─────────────────────────────────────────────────────────

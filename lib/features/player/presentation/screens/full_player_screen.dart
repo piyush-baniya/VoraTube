@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
-import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/top_toast.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
@@ -128,9 +128,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-        systemNavigationBarColor: isDark
-            ? AppColors.voidBlack
-            : AppColors.paperLight,
+        systemNavigationBarColor: colorScheme.surface,
         systemNavigationBarIconBrightness: isDark
             ? Brightness.light
             : Brightness.dark,
@@ -579,8 +577,16 @@ class _ImmersiveBackgroundState extends ConsumerState<_ImmersiveBackground>
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: isDark
-                  ? AppColors.voidGradientDark
-                  : AppColors.voidGradientLight,
+                  ? [
+                      context.surfaces.surface,
+                      context.surfaces.card,
+                      context.surfaces.cardElevated,
+                    ]
+                  : [
+                      context.surfaces.surface,
+                      context.surfaces.surfaceLow,
+                      context.surfaces.cardElevated,
+                    ],
             ),
           ),
         ),
@@ -607,9 +613,7 @@ class _ImmersiveBackgroundState extends ConsumerState<_ImmersiveBackground>
               end: Alignment.bottomCenter,
               colors: [
                 Colors.transparent,
-                isDark
-                    ? AppColors.voidBlack.withValues(alpha: 0.55)
-                    : AppColors.paperLight.withValues(alpha: 0.55),
+                colorScheme.surface.withValues(alpha: 0.55),
               ],
               stops: const [0.45, 1.0],
             ),
@@ -1134,9 +1138,7 @@ class _EmptyPlayer extends StatelessWidget {
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-        systemNavigationBarColor: isDark
-            ? AppColors.voidBlack
-            : AppColors.paperLight,
+        systemNavigationBarColor: colorScheme.surface,
         systemNavigationBarIconBrightness: isDark
             ? Brightness.light
             : Brightness.dark,
@@ -1180,7 +1182,7 @@ class _EmptyPlayer extends StatelessWidget {
                   ],
                 ),
               ),
-              const Expanded(
+              Expanded(
                 child: Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1188,13 +1190,15 @@ class _EmptyPlayer extends StatelessWidget {
                       Icon(
                         Icons.music_note_rounded,
                         size: 64,
-                        color: Color(0x409C9CA6),
+                        color: colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.25,
+                        ),
                       ),
-                      SizedBox(height: AppTokens.s4),
+                      const SizedBox(height: AppTokens.s4),
                       Text(
                         'No song playing',
                         style: TextStyle(
-                          color: Color(0xFF9C9CA6),
+                          color: colorScheme.onSurfaceVariant,
                           fontSize: 15,
                         ),
                       ),

@@ -136,9 +136,11 @@ class _SplashScreenState extends State<_SplashScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
 
     return Scaffold(
+      // The splash is a deliberate branded moment — it stays near-black in
+      // both brightness modes (like the donation screen) so the logo pops.
       backgroundColor: AppColors.voidBlack,
       body: Stack(
         fit: StackFit.expand,

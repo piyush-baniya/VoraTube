@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 
 /// A premium settings section with title and children.
@@ -20,7 +20,7 @@ class SettingsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
+    final surfaces = context.surfaces;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,19 +44,17 @@ class SettingsSection extends StatelessWidget {
         Container(
           margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
           decoration: BoxDecoration(
-            color: isDark ? AppColors.cardDark : AppColors.cardLight,
+            color: surfaces.card,
             borderRadius: BorderRadius.circular(AppTokens.rLg),
             border: showBorder
                 ? Border.all(
-                    color: isDark
-                        ? AppColors.borderSubtleDark
-                        : AppColors.borderSubtleLight,
+                    color: surfaces.outlineVariant,
                     width: AppTokens.borderHairline,
                   )
                 : null,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.05),
+                color: Colors.black.withValues(alpha: theme.brightness == Brightness.dark ? 0.15 : 0.05),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
                 spreadRadius: -4,
@@ -90,7 +88,7 @@ class SettingsSectionWithIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
+    final surfaces = context.surfaces;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,19 +118,17 @@ class SettingsSectionWithIcon extends StatelessWidget {
         Container(
           margin: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
           decoration: BoxDecoration(
-            color: isDark ? AppColors.cardDark : AppColors.cardLight,
+            color: surfaces.card,
             borderRadius: BorderRadius.circular(AppTokens.rLg),
             border: showBorder
                 ? Border.all(
-                    color: isDark
-                        ? AppColors.borderSubtleDark
-                        : AppColors.borderSubtleLight,
+                    color: surfaces.outlineVariant,
                     width: AppTokens.borderHairline,
                   )
                 : null,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.15 : 0.05),
+                color: Colors.black.withValues(alpha: theme.brightness == Brightness.dark ? 0.15 : 0.05),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
                 spreadRadius: -4,

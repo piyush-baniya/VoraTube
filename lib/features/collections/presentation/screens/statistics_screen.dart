@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/empty_state.dart' show EmptyState;
 import '../../../library/data/library_models.dart';
@@ -92,7 +91,7 @@ class _SummaryHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
     // Live favorite count from the in-memory set — a heart tap updates it with
     // no DB refetch, and it reflects the set exactly.
     final favoritesCount = ref.watch(favoriteIdsProvider).length;
@@ -202,7 +201,7 @@ class _StatChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: AppColors.accent),
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
           const SizedBox(width: AppTokens.s1),
           Text(
             value,
@@ -318,7 +317,7 @@ class _SongListSection extends ConsumerWidget {
               width: 3,
               height: 18,
               decoration: BoxDecoration(
-                color: AppColors.accent,
+                color: theme.colorScheme.primary,
                 borderRadius: BorderRadius.circular(1.5),
               ),
             ),
@@ -329,7 +328,7 @@ class _SongListSection extends ConsumerWidget {
                 style: theme.textTheme.labelMedium?.copyWith(
                   letterSpacing: 1.2,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.accent,
+                  color: theme.colorScheme.primary,
                 ),
               ),
             ),
@@ -665,7 +664,7 @@ class _SectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppTokens.s4,
@@ -749,7 +748,7 @@ class _MiniStat extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: AppColors.accent),
+            Icon(icon, size: 16, color: theme.colorScheme.primary),
             const SizedBox(width: 4),
             Text(
               value,
@@ -858,7 +857,7 @@ class _BarChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
     final maxMs = bars.fold<int>(
       0,
       (m, b) => b.listenedMs > m ? b.listenedMs : m,

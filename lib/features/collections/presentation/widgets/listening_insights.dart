@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/library_repository.dart';
@@ -44,6 +43,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
       error: (_, _) => const SizedBox.shrink(),
       data: (stats) {
         if (stats.totalSongs == 0) return const SizedBox.shrink();
+        final accent = Theme.of(context).colorScheme.primary;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -96,7 +96,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                         icon: Icons.play_circle_outline_rounded,
                         label: 'Songs played',
                         value: '${breakdown?.year.plays ?? 0}',
-                        tint: AppColors.accent,
+                        tint: accent,
                       ),
                     ),
                     const SizedBox(width: AppTokens.s2),
@@ -107,7 +107,7 @@ class ListeningInsightsStrip extends ConsumerWidget {
                         value: formatListeningDuration(
                           breakdown?.year.listenedMs ?? 0,
                         ),
-                        tint: AppColors.accent,
+                        tint: accent,
                       ),
                     ),
                   ],
@@ -138,7 +138,7 @@ class _FeaturedCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = colorScheme.primary;
 
     final String value;
     final String? artistLine;

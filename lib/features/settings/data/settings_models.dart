@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme/app_theme.dart';
 import '../../../../core/player/player_controller.dart';
 
 /// User's theme preference.
@@ -92,21 +93,36 @@ class LibrarySettings {
 /// Theme preference.
 @immutable
 class AppearanceSettings {
-  const AppearanceSettings({this.themeMode = AppThemeMode.system});
+  const AppearanceSettings({
+    this.themeMode = AppThemeMode.system,
+    this.themePreset = AppThemePreset.purple,
+  });
 
   final AppThemeMode themeMode;
 
-  AppearanceSettings copyWith({AppThemeMode? themeMode}) {
-    return AppearanceSettings(themeMode: themeMode ?? this.themeMode);
+  /// Which accent identity/surface ramp the app uses. Independent of
+  /// [themeMode]; both are persisted in the same appearance JSON.
+  final AppThemePreset themePreset;
+
+  AppearanceSettings copyWith({
+    AppThemeMode? themeMode,
+    AppThemePreset? themePreset,
+  }) {
+    return AppearanceSettings(
+      themeMode: themeMode ?? this.themeMode,
+      themePreset: themePreset ?? this.themePreset,
+    );
   }
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is AppearanceSettings && other.themeMode == themeMode;
+      other is AppearanceSettings &&
+          other.themeMode == themeMode &&
+          other.themePreset == themePreset;
 
   @override
-  int get hashCode => themeMode.hashCode;
+  int get hashCode => Object.hash(themeMode, themePreset);
 }
 
 /// Aggregated settings state.
@@ -215,15 +231,24 @@ extension LibrarySettingsJson on LibrarySettings {
 
 /// JSON serialization for AppearanceSettings.
 extension AppearanceSettingsJson on AppearanceSettings {
-  String toJson() => '{"themeMode": "${themeMode.name}"}';
+  String toJson() =>
+      '{"themeMode": "${themeMode.name}", "themePreset": "${themePreset.name}"}';
 
   static AppearanceSettings fromJson(String json) {
     try {
       final themeMatch = RegExp(r'"themeMode"\s*:\s*"(\w+)"').firstMatch(json);
+      final presetMatch = RegExp(r'"themePreset"\s*:\s*"(\w+)"')
+          .firstMatch(json);
       return AppearanceSettings(
         themeMode: AppThemeMode.values.firstWhere(
           (e) => e.name == (themeMatch?.group(1) ?? 'system'),
           orElse: () => AppThemeMode.system,
+        ),
+        // Missing/legacy `themePreset` falls back to Purple so old saved
+        // settings migrate onto the default identity without data loss.
+        themePreset: AppThemePreset.values.firstWhere(
+          (e) => e.name == (presetMatch?.group(1) ?? 'purple'),
+          orElse: () => AppThemePreset.purple,
         ),
       );
     } catch (_) {
@@ -260,7 +285,7 @@ extension AppSettingsJson on AppSettings {
  "scanOverWiFiOnly": ${l.scanOverWiFiOnly}}''';
 
   static String appearanceToJson(AppearanceSettings a) =>
-      '{"themeMode": "${a.themeMode.name}"}';
+      '{"themeMode": "${a.themeMode.name}", "themePreset": "${a.themePreset.name}"}';
 
   static AudioSettings _parseAudio(String json) {
     try {
@@ -299,10 +324,16 @@ extension AppSettingsJson on AppSettings {
   static AppearanceSettings _parseAppearance(String json) {
     try {
       final themeMatch = RegExp(r'"themeMode"\s*:\s*"(\w+)"').firstMatch(json);
+      final presetMatch = RegExp(r'"themePreset"\s*:\s*"(\w+)"')
+          .firstMatch(json);
       return AppearanceSettings(
         themeMode: AppThemeMode.values.firstWhere(
           (e) => e.name == (themeMatch?.group(1) ?? 'system'),
           orElse: () => AppThemeMode.system,
+        ),
+        themePreset: AppThemePreset.values.firstWhere(
+          (e) => e.name == (presetMatch?.group(1) ?? 'purple'),
+          orElse: () => AppThemePreset.purple,
         ),
       );
     } catch (_) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/ingest/ingest_service.dart';
@@ -373,13 +374,15 @@ class _AppearanceSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final appearanceSettings = ref.watch(appearanceSettingsProvider);
+    final presets = AppPalettes.all;
+    final selected = appearanceSettings.themePreset;
 
     return SettingsSection(
       title: 'Appearance',
       children: [
         SettingsSelectTile<AppThemeMode>(
           title: 'Theme',
-          subtitle: 'Choose color theme',
+          subtitle: 'Choose light / dark mode',
           value: appearanceSettings.themeMode,
           onChanged: (mode) =>
               ref.read(appearanceSettingsProvider.notifier).setThemeMode(mode),
@@ -389,9 +392,104 @@ class _AppearanceSection extends ConsumerWidget {
             AppThemeMode.light,
           ],
           itemBuilder: (context, mode) => Text(mode.name.capitalize()),
-          isLastInSection: true,
+        ),
+        const SettingsTile(
+          title: 'Color theme',
+          subtitle: 'Accent & surface preset',
+          isLastInSection: false,
+        ),
+        ...presets.map(
+          (palette) => _PresetTile(
+            key: ValueKey(palette.preset),
+            palette: palette,
+            selected: selected == palette.preset,
+            onSelected: (preset) => ref
+                .read(appearanceSettingsProvider.notifier)
+                .setThemePreset(preset),
+            isLastInSection: palette.preset == presets.last.preset,
+          ),
         ),
       ],
+    );
+  }
+}
+
+/// A compact, tappable row for one color-theme preset. The leading swatch
+/// shows the preset's accent gradient; selecting it applies live because the
+/// whole theme is driven by the persisted provider.
+class _PresetTile extends StatelessWidget {
+  const _PresetTile({
+    super.key,
+    required this.palette,
+    required this.selected,
+    required this.onSelected,
+    required this.isLastInSection,
+  });
+
+  final AppPalette palette;
+  final bool selected;
+  final ValueChanged<AppThemePreset> onSelected;
+  final bool isLastInSection;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final ramp = theme.brightness == Brightness.dark
+        ? palette.darkRamp
+        : palette.lightRamp;
+
+    return SettingsTile(
+      title: palette.preset.label,
+      subtitle: palette.preset.mood,
+      isLastInSection: isLastInSection,
+      onTap: () => onSelected(palette.preset),
+      leading: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppTokens.rMd),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: palette.gradient,
+          ),
+          border: Border.all(
+            color: selected
+                ? colorScheme.primary
+                : colorScheme.outlineVariant,
+            width: selected ? 2 : AppTokens.borderHairline,
+          ),
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // A subtle surface swatch hint so custom-surface presets
+          // (Midnight, OLED, Sepia) read differently before you tap.
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: ramp.surface,
+              borderRadius: BorderRadius.circular(AppTokens.rSm),
+              border: Border.all(
+                color: colorScheme.outlineVariant,
+                width: AppTokens.borderHairline,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s2),
+          if (selected)
+            Icon(
+              Icons.check_circle_rounded,
+              size: 20,
+              color: colorScheme.primary,
+            )
+          else
+            const SizedBox(width: 20),
+        ],
+      ),
     );
   }
 }

@@ -8,7 +8,6 @@ import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/utils/scroll_pagination.dart';
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../player/presentation/providers/player_providers.dart';
@@ -143,7 +142,7 @@ class _NowPlayingBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
 
     return PressableScale(
       // Immersive full player: push on the root navigator so it covers the
@@ -191,7 +190,7 @@ class _SongsToolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
     final favoritesOnly = ref.watch(favoritesOnlyProvider);
 
     return Padding(

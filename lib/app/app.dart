@@ -15,6 +15,8 @@ class VoraTubeApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
+    final themePreset = ref.watch(themePresetProvider);
+    final appTheme = AppTheme.of(themePreset);
     // Keep the player's ReplayGain/preamp in sync with persisted audio settings.
     ref.watch(audioSettingsBridgeProvider);
     // Keep the interstitial ad counter alive for the whole session: it listens
@@ -24,8 +26,8 @@ class VoraTubeApp extends ConsumerWidget {
     return MaterialApp(
       title: 'VoraTube',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
+      theme: appTheme.light,
+      darkTheme: appTheme.dark,
       themeMode: themeMode,
       // Default MaterialApp applies a 200ms AnimatedTheme color crossfade in
       // which every theme-dependent widget across all visited IndexedStack tabs

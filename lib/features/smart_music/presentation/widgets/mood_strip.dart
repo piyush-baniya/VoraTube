@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -141,7 +140,7 @@ class _MoodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = colorScheme.primary;
 
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 200),

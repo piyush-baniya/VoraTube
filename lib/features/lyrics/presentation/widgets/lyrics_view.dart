@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/models/lyrics.dart';
 import '../../../player/presentation/providers/player_providers.dart';
@@ -268,9 +267,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
     return Container(
       height: widget.height ?? 320,
       decoration: BoxDecoration(
-        color: isDark
-            ? AppColors.surfaceDark.withValues(alpha: 0.9)
-            : AppColors.surfaceLight.withValues(alpha: 0.9),
+        color: colorScheme.surfaceContainer.withValues(alpha: 0.9),
         borderRadius: const BorderRadius.vertical(
           top: Radius.circular(AppTokens.rXl),
         ),

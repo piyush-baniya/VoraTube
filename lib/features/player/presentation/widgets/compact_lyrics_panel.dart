@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/models/lyrics.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
@@ -267,7 +267,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
     final isOnline = ref.watch(isOnlineProvider);
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final accent = AppColors.accent;
+    final accent = theme.colorScheme.primary;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -327,8 +327,9 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
             decoration: BoxDecoration(
               // Clean solid surface card — deliberately NO gradient: the
               // lyrics card keeps the existing VoraTube surface styling.
-              color: (isDark ? AppColors.surfaceDark : AppColors.surfaceLight)
-                  .withValues(alpha: 0.85),
+              color: context.surfaces.surfaceContainer.withValues(
+                alpha: 0.85,
+              ),
               borderRadius: BorderRadius.circular(AppTokens.rXl),
               border: Border.all(
                 color: accent.withValues(alpha: 0.2),
@@ -643,7 +644,7 @@ class _CompactLyricsPanelState extends ConsumerState<CompactLyricsPanel>
 
     // Typography-only active emphasis: accent colour + scale. No background,
     // pill or glow is drawn behind the active line.
-    final activeColor = AppColors.accent;
+    final activeColor = colorScheme.primary;
     final pastColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.38);
     final futureColor = colorScheme.onSurfaceVariant.withValues(alpha: 0.62);
 
@@ -932,7 +933,7 @@ class _ResumeFollowChip extends StatelessWidget {
                 Icon(
                   Icons.my_location_rounded,
                   size: 14,
-                  color: AppColors.accent,
+                  color: colorScheme.primary,
                 ),
                 const SizedBox(width: AppTokens.s1),
                 Text(
@@ -970,7 +971,7 @@ class _LyricsPanelHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final accent = AppColors.accent;
+    final accent = colorScheme.primary;
 
     if (expanded) {
       return GestureDetector(

@@ -6,7 +6,6 @@ import '../../../library/data/library_repository.dart' show CollectionKind;
 import '../../../library/presentation/screens/filtered_songs_screen.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
-import '../../../../app/theme/app_colors.dart';
 import '../../../../app/theme/app_tokens.dart';
 
 /// Horizontal strip of collection summary cards shown on the Library/Songs
@@ -60,7 +59,7 @@ class _CollectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final accent = AppColors.accent;
+    final accent = colorScheme.primary;
 
     final (icon, gradientColors) = switch (summary.kind) {
       CollectionKind.favorites => (

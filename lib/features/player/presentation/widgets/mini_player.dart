@@ -2,7 +2,7 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
-import '../../../../app/theme/app_colors.dart';
+import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
@@ -191,12 +191,14 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 end: Alignment.bottomRight,
                 colors: isDark
                     ? [
-                        AppColors.surfaceRaisedDark.withValues(alpha: 0.95),
-                        AppColors.surfaceDark.withValues(alpha: 0.92),
+                        context.surfaces.cardElevated.withValues(alpha: 0.95),
+                        context.surfaces.surfaceContainer.withValues(
+                          alpha: 0.92,
+                        ),
                       ]
                     : [
-                        AppColors.surfaceRaisedLight.withValues(alpha: 0.98),
-                        AppColors.surfaceLight.withValues(alpha: 0.96),
+                        context.surfaces.cardElevated.withValues(alpha: 0.98),
+                        context.surfaces.surfaceLow.withValues(alpha: 0.96),
                       ],
               ),
               border: Border.all(
@@ -318,7 +320,7 @@ child: SafeArea(
                                   end: Alignment.bottomRight,
                                   colors: [
                                     colorScheme.primary,
-                                    AppColors.accent,
+                                    context.palette.highlight,
                                   ],
                                 ),
                                 shape: BoxShape.circle,
