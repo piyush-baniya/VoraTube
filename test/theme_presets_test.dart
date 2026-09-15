@@ -300,7 +300,7 @@ void main() {
 
   group('settings UI live switching', () {
     testWidgets(
-        'color theme is a dropdown; choosing one re-themes the app on the fly',
+        'color theme dropdown shows a few rows at once and scrolls to the rest',
         (tester) async {
       // The app runs in ThemeMode.system, so force the platform to dark — the
       // vivid primary and custom surface ramps (OLED true black) only show on
@@ -317,33 +317,39 @@ void main() {
       expect(presetDropdown, findsOneWidget);
       expect(find.text('Purple'), findsOneWidget);
 
-      // Opening the dropdown lists all 9 presets.
+      // Open it: only the top rows are visible at once; the tail (OLED,
+      // Sepia) is cut off until the popup is scrolled.
       await tester.tap(presetDropdown);
       await tester.pumpAndSettle();
-      for (final palette in AppPalettes.all) {
-        expect(
-          find.text(palette.preset.label),
-          findsAtLeastNWidgets(1),
-          reason: '${palette.preset.label} must appear in the color-theme '
-              'dropdown',
-        );
-      }
-
-      // Tap Aurora → the theme is rebuilt instantly (no restart needed).
-      await tester.tap(find.text('Aurora').last);
-      await tester.pumpAndSettle();
-      final settingsContext = tester.element(find.byType(SettingsScreen));
       expect(
-        Theme.of(settingsContext).colorScheme.primary,
+        find.text('Purple').hitTestable(),
+        findsAtLeastNWidgets(1),
+        reason: 'the first preset is visible when the dropdown opens',
+      );
+      expect(
+        find.text('OLED').hitTestable(),
+        findsNothing,
+        reason: 'the dropdown is capped instead of a 9-row wall',
+      );
+      expect(
+        find.text('Sepia').hitTestable(),
+        findsNothing,
+        reason: 'the dropdown keeps only ~4 rows visible at once',
+      );
+
+      // Select Aurora (top of the list) — applies instantly.
+      await _selectPresetInDropdown(tester, 'Aurora');
+      expect(
+        Theme.of(
+          tester.element(find.byType(SettingsScreen)),
+        ).colorScheme.primary,
         AppPalette.aurora.primary,
       );
       expect(find.text('Aurora'), findsOneWidget, reason: 'trailing updates');
 
-      // OLED → neon lime over true black.
-      await tester.tap(find.text('Aurora'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('OLED'));
-      await tester.pumpAndSettle();
+      // Reopen and scroll to OLED — neon lime over true black.
+      await _openPresetDropdown(tester);
+      await _selectPresetInDropdown(tester, 'OLED');
       final oledContext = tester.element(find.byType(SettingsScreen));
       expect(
         Theme.of(oledContext).colorScheme.surface,
@@ -356,26 +362,39 @@ void main() {
         reason: 'OLED carries its own distinct neon accent',
       );
 
-      // Midnight → cyan accent takes over the black canvas.
-      await tester.tap(find.text('OLED'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Midnight'));
-      await tester.pumpAndSettle();
+      // Reopen and scroll to Midnight — cyan over black.
+      await _openPresetDropdown(tester);
+      await _selectPresetInDropdown(tester, 'Midnight');
       final midnightContext = tester.element(find.byType(SettingsScreen));
       expect(
         Theme.of(midnightContext).colorScheme.primary,
         AppPalette.midnight.primary,
       );
 
+      // Reopen and scroll all the way to the last preset (Sepia).
+      await _openPresetDropdown(tester);
+      await _selectPresetInDropdown(tester, 'Sepia');
+      expect(
+        Theme.of(
+          tester.element(find.byType(SettingsScreen)),
+        ).colorScheme.primary,
+        AppPalette.sepia.primary,
+      );
+
       // Flipping the platform brightness to light re-themes via system mode:
-      // the same Midnight preset now uses its light deep accent.
+      // Sepia now uses its parchment light ramp and deep accent.
       tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
       await tester.pumpAndSettle();
       final lightContext = tester.element(find.byType(SettingsScreen));
       expect(
         Theme.of(lightContext).colorScheme.primary,
-        AppPalette.midnight.lightDeep,
+        AppPalette.sepia.lightDeep,
         reason: 'the app must follow system brightness inside a preset',
+      );
+      expect(
+        Theme.of(lightContext).colorScheme.surface,
+        AppPalette.sepia.lightRamp.surface,
+        reason: 'light mode resolves the custom parchment ramp',
       );
     });
 
@@ -407,6 +426,33 @@ void main() {
 }
 
 // ── App harness (mirrors settings_screen_navigation_test) ────────────────
+
+/// Reopens the color-theme dropdown (it closes after every selection).
+Future<void> _openPresetDropdown(WidgetTester tester) async {
+  await tester.tap(find.byType(PopupMenuButton<AppThemePreset>).first);
+  await tester.pumpAndSettle();
+}
+
+/// The popup's scrollable container — the topmost visible
+/// [SingleChildScrollView] while the dropdown menu is open.
+Finder _presetMenu() => find.byType(SingleChildScrollView).last;
+
+/// Scrolls the open dropdown until [label] is tappable, then selects it.
+Future<void> _selectPresetInDropdown(WidgetTester tester, String label) async {
+  for (var i = 0; i < 15; i++) {
+    final item = find
+        .descendant(of: _presetMenu(), matching: find.text(label))
+        .hitTestable();
+    if (tester.any(item)) {
+      await tester.tap(item);
+      await tester.pumpAndSettle();
+      return;
+    }
+    await tester.drag(_presetMenu(), const Offset(0, -100));
+    await tester.pumpAndSettle();
+  }
+  throw StateError('Preset "$label" was not reachable in the dropdown');
+}
 
 class _GrantedPermissionService extends PermissionService {
   const _GrantedPermissionService();

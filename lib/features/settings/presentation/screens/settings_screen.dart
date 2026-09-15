@@ -369,6 +369,11 @@ class _LibrarySection extends ConsumerWidget {
   }
 }
 
+/// Color-theme dropdown caps at 4 rows (48px each + the menu's 16px vertical
+/// padding) so it reads as a compact dropdown; the remaining presets are
+/// reached by scrolling inside the popup.
+const double _kColorThemeMenuMaxHeight = 208.0;
+
 /// Appearance settings section.
 class _AppearanceSection extends ConsumerWidget {
   @override
@@ -424,6 +429,7 @@ class _AppearanceSection extends ConsumerWidget {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
+          menuMaxHeight: _kColorThemeMenuMaxHeight,
           isLastInSection: true,
         ),
       ],

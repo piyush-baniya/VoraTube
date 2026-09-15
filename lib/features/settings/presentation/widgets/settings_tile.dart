@@ -235,6 +235,7 @@ class SettingsSelectTile<T> extends StatelessWidget {
     required this.items,
     this.itemBuilder,
     this.valueBuilder,
+    this.menuMaxHeight,
     this.isLastInSection = false,
   });
 
@@ -250,6 +251,10 @@ class SettingsSelectTile<T> extends StatelessWidget {
   /// [value]'s `toString()` so curated enum labels (e.g. "Rosé", "OLED") can
   /// be shown instead of raw enum names.
   final Widget Function(BuildContext, T)? valueBuilder;
+
+  /// Caps the menu height so only a few rows show at once and the rest are
+  /// reached by scrolling. Null keeps the default (show everything available).
+  final double? menuMaxHeight;
   final bool isLastInSection;
 
   @override
@@ -265,6 +270,9 @@ class SettingsSelectTile<T> extends StatelessWidget {
       trailing: PopupMenuButton<T>(
         initialValue: value,
         onSelected: onChanged,
+        constraints: menuMaxHeight == null
+            ? null
+            : BoxConstraints(maxHeight: menuMaxHeight!),
         itemBuilder: (context) => items.map((item) {
           return PopupMenuItem<T>(
             value: item,
