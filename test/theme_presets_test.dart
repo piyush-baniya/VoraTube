@@ -16,7 +16,6 @@ import 'package:vora_tube/features/player/presentation/providers/player_provider
 import 'package:vora_tube/features/settings/data/settings_models.dart';
 import 'package:vora_tube/features/settings/presentation/providers/settings_providers.dart';
 import 'package:vora_tube/features/settings/presentation/screens/settings_screen.dart';
-import 'package:vora_tube/features/settings/presentation/widgets/settings_tile.dart';
 
 import 'fakes/fake_player.dart';
 
@@ -72,6 +71,23 @@ void main() {
       expect(
         AppPalette.of(AppThemePreset.sepia).lightRamp.surface,
         const Color(0xFFF5EFE4),
+      );
+    });
+
+    test('OLED keeps true black but no longer mirrors Purple accents', () {
+      final oled = AppPalette.of(AppThemePreset.oled);
+      expect(
+        oled.darkRamp.surface,
+        const Color(0xFF000000),
+        reason: 'OLED stays the pure-black canvas',
+      );
+      expect(oled.primary, isNot(AppPalette.purple.primary));
+      expect(oled.highlight, isNot(AppPalette.purple.highlight));
+      expect(oled.lightDeep, isNot(AppPalette.purple.lightDeep));
+      // Every preset must resolve to a distinct accent.
+      expect(
+        AppPalettes.all.map((p) => p.primary).toSet(),
+        hasLength(AppPalettes.all.length),
       );
     });
   });
@@ -283,7 +299,8 @@ void main() {
   });
 
   group('settings UI live switching', () {
-    testWidgets('nine presets are listed and tapping one re-themes the app',
+    testWidgets(
+        'color theme is a dropdown; choosing one re-themes the app on the fly',
         (tester) async {
       // The app runs in ThemeMode.system, so force the platform to dark — the
       // vivid primary and custom surface ramps (OLED true black) only show on
@@ -294,57 +311,54 @@ void main() {
       await _buildApp(tester);
       await _openSettings(tester);
 
+      // The color theme is a single dropdown whose trailing shows the current
+      // preset's curated label.
+      final presetDropdown = find.byType(PopupMenuButton<AppThemePreset>);
+      expect(presetDropdown, findsOneWidget);
+      expect(find.text('Purple'), findsOneWidget);
+
+      // Opening the dropdown lists all 9 presets.
+      await tester.tap(presetDropdown);
+      await tester.pumpAndSettle();
       for (final palette in AppPalettes.all) {
         expect(
           find.text(palette.preset.label),
-          findsOneWidget,
-          reason: '${palette.preset.label} preset row must be visible',
+          findsAtLeastNWidgets(1),
+          reason: '${palette.preset.label} must appear in the color-theme '
+              'dropdown',
         );
       }
 
-      // Default selection is checked on Purple (scoped to its own row
-      // because unrelated success checkmarks appear elsewhere on the screen).
-      final purpleRow = find.ancestor(
-        of: find.text('Purple'),
-        matching: find.byType(SettingsTile),
-      );
-      expect(
-        find.descendant(of: purpleRow, matching: find.byType(Icon)),
-        findsOneWidget,
-      );
-
       // Tap Aurora → the theme is rebuilt instantly (no restart needed).
+      await tester.tap(find.text('Aurora').last);
+      await tester.pumpAndSettle();
+      final settingsContext = tester.element(find.byType(SettingsScreen));
+      expect(
+        Theme.of(settingsContext).colorScheme.primary,
+        AppPalette.aurora.primary,
+      );
+      expect(find.text('Aurora'), findsOneWidget, reason: 'trailing updates');
+
+      // OLED → neon lime over true black.
       await tester.tap(find.text('Aurora'));
       await tester.pumpAndSettle();
-
-      final settingsContext = tester.element(find.byType(SettingsScreen));
-      final appliedPrimary = Theme.of(settingsContext).colorScheme.primary;
-      expect(appliedPrimary, AppPalette.aurora.primary);
-
-      // Check moved onto Aurora.
-      final auroraRow = find.ancestor(
-        of: find.text('Aurora'),
-        matching: find.byType(SettingsTile),
-      );
-      expect(
-        find.descendant(of: auroraRow, matching: find.byType(Icon)),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: purpleRow, matching: find.byType(Icon)),
-        findsNothing,
-      );
-
-      // Tap OLED → the dark surface flips to true black.
       await tester.tap(find.text('OLED'));
       await tester.pumpAndSettle();
       final oledContext = tester.element(find.byType(SettingsScreen));
       expect(
         Theme.of(oledContext).colorScheme.surface,
         const Color(0xFF000000),
+        reason: 'OLED stays the pure-black canvas',
+      );
+      expect(
+        Theme.of(oledContext).colorScheme.primary,
+        AppPalette.oled.primary,
+        reason: 'OLED carries its own distinct neon accent',
       );
 
-      // Tap Midnight → cyan accent takes over the black canvas.
+      // Midnight → cyan accent takes over the black canvas.
+      await tester.tap(find.text('OLED'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Midnight'));
       await tester.pumpAndSettle();
       final midnightContext = tester.element(find.byType(SettingsScreen));
@@ -383,14 +397,10 @@ void main() {
         AppPalette.ember.lightDeep,
         reason: 'app must boot into the saved preset without user action',
       );
-      final emberRow = find.ancestor(
-        of: find.text('Ember'),
-        matching: find.byType(SettingsTile),
-      );
       expect(
-        find.descendant(of: emberRow, matching: find.byType(Icon)),
+        find.text('Ember'),
         findsOneWidget,
-        reason: 'the persisted preset row shows the check on launch',
+        reason: 'dropdown trailing shows the saved preset on launch',
       );
     });
   });

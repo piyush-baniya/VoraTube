@@ -16,7 +16,7 @@ enum AppThemePreset {
   emerald('Emerald', 'Green / Mint'),
   rose('Rosé', 'Pink'),
   midnight('Midnight', 'Cyan / Navy'),
-  oled('OLED', 'True Black'),
+  oled('OLED', 'Lime / True Black'),
   sepia('Sepia', 'Warm / Parchment');
 
   const AppThemePreset(this.label, this.mood);
@@ -372,12 +372,14 @@ class AppPalette {
     darkSurfaces: AppPalettes.midnightDark,
   );
 
-  /// OLED: true-black with the classic violet accent.
+  /// OLED: neon lime over true black — a deliberate departure from the violet
+  /// [AppPalette.purple] default so the same pure-black canvas reads as its
+  /// own distinct identity.
   static const AppPalette oled = AppPalette(
     preset: AppThemePreset.oled,
-    primary: Color(0xFF7C3AED),
-    highlight: Color(0xFF8B5CF6),
-    lightDeep: Color(0xFF5B21B6),
+    primary: Color(0xFFA3E635),
+    highlight: Color(0xFFBEF264),
+    lightDeep: Color(0xFF4D7C0F),
     darkSurfaces: AppPalettes.oledDark,
   );
 

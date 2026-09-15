@@ -234,6 +234,7 @@ class SettingsSelectTile<T> extends StatelessWidget {
     required this.onChanged,
     required this.items,
     this.itemBuilder,
+    this.valueBuilder,
     this.isLastInSection = false,
   });
 
@@ -244,6 +245,11 @@ class SettingsSelectTile<T> extends StatelessWidget {
   final ValueChanged<T> onChanged;
   final List<T> items;
   final Widget Function(BuildContext, T)? itemBuilder;
+
+  /// Builds the trailing label for the current [value]. Falls back to
+  /// [value]'s `toString()` so curated enum labels (e.g. "Rosé", "OLED") can
+  /// be shown instead of raw enum names.
+  final Widget Function(BuildContext, T)? valueBuilder;
   final bool isLastInSection;
 
   @override
@@ -267,12 +273,14 @@ class SettingsSelectTile<T> extends StatelessWidget {
         }).toList(),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppTokens.s2),
-          child: Text(
-            value.toString(),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
+          child:
+              valueBuilder?.call(context, value) ??
+              Text(
+                value.toString(),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
         ),
       ),
     );
