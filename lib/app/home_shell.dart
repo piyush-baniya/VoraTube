@@ -108,6 +108,12 @@ class _HomeShellState extends ConsumerState<HomeShell>
     if (navigator != null && navigator.canPop()) {
       navigator.popUntil((route) => route.isFirst);
     }
+    // The active screen is changing: drop any text-input focus so the soft
+    // keyboard cannot ride along onto the next tab. The Search field — the
+    // shell's only TextField — stays mounted between visits (see
+    // [_KeepAliveTab]), so without this the keyboard would remain open over
+    // every other screen and pop back up whenever Search is revisited.
+    FocusManager.instance.primaryFocus?.unfocus();
     _tabIndex.value = index;
   }
 
@@ -277,6 +283,9 @@ class _TabsHostState extends State<_TabsHost> {
   /// bottom bar follows the finger.
   void _onPageChanged(int page) {
     if (widget.index.value != page) {
+      // A swipe switched the visible screen: drop text-input focus so the
+      // keyboard cannot follow the user into another tab.
+      FocusManager.instance.primaryFocus?.unfocus();
       widget.index.value = page;
     }
   }
