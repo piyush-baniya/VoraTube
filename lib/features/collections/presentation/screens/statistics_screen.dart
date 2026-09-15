@@ -870,49 +870,89 @@ class _BarChart extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: Tooltip(
+              child: _BarTip(
                 message:
                     '${barTooltip(b.day)} · '
                     '${b.plays} ${b.plays == 1 ? 'play' : 'plays'} · '
                     '${formatListeningDuration(b.listenedMs)}',
-                waitDuration: const Duration(milliseconds: 250),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      height:
-                          (maxMs == 0
-                              ? 0
-                              : (b.listenedMs / maxMs).clamp(0.06, 1.0)) *
-                          72,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        color: b.listenedMs > 0
-                            ? accent.withValues(
-                                alpha:
-                                    0.35 +
-                                    0.65 *
-                                        (b.listenedMs /
-                                            (maxMs == 0 ? 1 : maxMs)),
-                              )
-                            : theme.colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.5),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      barLabel(b.day),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontSize: 10,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+                height:
+                    (maxMs == 0
+                        ? 0
+                        : (b.listenedMs / maxMs).clamp(0.06, 1.0)) *
+                    72,
+                color: b.listenedMs > 0
+                    ? accent.withValues(
+                        alpha:
+                            0.35 +
+                            0.65 *
+                                (b.listenedMs /
+                                    (maxMs == 0 ? 1 : maxMs)),
+                      )
+                    : theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.5),
+                label: Text(
+                  barLabel(b.day),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
           ),
       ],
+    );
+  }
+}
+
+/// A single chart bar that reveals its tooltip on a normal tap/click as well
+/// as the default hover and long-press triggers. The tap path calls
+/// [TooltipState.ensureTooltipVisible] directly; the wrapped [Tooltip] keeps
+/// its built-in long-press and mouse-hover behavior untouched.
+class _BarTip extends StatefulWidget {
+  const _BarTip({
+    required this.message,
+    required this.height,
+    required this.color,
+    required this.label,
+  });
+
+  final String message;
+  final double height;
+  final Color color;
+  final Widget label;
+
+  @override
+  State<_BarTip> createState() => _BarTipState();
+}
+
+class _BarTipState extends State<_BarTip> {
+  final GlobalKey<TooltipState> _tooltipKey = GlobalKey<TooltipState>();
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      key: _tooltipKey,
+      message: widget.message,
+      waitDuration: const Duration(milliseconds: 250),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _tooltipKey.currentState?.ensureTooltipVisible(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: widget.height,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                color: widget.color,
+              ),
+            ),
+            const SizedBox(height: 4),
+            widget.label,
+          ],
+        ),
+      ),
     );
   }
 }

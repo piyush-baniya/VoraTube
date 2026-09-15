@@ -9,6 +9,7 @@ import '../features/search/presentation/screens/search_screen.dart';
 import '../features/settings/presentation/screens/settings_screen.dart';
 import '../features/player/presentation/providers/sleep_timer_provider.dart';
 import '../features/player/presentation/widgets/sleep_timer_sheet.dart';
+import 'theme/app_tokens.dart';
 import 'widgets/glass_nav_bar.dart';
 
 /// The app shell: a tabbed scaffold with a persistent [MiniPlayer].
@@ -110,7 +111,7 @@ class _HomeShellState extends ConsumerState<HomeShell>
     _tabIndex.value = index;
   }
 
-  /// Screens held by the [IndexedStack] hosted on the nested navigator's base
+  /// Screens held by the [PageView] hosted on the nested navigator's base
   /// route. Search is passed an [onBack] that returns to the Library tab:
   /// Search lives as a tab (not a pushed route), so popping the navigator
   /// would blank the whole app.
@@ -190,12 +191,16 @@ class _HomeShellState extends ConsumerState<HomeShell>
 /// The lazy, state-preserving tab body shown on the nested navigator's base
 /// route.
 ///
-/// [IndexedStack] builds every child eagerly, which runs each screen's
-/// `initState` at launch — that made Search grab focus and open the keyboard
-/// over the Library, and paid the cost of every screen's providers before the
-/// user had asked for any of them. Building a tab only once it is first
-/// selected avoids both, while [IndexedStack] still preserves its state for
-/// every subsequent visit.
+/// A [PageView] lets the user swipe horizontally between the main screens
+/// while the bottom bar keeps working: [HomeShellState._tabIndex] stays the
+/// single source of truth, so a swipe writes the settled page back to it and a
+/// bottom-bar tap animates the page to follow. The [PageView] deliberately
+/// builds a screen only once it is first reached — building every child
+/// eagerly ran each screen's `initState` at launch, which made Search grab
+/// focus and open the keyboard over the Library, and paid the cost of every
+/// screen's providers before the user had asked for any of them. Visited
+/// screens are kept alive so each tab's scroll position and form state survive
+/// swiping away and back.
 class _TabsHost extends StatefulWidget {
   const _TabsHost({required this.index, required this.screens});
 
@@ -210,9 +215,12 @@ class _TabsHostState extends State<_TabsHost> {
   /// Tabs that have been opened at least once.
   final Set<int> _visited = {0};
 
+  late final PageController _pageController;
+
   @override
   void initState() {
     super.initState();
+    _pageController = PageController(initialPage: widget.index.value);
     widget.index.addListener(_onIndexChanged);
   }
 
@@ -228,28 +236,90 @@ class _TabsHostState extends State<_TabsHost> {
   @override
   void dispose() {
     widget.index.removeListener(_onIndexChanged);
+    _pageController.dispose();
     super.dispose();
   }
 
+  /// Bottom-bar taps land here. [widget.index] is the authoritative tab, so
+  /// the page animates to follow it. When a swipe already settled on that
+  /// page (see [_onPageChanged]) the controller is there and this is a no-op,
+  /// so the notifier and the scroller never fight each other.
   void _onIndexChanged() {
     if (!mounted) return;
-    setState(() => _visited.add(widget.index.value));
+    final target = widget.index.value;
+    if (!_visited.contains(target)) {
+      setState(() => _visited.add(target));
+    }
+    if (!_pageController.hasClients) return;
+    final currentPage = _pageController.page?.round() ?? widget.index.value;
+    if (currentPage == target) return;
+    _pageController.animateToPage(
+      target,
+      duration: AppTokens.medium,
+      curve: AppTokens.easeOut,
+    );
+  }
+
+  /// Pre-builds tabs the user is travelling through, so a fast multi-page
+  /// fling never flashes an empty page mid-gesture. Depth 0 keeps this scoped
+  /// to the [PageView] itself — scroll notifications from the tab content
+  /// (depth ≥ 1) don't count.
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    final page = _pageController.page?.round();
+    if (page == null || page < 0 || page >= widget.screens.length) return false;
+    if (_visited.contains(page)) return false;
+    setState(() => _visited.add(page));
+    return false;
+  }
+
+  /// A swipe settled on [page]: reflect it on the authoritative index so the
+  /// bottom bar follows the finger.
+  void _onPageChanged(int page) {
+    if (widget.index.value != page) {
+      widget.index.value = page;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: widget.index,
-      builder: (context, index, _) => IndexedStack(
-        index: index,
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScrollNotification,
+      child: PageView(
+        controller: _pageController,
+        onPageChanged: _onPageChanged,
         children: <Widget>[
           for (var i = 0; i < widget.screens.length; i++)
             if (_visited.contains(i))
-              widget.screens[i]
+              _KeepAliveTab(child: widget.screens[i])
             else
               const SizedBox.shrink(),
         ],
       ),
     );
+  }
+}
+
+/// Keeps a visited tab's element mounted while it scrolls out of the
+/// [PageView] viewport, so each screen's scroll position and form state
+/// survive switching away and back.
+class _KeepAliveTab extends StatefulWidget {
+  const _KeepAliveTab({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveTab> createState() => _KeepAliveTabState();
+}
+
+class _KeepAliveTabState extends State<_KeepAliveTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

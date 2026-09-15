@@ -158,18 +158,17 @@ void main() {
   });
 
   /// Tab order in the shell: Home, Library, Search, Playlists, Settings.
-  int currentTabIndex(WidgetTester tester) =>
-      tester
-          .widget<IndexedStack>(
-            find
-                .descendant(
-                  of: find.byType(HomeShell),
-                  matching: find.byType(IndexedStack),
-                )
-                .first,
+  int currentTabIndex(WidgetTester tester) {
+    final pageView = tester.widget<PageView>(
+      find
+          .descendant(
+            of: find.byType(HomeShell),
+            matching: find.byType(PageView),
           )
-          .index ??
-      -1;
+          .first,
+    );
+    return pageView.controller?.page?.round() ?? -1;
+  }
 
   /// Pushes a detail route (like Playlist Detail does), then taps the given
   /// bottom-nav destination and asserts the shell lands on the corresponding

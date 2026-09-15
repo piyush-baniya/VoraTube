@@ -175,6 +175,52 @@ void main() {
     expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
   });
 
+  testWidgets('compact bar keeps every control and fits a narrow screen', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    // Sit the bar under an [Expanded], exactly like HomeShell does, so it gets
+    // the same unbounded-height constraints and collapses to its compact size.
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          libraryRepositoryProvider.overrideWithValue(repository),
+          playerProvider.overrideWithValue(_playerWithTrack()),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: const [
+                Expanded(child: SizedBox.shrink()),
+                MiniPlayer(),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // All controls must survive the compaction…
+    expect(find.text('Test Song'), findsOneWidget);
+    expect(find.text('Test Artist'), findsOneWidget);
+    expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
+
+    // …and the bar must be visibly shorter than the pre-compact 68dp floor
+    // without overflowing the 360dp width (an overflow would fail the test).
+    final row = find
+        .descendant(of: find.byType(MiniPlayer), matching: find.byType(Row))
+        .first;
+    expect(tester.getSize(row).height, lessThan(68));
+  });
+
   testWidgets('is hidden when no track is loaded', (tester) async {
     await tester.pumpWidget(_wrap(_RecordingPlayer()));
     await tester.pump();

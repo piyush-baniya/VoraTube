@@ -205,9 +205,9 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.25),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.22),
+                  blurRadius: 20,
+                  offset: const Offset(0, 6),
                   spreadRadius: -6,
                 ),
                 BoxShadow(
@@ -218,61 +218,47 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 ),
               ],
             ),
-            child: SafeArea(
+child: SafeArea(
               top: false,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 68),
+                constraints: const BoxConstraints(minHeight: 60),
                 child: Row(
                   children: [
-                    const SizedBox(width: AppTokens.s3),
+                    const SizedBox(width: AppTokens.s2),
                     // Artwork with Hero. Uses the shared CompactArtwork rather than
                     // a local copy: the private duplicate it replaced had no
                     // `errorBuilder`, so an undecodable file left Flutter's red
                     // error box in the MiniPlayer for the rest of the session.
                     CompactArtwork(
                       path: current.artPath,
-                      size: 48,
+                      size: 44,
                       heroTag: MiniPlayer._heroTag,
                       borderRadius: AppTokens.rMd,
                     ),
-                    const SizedBox(width: AppTokens.s3),
+                    const SizedBox(width: AppTokens.s2),
                     // Metadata + progress
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      current.title,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.titleSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                    ),
-                                    if (current.artist != null)
-                                      Text(
-                                        current.artist!,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color:
-                                                  colorScheme.onSurfaceVariant,
-                                            ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                          Text(
+                            current.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
+                          if (current.artist != null)
+                            Text(
+                              current.artist!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                           const SizedBox(height: 2),
                           // Progress bar
                           _MiniProgress(
@@ -300,7 +286,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                         colorScheme: colorScheme,
                       ),
                     ),
-                    const SizedBox(width: AppTokens.s2),
+                    const SizedBox(width: AppTokens.s1),
                     Semantics(
                       button: true,
                       label: 'Previous',
@@ -313,7 +299,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                         colorScheme: colorScheme,
                       ),
                     ),
-                    const SizedBox(width: AppTokens.s2),
+                    const SizedBox(width: AppTokens.s1),
                     Semantics(
                       button: true,
                       label: snapshot.isPlaying ? 'Pause' : 'Play',
@@ -324,8 +310,8 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                           height: AppTokens.touchTarget,
                           child: Center(
                             child: Container(
-                              width: 42,
-                              height: 42,
+                              width: 40,
+                              height: 40,
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   begin: Alignment.topLeft,
@@ -358,7 +344,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                         ),
                       ),
                     ),
-                    const SizedBox(width: AppTokens.s2),
+                    const SizedBox(width: AppTokens.s1),
                     Semantics(
                       button: true,
                       label: 'Next',
@@ -445,8 +431,8 @@ class _TransportButton extends StatelessWidget {
         height: AppTokens.touchTarget,
         child: Center(
           child: Container(
-            width: 36,
-            height: 36,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: enabled
                   ? colorScheme.surfaceContainerHighest
@@ -499,7 +485,7 @@ class _MiniProgress extends ConsumerWidget {
                 ? position.inMilliseconds / duration.inMilliseconds
                 : 0.0;
 
-            // Tappable progress: a taller invisible hit area so the thin 3px
+            // Tappable progress: a taller invisible hit area so the thin 2px
             // bar is easy to seek without hurting the compact layout. A tap
             // seeks to the tapped fraction. Horizontal drags deliberately do
             // NOT belong to this region: they belong to the whole-card swipe
@@ -519,7 +505,7 @@ class _MiniProgress extends ConsumerWidget {
                   child: Stack(
                     children: [
                       Container(
-                        height: 3,
+                        height: 2,
                         decoration: BoxDecoration(
                           color: colorScheme.outlineVariant.withValues(
                             alpha: 0.3,
@@ -530,7 +516,7 @@ class _MiniProgress extends ConsumerWidget {
                       FractionallySizedBox(
                         widthFactor: progress.clamp(0.0, 1.0),
                         child: Container(
-                          height: 3,
+                          height: 2,
                           decoration: BoxDecoration(
                             color: colorScheme.primary,
                             borderRadius: BorderRadius.circular(
@@ -546,14 +532,14 @@ class _MiniProgress extends ConsumerWidget {
             );
           },
           loading: () => Container(
-            height: 3,
+            height: 2,
             decoration: BoxDecoration(
               color: colorScheme.outlineVariant.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(AppTokens.rFull),
             ),
           ),
           error: (_, __) => Container(
-            height: 3,
+            height: 2,
             decoration: BoxDecoration(
               color: colorScheme.outlineVariant.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(AppTokens.rFull),

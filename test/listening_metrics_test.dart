@@ -138,5 +138,40 @@ final decLabel = find.text('D');
         expect(find.byType(Dialog), findsNothing);
       },
     );
+
+    testWidgets(
+      'a normal tap on a bar reveals its floating tooltip without a dialog',
+      (tester) async {
+        final y = DateTime.now().year;
+        await repo.syncTracks([_msTrack(1), _msTrack(2)]);
+        await repo.recordPlayback([1], DateTime(y, 12, 5, 10));
+        await repo.recordPlayback([1], DateTime(y, 12, 6, 10));
+        await repo.recordPlayback([2], DateTime(y, 12, 7, 10));
+        await repo.addPlaybackListenedMs(
+          songRowId: 2,
+          listenedMs: 300000,
+          at: DateTime(y, 12, 7, 10, 30),
+        );
+
+        tester.view.physicalSize = const Size(800, 2600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(wrap(const StatisticsScreen()));
+        await tester.pumpAndSettle();
+
+        // December's bar is the only 'D' label on screen.
+        final decLabel = find.text('D');
+        await tester.ensureVisible(decLabel);
+        await tester.pumpAndSettle();
+
+        // A plain tap (not a long-press, not a hover) reveals the tooltip.
+        await tester.tap(decLabel);
+        await tester.pumpAndSettle();
+
+        expect(find.text('December · 3 plays · 5m'), findsWidgets);
+        expect(find.byType(Dialog), findsNothing);
+      },
+    );
   });
 }
