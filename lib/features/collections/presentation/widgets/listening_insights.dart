@@ -30,100 +30,122 @@ final listeningStatsProvider = FutureProvider.autoDispose<ListeningStats>((
 /// distinct from the compact cards so the block reads as a hierarchy rather
 /// than four interchangeable tiles. A single card (rather than a horizontal
 /// strip) keeps "Most Played" focused on the #1 song.
-class ListeningInsightsStrip extends ConsumerWidget {
+///
+/// Rendered **stale-while-refresh**: the block is drawn from the latest
+/// committed stats snapshot even while a recompute is in flight. The stats
+/// refresh tick bumps on every playback stats flush (play/pause credits, the
+/// ~5s listening-time flush during playback), and Riverpod's plain
+/// FutureProviders briefly drop their previous value for the frame those
+/// recomputes re-run — which made this section blank out and flicker on Home
+/// whenever playback state changed. Caching the last committed snapshots here
+/// means a reload re-renders the old numbers until the new ones land, never a
+/// blank hole.
+class ListeningInsightsStrip extends ConsumerStatefulWidget {
   const ListeningInsightsStrip({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ListeningInsightsStrip> createState() =>
+      _ListeningInsightsStripState();
+}
+
+class _ListeningInsightsStripState extends ConsumerState<ListeningInsightsStrip> {
+  ListeningStats? _stats;
+  ListeningBreakdown? _breakdown;
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(listeningStatsProvider);
-    final breakdown = ref.watch(listeningBreakdownProvider).valueOrNull;
-    return async.when(
-      skipLoadingOnRefresh: true,
-      loading: () => const SizedBox.shrink(),
-      error: (_, _) => const SizedBox.shrink(),
-      data: (stats) {
-        if (stats.totalSongs == 0) return const SizedBox.shrink();
-        final accent = Theme.of(context).colorScheme.primary;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppTokens.s4,
-                AppTokens.s2,
-                AppTokens.s4,
-                AppTokens.s1,
+    final breakdownAsync = ref.watch(listeningBreakdownProvider);
+
+    if (async is AsyncData<ListeningStats>) _stats = async.value;
+    if (breakdownAsync is AsyncData<ListeningBreakdown>) {
+      _breakdown = breakdownAsync.value;
+    }
+
+    final stats = _stats;
+    if (stats == null || stats.totalSongs == 0) {
+      return const SizedBox.shrink();
+    }
+    final accent = Theme.of(context).colorScheme.primary;
+    final breakdown = _breakdown;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppTokens.s4,
+            AppTokens.s2,
+            AppTokens.s4,
+            AppTokens.s1,
+          ),
+          child: SectionLabel(
+            title: 'Your Listening',
+            trailing: PressableScale(
+              onTap: () => Navigator.of(context).push(
+                pushSharedAxis<void>(context, const StatisticsScreen()),
               ),
-              child: SectionLabel(
-                title: 'Your Listening',
-                trailing: PressableScale(
-                  onTap: () => Navigator.of(context).push(
-                    pushSharedAxis<void>(context, const StatisticsScreen()),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'View Stats',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'View Stats',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.6),
-                      ),
-                    ],
+                  const SizedBox(width: 2),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant
+                        .withValues(alpha: 0.6),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // Compact stat chips. Height scales with text size so the cards
+        // never overflow or clip at larger system font scales.
+        SizedBox(
+          height: MediaQuery.textScalerOf(context)
+              .scale(96)
+              .clamp(80.0, 160.0),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _CompactCard(
+                    icon: Icons.play_circle_outline_rounded,
+                    label: 'Songs played',
+                    value: '${breakdown?.year.plays ?? 0}',
+                    tint: accent,
                   ),
                 ),
-              ),
-            ),
-            // Compact stat chips. Height scales with text size so the cards
-            // never overflow or clip at larger system font scales.
-            SizedBox(
-              height: MediaQuery.textScalerOf(context)
-                  .scale(96)
-                  .clamp(80.0, 160.0),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _CompactCard(
-                        icon: Icons.play_circle_outline_rounded,
-                        label: 'Songs played',
-                        value: '${breakdown?.year.plays ?? 0}',
-                        tint: accent,
-                      ),
+                const SizedBox(width: AppTokens.s2),
+                Expanded(
+                  child: _CompactCard(
+                    icon: Icons.schedule_rounded,
+                    label: 'Duration listened',
+                    value: formatListeningDuration(
+                      breakdown?.year.listenedMs ?? 0,
                     ),
-                    const SizedBox(width: AppTokens.s2),
-                    Expanded(
-                      child: _CompactCard(
-                        icon: Icons.schedule_rounded,
-                        label: 'Duration listened',
-                        value: formatListeningDuration(
-                          breakdown?.year.listenedMs ?? 0,
-                        ),
-                        tint: accent,
-                      ),
-                    ),
-                  ],
+                    tint: accent,
+                  ),
                 ),
-              ),
+              ],
             ),
-            const SizedBox(height: AppTokens.s2),
-            // Featured: most played song (or library summary when idle).
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-              child: _FeaturedCard(stats: stats),
-            ),
-            const SizedBox(height: AppTokens.s3),
-          ],
-        );
-      },
+          ),
+        ),
+        const SizedBox(height: AppTokens.s2),
+        // Featured: most played song (or library summary when idle).
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+          child: _FeaturedCard(stats: stats),
+        ),
+        const SizedBox(height: AppTokens.s3),
+      ],
     );
   }
 }
@@ -277,20 +299,18 @@ class _CompactCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.tint,
-    this.onTap,
   });
 
   final IconData icon;
   final String label;
   final String value;
   final Color tint;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final card = Container(
+    return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(AppTokens.s3),
       decoration: BoxDecoration(
@@ -333,7 +353,5 @@ class _CompactCard extends StatelessWidget {
         ],
       ),
     );
-    if (onTap == null) return card;
-    return PressableScale(onTap: onTap!, child: card);
   }
 }
