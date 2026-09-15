@@ -310,8 +310,8 @@ child: SafeArea(
                           height: AppTokens.touchTarget,
                           child: Center(
                             child: Container(
-                              width: 40,
-                              height: 40,
+                              width: 36,
+                              height: 36,
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   begin: Alignment.topLeft,
@@ -336,7 +336,7 @@ child: SafeArea(
                                 snapshot.isPlaying
                                     ? Icons.pause_rounded
                                     : Icons.play_arrow_rounded,
-                                size: 22,
+                                size: 20,
                                 color: colorScheme.onPrimary,
                               ),
                             ),
@@ -431,8 +431,8 @@ class _TransportButton extends StatelessWidget {
         height: AppTokens.touchTarget,
         child: Center(
           child: Container(
-            width: 32,
-            height: 32,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
               color: enabled
                   ? colorScheme.surfaceContainerHighest
@@ -445,7 +445,7 @@ class _TransportButton extends StatelessWidget {
                 width: AppTokens.borderHairline,
               ),
             ),
-            child: Icon(icon, size: 20, color: iconColor),
+            child: Icon(icon, size: 18, color: iconColor),
           ),
         ),
       ),
