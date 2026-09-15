@@ -269,7 +269,7 @@ child: SafeArea(
                       ),
                     ),
                     // Transport cluster: shuffle | previous | play/pause | next
-                    const SizedBox(width: AppTokens.s1),
+                    const SizedBox(width: 2),
                     Semantics(
                       button: true,
                       label: 'Shuffle',
@@ -286,7 +286,7 @@ child: SafeArea(
                         colorScheme: colorScheme,
                       ),
                     ),
-                    const SizedBox(width: AppTokens.s1),
+                    const SizedBox(width: 2),
                     Semantics(
                       button: true,
                       label: 'Previous',
@@ -299,14 +299,14 @@ child: SafeArea(
                         colorScheme: colorScheme,
                       ),
                     ),
-                    const SizedBox(width: AppTokens.s1),
+                    const SizedBox(width: 2),
                     Semantics(
                       button: true,
                       label: snapshot.isPlaying ? 'Pause' : 'Play',
                       child: PressableScale(
                         onTap: () => ref.read(playerProvider).togglePlay(),
                         child: SizedBox(
-                          width: AppTokens.touchTarget,
+                          width: 44,
                           height: AppTokens.touchTarget,
                           child: Center(
                             child: Container(
@@ -344,7 +344,7 @@ child: SafeArea(
                         ),
                       ),
                     ),
-                    const SizedBox(width: AppTokens.s1),
+                    const SizedBox(width: 2),
                     Semantics(
                       button: true,
                       label: 'Next',
@@ -425,9 +425,10 @@ class _TransportButton extends StatelessWidget {
     return PressableScale(
       onTap: enabled ? onTap : null,
       child: SizedBox(
-        // A 48dp hit area for accessibility, with the smaller visual circle
-        // centered inside so the compact bar keeps its visual proportions.
-        width: AppTokens.touchTarget,
+        // A 44dp-wide, 48dp-tall hit area for accessibility, with the smaller
+        // visual circle centered inside so the compact bar keeps its visual
+        // proportions and the controls sit close together.
+        width: 44,
         height: AppTokens.touchTarget,
         child: Center(
           child: Container(
