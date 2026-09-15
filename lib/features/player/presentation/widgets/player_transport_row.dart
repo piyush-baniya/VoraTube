@@ -11,11 +11,14 @@ import 'volume_booster_sheet.dart';
 
 /// Compact transport row for the Full Player.
 ///
-/// Shuffle, repeat, equalizer, speed and boost share one horizontal row of
+/// Repeat, equalizer, speed, boost and shuffle share one horizontal row of
 /// icon buttons, each sized exactly like the shuffle/repeat toggles (22px icon
-/// on a full touch target, tooltip for the label). Effect buttons open bottom
-/// sheets that edit [audioSettingsProvider]; non-default states highlight the
-/// icon (a non-1x speed, a non-flat preset, or any boost).
+/// on a full touch target, tooltip for the label). Repeat anchors the left
+/// edge and shuffle the right edge, matching the original mode-row layout.
+/// Shuffle and repeat give toast feedback through their callbacks; the effect
+/// buttons open bottom sheets that edit [audioSettingsProvider], with
+/// non-default states highlighted (a non-1x speed, a non-flat preset, or any
+/// boost).
 class PlayerTransportRow extends ConsumerWidget {
   const PlayerTransportRow({
     super.key,
@@ -39,14 +42,6 @@ class PlayerTransportRow extends ConsumerWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _TransportButton(
-          icon: snapshot.shuffleEnabled
-              ? Icons.shuffle_on_rounded
-              : Icons.shuffle_rounded,
-          label: 'Shuffle',
-          isActive: snapshot.shuffleEnabled,
-          onTap: onToggleShuffle,
-        ),
         _TransportButton(
           icon: snapshot.repeatMode == RepeatMode.one
               ? Icons.repeat_one_on_rounded
@@ -85,6 +80,14 @@ class PlayerTransportRow extends ConsumerWidget {
               : 'Volume boost',
           isActive: boostActive,
           onTap: () => showVolumeBoosterSheet(context),
+        ),
+        _TransportButton(
+          icon: snapshot.shuffleEnabled
+              ? Icons.shuffle_on_rounded
+              : Icons.shuffle_rounded,
+          label: 'Shuffle',
+          isActive: snapshot.shuffleEnabled,
+          onTap: onToggleShuffle,
         ),
       ],
     );

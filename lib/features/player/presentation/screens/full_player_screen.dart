@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart' hide RepeatMode;
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart' hide 
+RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
@@ -234,40 +236,52 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final maxArtSize = constraints.maxWidth * 0.75;
-        final artSize = maxArtSize.clamp(220.0, AppTokens.artworkHeroMax);
+        final topGap = (constraints.maxHeight * 0.06).clamp(16.0, 60.0);
+        final bottomGap = (constraints.maxHeight * 0.05).clamp(16.0, 48.0);
+        // Reserve vertical room for the single-line metadata block (title /
+        // artist / album) plus its trailing gap so the artwork can be sized to
+        // FIT the region. On small phones the artwork and titles shrink instead
+        // of making the area scrollable.
+        const metadataReserve = 112.0;
+        final heightFit =
+            constraints.maxHeight - topGap - bottomGap - metadataReserve;
+        final widthCap = constraints.maxWidth * 0.75;
+        final hardCap = math.max(
+          140.0,
+          math.min(widthCap, AppTokens.artworkHeroMax),
+        );
+        final artSize = heightFit.clamp(140.0, hardCap).toDouble();
 
         // Progress and controls live in the fixed bottom region of the parent
-        // Column; this scrollable area only contains the artwork and metadata.
-        // When it fits on screen, scrolling is disabled so the body-level
-        // swipe-down dismiss can reach the artwork area; on short viewports the
-        // area stays scrollable with a bouncing feel.
-        final fitsOnScreen = constraints.maxHeight > 400.0;
+        // Column; this area only contains the artwork and metadata. The content
+        // is sized to fit, so it never needs to scroll — the whole body stays
+        // reachable by the swipe-down dismiss gesture. Only a region too short
+        // to hold even the floor-sized artwork falls back to a bouncing scroll.
+        final fitsWithFloor =
+            topGap + bottomGap + metadataReserve + 140 <= constraints.maxHeight;
         return SingleChildScrollView(
-          physics: fitsOnScreen
+          physics: fitsWithFloor
               ? const NeverScrollableScrollPhysics()
               : const BouncingScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                height: (constraints.maxHeight * 0.06).clamp(16.0, 60.0),
-              ),
+              SizedBox(height: topGap),
               // Rotating Artwork with Hero transition
               RotatingArtwork(
                 path: current.artPath,
                 heroTag: FullPlayerScreen._heroTag,
                 size: artSize,
               ),
-              SizedBox(
-                height: (constraints.maxHeight * 0.05).clamp(16.0, 48.0),
-              ),
-              // Metadata
+              SizedBox(height: bottomGap),
+              // Metadata — fonts step down a size on narrow phones so titles
+              // stay proportionate to the smaller artwork.
               _SongMetadata(
                 title: current.title,
                 artist: current.artist,
                 album: current.album,
+                compact: constraints.maxWidth < 380,
               ),
               const SizedBox(height: AppTokens.s2),
             ],
@@ -886,11 +900,20 @@ class _TopBar extends ConsumerWidget {
 }
 
 class _SongMetadata extends StatelessWidget {
-  const _SongMetadata({required this.title, required this.artist, this.album});
+  const _SongMetadata({
+    required this.title,
+    required this.artist,
+    this.album,
+    this.compact = false,
+  });
 
   final String title;
   final String? artist;
   final String? album;
+
+  /// True on narrow phones: title / artist / album step down one size so the
+  /// metadata block stays proportionate to the smaller responsive artwork.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -905,11 +928,14 @@ class _SongMetadata extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.5,
-            height: 1.2,
-          ),
+          style: (compact
+                  ? theme.textTheme.titleLarge
+                  : theme.textTheme.headlineSmall)
+              ?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+                height: 1.2,
+              ),
         ),
         if (artist != null) ...[
           const SizedBox(height: AppTokens.s1),
@@ -918,11 +944,14 @@ class _SongMetadata extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w400,
-              letterSpacing: 0.2,
-            ),
+            style: (compact
+                    ? theme.textTheme.bodyMedium
+                    : theme.textTheme.bodyLarge)
+                ?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.2,
+                ),
           ),
         ],
         if (album != null) ...[
