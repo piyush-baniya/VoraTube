@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:vora_tube/core/audio/audio_effects.dart';
 import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
@@ -26,6 +27,38 @@ class SpyPlayerController implements PlayerController {
     double preampDb = 0,
   }) async {
     replayGainCalls.add((mode, preampDb));
+  }
+
+  double? lastSpeed;
+  ({bool enabled, EqPreset preset, List<double> levels})? lastEq;
+  ({PlaybackTransitionMode mode, int seconds})? lastTransition;
+  double? lastBalance;
+
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {
+    lastSpeed = speed;
+  }
+
+  @override
+  Future<void> setEqualizer({
+    required bool enabled,
+    required EqPreset preset,
+    required List<double> customLevels,
+  }) async {
+    lastEq = (enabled: enabled, preset: preset, levels: customLevels);
+  }
+
+  @override
+  Future<void> setTransitionMode(
+    PlaybackTransitionMode mode, {
+    int crossfadeSeconds = kDefaultCrossfadeSeconds,
+  }) async {
+    lastTransition = (mode: mode, seconds: crossfadeSeconds);
+  }
+
+  @override
+  Future<void> setAudioBalance(double balance) async {
+    lastBalance = balance;
   }
 
   // --- Unused below, but required by the interface ---

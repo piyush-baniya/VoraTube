@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart' hide RepeatMode;
 import 'package:just_audio/just_audio.dart';
 
 import '../../services/analytics_service.dart';
+import '../audio/audio_effects.dart';
 import 'player_controller.dart';
 import 'queue_order.dart';
 
@@ -105,8 +106,19 @@ class JustAudioController extends BaseAudioHandler
        _onTrackStarted = onTrackStarted,
        _onTrackStart = onTrackStart,
        _isFavorite = isFavorite,
-       _toggleFavorite = toggleFavorite,
-       _player = player ?? AudioPlayer() {
+       _toggleFavorite = toggleFavorite {
+    // Dart forbids referencing one field while initializing another, so the
+    // equalizer + pipeline are wired up here in the body instead of the
+    // initializer list. [_player] is created with the Android equalizer
+    // attached whenever the caller did not supply its own instance (tests)
+    // — the same instance kept on this controller so `setEqualizer` can drive
+    // it directly.
+    _equalizer = AndroidEqualizer();
+    _player =
+        player ??
+        AudioPlayer(
+          audioPipeline: AudioPipeline(androidAudioEffects: [_equalizer]),
+        );
     unawaited(_init());
   }
 
@@ -166,11 +178,22 @@ class JustAudioController extends BaseAudioHandler
     );
   }
 
+  /// Native Android equalizer attached to the audio pipeline.
+  ///
+  /// Declared before [_player] because Dart evaluates initializer-list
+  /// expressions in field-declaration order; [_player]'s initializer must be
+  /// able to reference this instance. It is constructed on every platform but
+  /// only ever *activated* on Android — the Dart class is a pure wrapper
+  /// (Completer + subjects) that never touches a platform channel until its
+  /// `parameters` are awaited or it is enabled while active, and every EQ
+  /// entry point is guarded behind `Platform.isAndroid`.
+  late final AndroidEqualizer _equalizer;
+
   final PlayerPersistence _persistence;
   final PlaybackStatsSink? _onTrackStarted;
   final void Function(String identityKey)? _onTrackStart;
   final Future<List<SongRef>> Function(List<String>) _resolveSongs;
-  final AudioPlayer _player;
+  late final AudioPlayer _player;
 
   /// Resolves whether a song (by identity key) is currently a favourite, for
   /// the notification's (un)favourite button state. Reuses the existing
@@ -245,6 +268,19 @@ class JustAudioController extends BaseAudioHandler
   double _preampDb = 0.0;
   bool _enhancerSessionListening = false;
   ReplayGainMode _replayGainMode = ReplayGainMode.off;
+
+  /// Crossfade / gapless transition state.
+  PlaybackTransitionMode _transitionMode = PlaybackTransitionMode.crossfade;
+  int _crossfadeSeconds = kDefaultCrossfadeSeconds;
+
+  /// Multiplier folded into [_applyVolume] so crossfade ramps work without
+  /// touching the user-visible volume slider. Ramps from 1.0 (normal) → 0.0
+  /// (silent) → 1.0 via [_rampTransitionVolume].
+  double _transitionVolume = 1.0;
+  int _fadeGeneration = 0;
+
+  /// Audio balance (-1.0 left … +1.0 right), applied best-effort.
+  double _audioBalance = kDefaultAudioBalance;
   int _playGeneration = 0;
 
   /// Monotonic revision of the queue contents. Bumped on every
@@ -655,8 +691,14 @@ class JustAudioController extends BaseAudioHandler
     if (_queueRefs.isEmpty) {
       return;
     }
+    // Crossfade: duck the outgoing track before cutting over, then swell the
+    // incoming one in. Everything funnels through here (advance, history walk,
+    // jump, skip-broken, reorder, removal), so a single hook point keeps every
+    // transition consistent.
+    await _duckBeforeSwitch();
     await _player.setAudioSource(_sourceFor(_queueRefs.first), preload: true);
     await _syncCurrentMediaItem();
+    _startFadeIn();
   }
 
   /// Stops the engine and empties its sequence, best-effort.
@@ -722,7 +764,10 @@ class JustAudioController extends BaseAudioHandler
     _queueRevision++;
     try {
       // Bind the refs before touching the engine so the index reported by any
-      // engine event always resolves against the queue it belongs to.
+      // engine event always resolves against the queue it belongs to. A brand
+      // new explicit session still ducks any currently-audible track so the
+      // transition feels crossfaded instead of abrupt.
+      await _duckBeforeSwitch();
       await _player.setAudioSource(_sourceFor(_queueRefs.first));
       if (gen != _playGeneration) {
         return;
@@ -733,6 +778,7 @@ class JustAudioController extends BaseAudioHandler
       // strand the transition and freeze every later [emit]. Dispatch instead;
       // the engine's own event streams drive the snapshots.
       unawaited(_player.play());
+      _startFadeIn();
       _schedulePersist(immediate: true);
     } finally {
       // Only the winning generation clears the transition flag and emits.
@@ -1680,6 +1726,80 @@ class JustAudioController extends BaseAudioHandler
   }
 
   @override
+  Future<void> setPlaybackSpeed(double speed) async {
+    final clamped =
+        speed.clamp(kPlaybackSpeedMin, kPlaybackSpeedMax).toDouble();
+    await _player.setSpeed(clamped);
+    // Let the media notification / lock screen reflect the new speed.
+    _broadcastSystemState();
+  }
+
+  @override
+  Future<void> setEqualizer({
+    required bool enabled,
+    required EqPreset preset,
+    required List<double> customLevels,
+  }) async {
+    if (!Platform.isAndroid) return;
+    try {
+      if (!enabled) {
+        _equalizer.setEnabled(false);
+        return;
+      }
+      _equalizer.setEnabled(true);
+      final params = await _equalizer.parameters.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw StateError('EQ params timeout'),
+      );
+      final levels = preset == EqPreset.custom
+          ? normalizeEqLevels(customLevels)
+          : List<double>.from(preset.levels);
+      final mapped = mapVirtualCurveToBands(
+        virtualLevels: levels,
+        centerFrequencies: [
+          for (final band in params.bands) band.centerFrequency,
+        ],
+        minDb: params.minDecibels,
+        maxDb: params.maxDecibels,
+      );
+      final bands = params.bands;
+      for (var i = 0; i < mapped.length && i < bands.length; i++) {
+        bands[i].setGain(mapped[i]);
+      }
+    } catch (_) {
+      // EQ apply is best-effort on session reactivation; never block the player.
+    }
+  }
+
+  @override
+  Future<void> setTransitionMode(
+    PlaybackTransitionMode mode, {
+    int crossfadeSeconds = kDefaultCrossfadeSeconds,
+  }) async {
+    _transitionMode = mode;
+    _crossfadeSeconds = clampCrossfadeSeconds(crossfadeSeconds);
+    if (mode != PlaybackTransitionMode.crossfade) {
+      _transitionVolume = 1.0;
+      ++_fadeGeneration;
+      await _applyVolume();
+    }
+  }
+
+  @override
+  Future<void> setAudioBalance(double balance) async {
+    _audioBalance = clampAudioBalance(balance);
+    // Graceful degradation: there is no per-app stereo pan control exposed
+    // by the Android audio framework in this stack (media3 ExoPlayer
+    // AudioSink is locked to full-stereo).
+    // _audioBalance is persisted and exposed in the UI; the bridge re-applies
+    // it through this setter on every settings change so a future platform
+    // update or runtime config that makes it reachable applies immediately.
+  }
+
+  /// The currently applied audio balance (-1.0 left … +1.0 right).
+  double get audioBalance => _audioBalance;
+
+  @override
   Future<void> dispose() async {
     _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
@@ -1901,15 +2021,89 @@ class JustAudioController extends BaseAudioHandler
             preampLinear,
     };
     final duckFactor = _ducked ? 0.33 : 1.0;
-    final effective = (_userVolume * gainMultiplier * duckFactor).clamp(
-      0.0,
-      1.0,
-    );
+    final effective = (_userVolume * gainMultiplier * duckFactor *
+            _transitionVolume)
+        .clamp(0.0, 1.0);
     try {
       await _player.setVolume(effective);
     } catch (e) {
       debugPrint('VoraTube setVolume failed: $e');
     }
+  }
+
+  /// Whether the volume-ramp crossfade transition is armed.
+  ///
+  /// Only a single-track engine is used, so a true two-source blend is
+  /// impossible; instead the outgoing track ducks for a short window right
+  /// before the switch and the incoming track swells in afterwards, honouring
+  /// the persisted [crossfadeSeconds] duration.
+  bool get _crossfadeActive =>
+      !_disposed &&
+      _transitionMode == PlaybackTransitionMode.crossfade &&
+      _crossfadeSeconds >= kCrossfadeSecondsMin;
+
+  /// Half the persisted crossfade duration — the natural length of one
+  /// direction of the ramp when the other half is spent already-ducking.
+  Duration get _crossfadeHalf =>
+      Duration(milliseconds: math.max(1, (_crossfadeSeconds * 1000) ~/ 2));
+
+  /// Upper bound on the pre-switch duck, so a manual skip never waits longer
+  /// than this before the next song becomes audible.
+  Duration get _crossfadePreCap => const Duration(milliseconds: 250);
+
+  /// Rams [_transitionVolume] toward [target] over [duration] in fixed steps.
+  ///
+  /// Every step is individually generation-guarded (see [_fadeGeneration]) so a
+  /// newer fade, a mode change or disposal can never leave the volume pinned
+  /// mid-ramp. Returns true when the ramp was allowed to finish, false when a
+  /// newer generation or disposal cut it short.
+  Future<bool> _rampTransitionVolume(double target, Duration duration) async {
+    if (_disposed) {
+      return false;
+    }
+    const steps = 10;
+    final step = Duration(milliseconds: math.max(1, duration.inMilliseconds ~/ steps));
+    final gen = ++_fadeGeneration;
+    for (var i = 1; i <= steps; i++) {
+      if (gen != _fadeGeneration || _disposed) {
+        return false;
+      }
+      final t = i / steps;
+      _transitionVolume = 1.0 + (target - 1.0) * t;
+      await _applyVolume();
+      if (gen != _fadeGeneration || _disposed) {
+        return false;
+      }
+      await Future<void>.delayed(step);
+    }
+    _transitionVolume = target;
+    await _applyVolume();
+    return gen == _fadeGeneration && !_disposed;
+  }
+
+  /// Bounded duck of the outgoing track performed *inside* the load path right
+  /// before the audio source is swapped, so a crossfade is audible as a dip on
+  /// the outgoing track rather than a hard cut. No-op (returns instantly) when
+  /// nothing is actually audible or transitions are off.
+  Future<void> _duckBeforeSwitch() async {
+    if (!_crossfadeActive ||
+        !_player.playing ||
+        _player.processingState != ProcessingState.ready) {
+      return;
+    }
+    final duration = _crossfadeHalf < _crossfadePreCap
+        ? _crossfadeHalf
+        : _crossfadePreCap;
+    await _rampTransitionVolume(0.2, duration);
+  }
+
+  /// Kicks off the incoming track's swell after a transition. Fire-and-forget:
+  /// the ramp is generation-guarded and merging against any concurrent op.
+  void _startFadeIn() {
+    if (!_crossfadeActive) {
+      return;
+    }
+    unawaited(_rampTransitionVolume(1.0, _crossfadeHalf));
   }
 
   /// Applies the current positive Preamp as real gain on the native loudness

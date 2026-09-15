@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vora_tube/core/audio/audio_effects.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 
 /// Regression tests for the **queue reorder index contract**.
@@ -60,6 +61,25 @@ class _RecordingPlayer implements PlayerController {
   Stream<Duration> get positions => const Stream<Duration>.empty();
   @override
   ReplayGainMode get replayGainMode => ReplayGainMode.off;
+
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {}
+
+  @override
+  Future<void> setEqualizer({
+    required bool enabled,
+    required EqPreset preset,
+    required List<double> customLevels,
+  }) async {}
+
+  @override
+  Future<void> setTransitionMode(
+    PlaybackTransitionMode mode, {
+    int crossfadeSeconds = kDefaultCrossfadeSeconds,
+  }) async {}
+
+  @override
+  Future<void> setAudioBalance(double balance) async {}
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

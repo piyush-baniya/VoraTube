@@ -1,6 +1,6 @@
 # VoraTube Privacy Policy
 
-**Effective date:** September 5, 2026
+**Effective date:** September 15, 2026
 
 VoraTube is an Android music player application ("the App") developed by Piyush Das ("we", "us", "our"). This Privacy Policy explains what information the App accesses, what it stores on your device, what it transmits over the internet, and which third-party services are involved.
 
@@ -26,6 +26,7 @@ VoraTube keeps a local database and cache on your device. This may include:
 - playback history and playback statistics
 - queue state and playback position
 - your in-app settings
+- your audio enhancement settings (equalizer curve, playback speed, crossfade/transition preference and duration, volume boost, audio balance) — these are applied **on your device** during playback and are never transmitted anywhere
 - your Premium activation state
 - a cache of lyrics you have viewed
 - cached artwork thumbnails

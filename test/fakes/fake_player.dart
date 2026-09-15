@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:vora_tube/core/audio/audio_effects.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 
 /// Deterministic no-op player for widget tests. Never touches platform
@@ -104,7 +105,6 @@ class FakePlayerController implements PlayerController {
   ReplayGainMode get replayGainMode => ReplayGainMode.off;
 
   @override
-  @override
   Future<void> setReplayGainMode(
     ReplayGainMode mode, {
     double preampDb = 0,
@@ -112,6 +112,46 @@ class FakePlayerController implements PlayerController {
 
   @override
   Future<void> setVolume(double volume) async {}
+
+  // --- Advanced audio settings (recorded for assertion, never touch the UI) ---
+
+  double? lastPlaybackSpeed;
+  bool? eqEnabled;
+  EqPreset? eqPreset;
+  List<double>? eqCustomLevels;
+  PlaybackTransitionMode? transitionMode;
+  int? crossfadeSeconds;
+  double? audioBalance;
+
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {
+    lastPlaybackSpeed = speed;
+  }
+
+  @override
+  Future<void> setEqualizer({
+    required bool enabled,
+    required EqPreset preset,
+    required List<double> customLevels,
+  }) async {
+    eqEnabled = enabled;
+    eqPreset = preset;
+    eqCustomLevels = List<double>.of(customLevels);
+  }
+
+  @override
+  Future<void> setTransitionMode(
+    PlaybackTransitionMode mode, {
+    int crossfadeSeconds = kDefaultCrossfadeSeconds,
+  }) async {
+    transitionMode = mode;
+    this.crossfadeSeconds = crossfadeSeconds;
+  }
+
+  @override
+  Future<void> setAudioBalance(double balance) async {
+    audioBalance = balance;
+  }
 
   @override
   Future<void> dispose() async {

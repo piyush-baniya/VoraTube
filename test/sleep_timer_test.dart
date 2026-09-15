@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:vora_tube/core/audio/audio_effects.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
 import 'package:vora_tube/features/player/presentation/providers/sleep_timer_provider.dart';
@@ -146,6 +147,25 @@ class _RecordingPlayer implements PlayerController {
 
   @override
   Future<void> setVolume(double volume) async {}
+
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {}
+
+  @override
+  Future<void> setEqualizer({
+    required bool enabled,
+    required EqPreset preset,
+    required List<double> customLevels,
+  }) async {}
+
+  @override
+  Future<void> setTransitionMode(
+    PlaybackTransitionMode mode, {
+    int crossfadeSeconds = kDefaultCrossfadeSeconds,
+  }) async {}
+
+  @override
+  Future<void> setAudioBalance(double balance) async {}
 
   @override
   Future<void> dispose() async {}

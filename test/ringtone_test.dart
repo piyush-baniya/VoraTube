@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:vora_tube/core/audio/audio_effects.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/features/ringtones/data/audio_util_service.dart';
 import 'package:vora_tube/features/ringtones/domain/ringtone_selection.dart';
@@ -158,6 +159,21 @@ class _FakePlayer implements PlayerController {
   ReplayGainMode get replayGainMode => ReplayGainMode.off;
   @override
   Future<void> setVolume(double volume) async {}
+  @override
+  Future<void> setPlaybackSpeed(double speed) async {}
+  @override
+  Future<void> setEqualizer({
+    required bool enabled,
+    required EqPreset preset,
+    required List<double> customLevels,
+  }) async {}
+  @override
+  Future<void> setTransitionMode(
+    PlaybackTransitionMode mode, {
+    int crossfadeSeconds = kDefaultCrossfadeSeconds,
+  }) async {}
+  @override
+  Future<void> setAudioBalance(double balance) async {}
 }
 
 void main() {

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_theme.dart';
-import '../../../../core/player/player_controller.dart';
+import '../../../core/audio/audio_effects.dart';
 
 /// User's theme preference.
 enum AppThemeMode {
@@ -29,20 +28,87 @@ enum ReplayGainPreference {
 }
 
 /// Settings for audio playback.
+///
+/// Persistence uses JSON under the [SettingsKeys.audio] key. Unknown keys
+/// introduced by newer app versions are gracefully ignored so the format is
+/// forward-compatible: a user downgrading the app never loses existing replay
+/// gain/preamp settings, and new fields simply default to their neutral
+/// constants when absent.
 @immutable
 class AudioSettings {
   const AudioSettings({
     this.replayGain = ReplayGainPreference.off,
     this.preampDb = 0.0,
+    this.eqEnabled = false,
+    this.eqPreset = EqPreset.flat,
+    this.eqCustomLevels = const [],
+    this.playbackSpeed = kDefaultPlaybackSpeed,
+    this.transitionMode = PlaybackTransitionMode.crossfade,
+    this.crossfadeSeconds = kDefaultCrossfadeSeconds,
+    this.audioBalance = kDefaultAudioBalance,
   });
 
   final ReplayGainPreference replayGain;
   final double preampDb;
 
-  AudioSettings copyWith({ReplayGainPreference? replayGain, double? preampDb}) {
+  /// When true the Android equalizer effect is active and the persisted EQ
+  /// curve is forwarded to just_audio via [mapVirtualCurveToBands].
+  final bool eqEnabled;
+
+  /// Current EQ preset. [EqPreset.custom] activates the 10-band custom
+  /// curve stored in [eqCustomLevels].
+  final EqPreset eqPreset;
+
+  /// The 10-band custom curve (dB), only applied when [eqPreset] is
+  /// [EqPreset.custom]. Persisted normalized to [eqVirtualBandCount] entries.
+  final List<double> eqCustomLevels;
+
+  /// Playback speed multiplied into the audio pipeline. Preserves pitch
+  /// so speeding up / slowing down does not affect voice timbre.
+  final double playbackSpeed;
+
+  /// How one track hands over to the next.
+  final PlaybackTransitionMode transitionMode;
+
+  /// Crossfade half-duration (seconds) when [transitionMode] is
+  /// [PlaybackTransitionMode.crossfade].
+  final int crossfadeSeconds;
+
+  /// Audio balance: -1.0 (left) to +1.0 (right), 0.0 = center.
+  /// Applied best-effort on devices where the platform audio output exposes a
+  /// per-app stereo balance control; otherwise the setting is persisted and
+  /// displayed for future native application.
+  final double audioBalance;
+
+  AudioSettings copyWith({
+    ReplayGainPreference? replayGain,
+    double? preampDb,
+    bool? eqEnabled,
+    EqPreset? eqPreset,
+    List<double>? eqCustomLevels,
+    double? playbackSpeed,
+    PlaybackTransitionMode? transitionMode,
+    int? crossfadeSeconds,
+    double? audioBalance,
+  }) {
     return AudioSettings(
       replayGain: replayGain ?? this.replayGain,
       preampDb: preampDb ?? this.preampDb,
+      eqEnabled: eqEnabled ?? this.eqEnabled,
+      eqPreset: eqPreset ?? this.eqPreset,
+      eqCustomLevels: eqCustomLevels == null
+          ? this.eqCustomLevels
+          : normalizeEqLevels(eqCustomLevels),
+      playbackSpeed: playbackSpeed == null
+          ? this.playbackSpeed
+          : playbackSpeed.clamp(kPlaybackSpeedMin, kPlaybackSpeedMax).toDouble(),
+      transitionMode: transitionMode ?? this.transitionMode,
+      crossfadeSeconds: crossfadeSeconds == null
+          ? this.crossfadeSeconds
+          : clampCrossfadeSeconds(crossfadeSeconds),
+      audioBalance: audioBalance == null
+          ? this.audioBalance
+          : clampAudioBalance(audioBalance),
     );
   }
 
@@ -51,10 +117,27 @@ class AudioSettings {
       identical(this, other) ||
       other is AudioSettings &&
           other.replayGain == replayGain &&
-          other.preampDb == preampDb;
+          other.preampDb == preampDb &&
+          other.eqEnabled == eqEnabled &&
+          other.eqPreset == eqPreset &&
+          other.eqCustomLevels == eqCustomLevels &&
+          other.playbackSpeed == playbackSpeed &&
+          other.transitionMode == transitionMode &&
+          other.crossfadeSeconds == crossfadeSeconds &&
+          other.audioBalance == audioBalance;
 
   @override
-  int get hashCode => Object.hash(replayGain, preampDb);
+  int get hashCode => Object.hash(
+    replayGain,
+    preampDb,
+    eqEnabled,
+    eqPreset,
+    eqCustomLevels,
+    playbackSpeed,
+    transitionMode,
+    crossfadeSeconds,
+    audioBalance,
+  );
 }
 
 /// Settings for library management.
@@ -180,9 +263,18 @@ class SettingsKeys {
 }
 
 /// JSON serialization for AudioSettings.
+///
+/// Uses RegExp-based (no dart:convert dependency) key-value matching so legacy
+/// JSON with missing keys gracefully falls back to defaults.
 extension AudioSettingsJson on AudioSettings {
   String toJson() =>
-      '{"replayGain": "${replayGain.name}", "preampDb": $preampDb}';
+      '{"replayGain": "${replayGain.name}", "preampDb": $preampDb, '
+      '"eqEnabled": $eqEnabled, "eqPreset": "${eqPreset.name}", '
+      '"eqCustomLevels": ${_jsonList(eqCustomLevels)}, '
+      '"playbackSpeed": $playbackSpeed, '
+      '"transitionMode": "${transitionMode.name}", '
+      '"crossfadeSeconds": $crossfadeSeconds, '
+      '"audioBalance": $audioBalance}';
 
   static AudioSettings fromJson(String json) {
     try {
@@ -190,17 +282,67 @@ extension AudioSettingsJson on AudioSettings {
           .firstMatch(json);
       final preampMatch = RegExp(r'"preampDb"\s*:\s*([\d\.\-]+)')
           .firstMatch(json);
+      final eqEnabledMatch = RegExp(r'"eqEnabled"\s*:\s*(true|false)')
+          .firstMatch(json);
+      final eqPresetMatch = RegExp(r'"eqPreset"\s*:\s*"(\w+)"')
+          .firstMatch(json);
+      final eqCustomLevelsMatch =
+          RegExp(r'"eqCustomLevels"\s*:\s*(\[[0-9\.,\-\s]*\])')
+              .firstMatch(json);
+      final playbackSpeedMatch = RegExp(r'"playbackSpeed"\s*:\s*([\d\.\-]+)')
+          .firstMatch(json);
+      final transitionModeMatch = RegExp(r'"transitionMode"\s*:\s*"(\w+)"')
+          .firstMatch(json);
+      final crossfadeSecondsMatch =
+          RegExp(r'"crossfadeSeconds"\s*:\s*(\d+)').firstMatch(json);
+      final audioBalanceMatch = RegExp(r'"audioBalance"\s*:\s*([\d\.\-]+)')
+          .firstMatch(json);
+
+      final parsedCustomLevels = eqCustomLevelsMatch == null
+          ? normalizeEqLevels(const [])
+          : normalizeEqLevels(
+              RegExp(r'[\d\.\-]+')
+                  .allMatches(eqCustomLevelsMatch.group(1)!)
+                  .map((m) => double.parse(m.group(0)!))
+                  .toList(),
+            );
+
+      final parsedSpeed =
+          double.tryParse(playbackSpeedMatch?.group(1) ?? '1') ?? 1.0;
+      final parsedTransition = PlaybackTransitionMode.values.firstWhere(
+        (e) => e.name == (transitionModeMatch?.group(1) ?? 'crossfade'),
+        orElse: () => PlaybackTransitionMode.crossfade,
+      );
+      final parsedCrossfadeSeconds =
+          int.tryParse(crossfadeSecondsMatch?.group(1) ?? '4') ?? 4;
+      final parsedBalance =
+          double.tryParse(audioBalanceMatch?.group(1) ?? '0') ?? 0.0;
+
       return AudioSettings(
         replayGain: ReplayGainPreference.values.firstWhere(
           (e) => e.name == (replayGainMatch?.group(1) ?? 'off'),
           orElse: () => ReplayGainPreference.off,
         ),
         preampDb: double.tryParse(preampMatch?.group(1) ?? '0') ?? 0.0,
+        eqEnabled: eqEnabledMatch?.group(1) == 'true',
+        eqPreset: EqPreset.values.firstWhere(
+          (e) => e.name == (eqPresetMatch?.group(1) ?? 'flat'),
+          orElse: () => EqPreset.flat,
+        ),
+        eqCustomLevels: parsedCustomLevels,
+        playbackSpeed: parsedSpeed.clamp(kPlaybackSpeedMin, kPlaybackSpeedMax).toDouble(),
+        transitionMode: parsedTransition,
+        crossfadeSeconds: clampCrossfadeSeconds(parsedCrossfadeSeconds),
+        audioBalance: clampAudioBalance(parsedBalance),
       );
     } catch (_) {
       return const AudioSettings();
     }
   }
+
+  /// Builds a compact JSON array literal from a list of doubles.
+  static String _jsonList(List<double> values) =>
+      '[${values.map((v) => v.toString()).join(', ')}]';
 }
 
 /// JSON serialization for LibrarySettings.
@@ -276,8 +418,7 @@ extension AppSettingsJson on AppSettings {
     return AppSettings(audio: audio, library: library, appearance: appearance);
   }
 
-  static String audioToJson(AudioSettings a) =>
-      '{"replayGain": "${a.replayGain.name}", "preampDb": ${a.preampDb}}';
+  static String audioToJson(AudioSettings a) => a.toJson();
 
   static String libraryToJson(LibrarySettings l) =>
       '''
@@ -287,23 +428,8 @@ extension AppSettingsJson on AppSettings {
   static String appearanceToJson(AppearanceSettings a) =>
       '{"themeMode": "${a.themeMode.name}", "themePreset": "${a.themePreset.name}"}';
 
-  static AudioSettings _parseAudio(String json) {
-    try {
-      final replayGainMatch = RegExp(r'"replayGain"\s*:\s*"(\w+)"')
-          .firstMatch(json);
-      final preampMatch = RegExp(r'"preampDb"\s*:\s*([\d\.\-]+)')
-          .firstMatch(json);
-      return AudioSettings(
-        replayGain: ReplayGainPreference.values.firstWhere(
-          (e) => e.name == (replayGainMatch?.group(1) ?? 'off'),
-          orElse: () => ReplayGainPreference.off,
-        ),
-        preampDb: double.tryParse(preampMatch?.group(1) ?? '0') ?? 0.0,
-      );
-    } catch (_) {
-      return const AudioSettings();
-    }
-  }
+  static AudioSettings _parseAudio(String json) =>
+      AudioSettingsJson.fromJson(json);
 
   static LibrarySettings _parseLibrary(String json) {
     try {

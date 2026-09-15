@@ -185,7 +185,22 @@ class FakeAudioPlayer extends AudioPlayer {
   }
 
   @override
-  Future<void> setVolume(double volume) async {}
+  Future<void> setVolume(double volume) async {
+    volumeCalls.add(volume);
+  }
+
+  /// The volume values the controller pushed into the engine, in order. Used
+  /// by the crossfade tests to observe the dip-and-swell curve.
+  final List<double> volumeCalls = [];
+
+  int setSpeedCalls = 0;
+  double? lastSetSpeed;
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    setSpeedCalls++;
+    lastSetSpeed = speed;
+  }
 
   @override
   Future<void> setLoopMode(LoopMode mode) async {}

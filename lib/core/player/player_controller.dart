@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'dart:convert';
 
+import '../audio/audio_effects.dart';
 import '../../../core/ingest/ingest_service.dart';
 
 enum RepeatMode { off, all, one }
@@ -359,6 +360,35 @@ abstract class PlayerController {
   /// larger values are clamped). Combined with ReplayGain and ducking, this is
   /// the single, authoritative volume control on the engine.
   Future<void> setVolume(double volume);
+
+  /// Sets playback speed. Values outside [0.25, 2.0] are clamped; pitch is
+  /// always preserved so the audio never sounds robotic.
+  Future<void> setPlaybackSpeed(double speed);
+
+  /// Activates or deactivates the Android equalizer effect.
+  ///
+  /// When [enabled] is true, the engine maps the given virtual curve onto the
+  /// device's physical equalizer bands. On non-Android platforms this is a
+  /// documented no-op so the UI never blocks.
+  Future<void> setEqualizer({
+    required bool enabled,
+    required EqPreset preset,
+    required List<double> customLevels,
+  });
+
+  /// Sets the crossfade/gapless/off transition mode. Pass [crossfadeSeconds]
+  /// (clamped) when [mode] is [PlaybackTransitionMode.crossfade].
+  Future<void> setTransitionMode(
+    PlaybackTransitionMode mode, {
+    int crossfadeSeconds = kDefaultCrossfadeSeconds,
+  });
+
+  /// Sets the audio balance (-1.0 left … +1.0 right).
+  ///
+  /// Applied best-effort on platforms that expose a per-app stereo pan
+  /// control; the value is always persisted and displayed regardless of
+  /// whether the current output device honours it.
+  Future<void> setAudioBalance(double balance);
 
   /// A snapshot copy of the current queue. Safe to call from UI; returns
   /// a new list each time so callers never hold a mutable reference to

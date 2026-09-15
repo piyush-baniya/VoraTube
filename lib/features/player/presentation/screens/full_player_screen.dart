@@ -18,6 +18,7 @@ import '../providers/player_providers.dart';
 import '../providers/sleep_timer_provider.dart';
 import '../widgets/player_controls.dart';
 import '../widgets/player_progress.dart';
+import '../widgets/player_transport_row.dart';
 import '../widgets/queue_sheet.dart';
 import '../widgets/sleep_timer_sheet.dart';
 
@@ -123,6 +124,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final colorScheme = theme.colorScheme;
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final isDark = theme.brightness == Brightness.dark;
+    // Very short viewports (landscape phones, tiny windows) hide the compact
+    // transport row so the artwork / lyrics card claims the full content
+    // region; everywhere else the unified row is always present.
+    final compactViewport = MediaQuery.sizeOf(context).height < 560;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
@@ -187,63 +192,13 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                // Normal-height screens: repeat/shuffle sit above the
-                                // wave (repeat left, shuffle right). Compact-height
-                                // screens (landscape phones) fold them back into the
-                                // control row so nothing overflows.
-                                if (MediaQuery.sizeOf(context).height >= 480)
-                                  Consumer(
-                                    builder: (context, ref, _) {
-                                      final snapshot = ref.watch(
-                                        playbackStateProvider,
-                                      );
-                                      return PlayerModeRow(
-                                        snapshot: snapshot,
-                                        onToggleShuffle: () {
-                                          final enabling =
-                                              !snapshot.shuffleEnabled;
-                                          ref
-                                              .read(playerProvider)
-                                              .setShuffle(enabling);
-                                          showTopToast(
-                                            context,
-                                            icon: Icons.shuffle_rounded,
-                                            message: enabling
-                                                ? 'Shuffle on'
-                                                : 'Shuffle off',
-                                          );
-                                        },
-                                        onToggleRepeat: () {
-                                          final next = switch (snapshot
-                                              .repeatMode) {
-                                            RepeatMode.off => RepeatMode.all,
-                                            RepeatMode.all => RepeatMode.one,
-                                            RepeatMode.one => RepeatMode.off,
-                                          };
-                                          ref
-                                              .read(playerProvider)
-                                              .setRepeat(next);
-                                          showTopToast(
-                                            context,
-                                            icon: next == RepeatMode.one
-                                                ? Icons.repeat_one_rounded
-                                                : Icons.repeat_rounded,
-                                            message: switch (next) {
-                                              RepeatMode.off => 'Repeat off',
-                                              RepeatMode.all => 'Repeat all',
-                                              RepeatMode.one => 'Repeat one',
-                                            },
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ),
+                                // Shuffle / repeat / equalizer / speed / boost
+                                // share one compact icon row above the wave on
+                                // anything but very short viewports.
+                                _TransportLeading(enabled: !compactViewport),
                                 _PositionConsumer(),
                                 const SizedBox(height: AppTokens.s3),
-                                _ControlsConsumer(
-                                  showModeToggles:
-                                      MediaQuery.sizeOf(context).height < 480,
-                                ),
+                                const _ControlsConsumer(),
                               ],
                             ),
                           ),
@@ -1074,10 +1029,59 @@ class _PositionConsumer extends ConsumerWidget {
   }
 }
 
-class _ControlsConsumer extends ConsumerWidget {
-  const _ControlsConsumer({this.showModeToggles = false});
+/// The transport header above the progress timeline.
+///
+/// One compact icon row holding shuffle, repeat, equalizer, speed and boost,
+/// all sized like the shuffle/repeat toggles. Landscape keeps this slot empty
+/// so the artwork / lyrics card claims the full content region; the effects
+/// stay reachable from the Settings.
+class _TransportLeading extends ConsumerWidget {
+  const _TransportLeading({required this.enabled});
 
-  final bool showModeToggles;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!enabled) {
+      return const SizedBox.shrink();
+    }
+    final snapshot = ref.watch(playbackStateProvider);
+    return PlayerTransportRow(
+      snapshot: snapshot,
+      onToggleShuffle: () {
+        final enabling = !snapshot.shuffleEnabled;
+        ref.read(playerProvider).setShuffle(enabling);
+        showTopToast(
+          context,
+          icon: Icons.shuffle_rounded,
+          message: enabling ? 'Shuffle on' : 'Shuffle off',
+        );
+      },
+      onToggleRepeat: () {
+        final next = switch (snapshot.repeatMode) {
+          RepeatMode.off => RepeatMode.all,
+          RepeatMode.all => RepeatMode.one,
+          RepeatMode.one => RepeatMode.off,
+        };
+        ref.read(playerProvider).setRepeat(next);
+        showTopToast(
+          context,
+          icon: next == RepeatMode.one
+              ? Icons.repeat_one_rounded
+              : Icons.repeat_rounded,
+          message: switch (next) {
+            RepeatMode.off => 'Repeat off',
+            RepeatMode.all => 'Repeat all',
+            RepeatMode.one => 'Repeat one',
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ControlsConsumer extends ConsumerWidget {
+  const _ControlsConsumer();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1085,7 +1089,6 @@ class _ControlsConsumer extends ConsumerWidget {
 
     return PlayerControls(
       snapshot: snapshot,
-      showModeToggles: showModeToggles,
       onToggleShuffle: () {
         final enabling = !snapshot.shuffleEnabled;
         ref.read(playerProvider).setShuffle(enabling);

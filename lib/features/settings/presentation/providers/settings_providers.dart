@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/storage/device_storage_service.dart';
+import '../../../../core/audio/audio_effects.dart';
 import '../../../../features/library/data/library_repository.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../app/theme/app_theme.dart';
@@ -108,14 +109,53 @@ class AudioSettingsController extends StateNotifier<AudioSettings> {
     } catch (_) {}
   }
 
-  Future<void> setReplayGain(ReplayGainPreference mode) async {
-    state = state.copyWith(replayGain: mode);
+  Future<void> _persist() async {
     await _repository.kvSet(SettingsKeys.audio, state.toJson());
   }
 
+  Future<void> setReplayGain(ReplayGainPreference mode) async {
+    state = state.copyWith(replayGain: mode);
+    await _persist();
+  }
+
   Future<void> setPreampDb(double v) async {
-    state = state.copyWith(preampDb: v.clamp(-12.0, 12.0));
-    await _repository.kvSet(SettingsKeys.audio, state.toJson());
+    state = state.copyWith(preampDb: v);
+    await _persist();
+  }
+
+  Future<void> setEqEnabled(bool enabled) async {
+    state = state.copyWith(eqEnabled: enabled);
+    await _persist();
+  }
+
+  Future<void> setEqPreset(EqPreset preset) async {
+    state = state.copyWith(eqPreset: preset);
+    await _persist();
+  }
+
+  Future<void> setEqCustomLevels(List<double> levels) async {
+    state = state.copyWith(eqCustomLevels: levels);
+    await _persist();
+  }
+
+  Future<void> setPlaybackSpeed(double speed) async {
+    state = state.copyWith(playbackSpeed: speed);
+    await _persist();
+  }
+
+  Future<void> setTransitionMode(PlaybackTransitionMode mode) async {
+    state = state.copyWith(transitionMode: mode);
+    await _persist();
+  }
+
+  Future<void> setCrossfadeSeconds(int seconds) async {
+    state = state.copyWith(crossfadeSeconds: seconds);
+    await _persist();
+  }
+
+  Future<void> setAudioBalance(double balance) async {
+    state = state.copyWith(audioBalance: balance);
+    await _persist();
   }
 }
 

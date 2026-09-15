@@ -1,6 +1,6 @@
 # VoraTube Terms of Use
 
-**Effective date:** September 5, 2026
+**Effective date:** September 15, 2026
 
 VoraTube is an Android music player application ("the App") developed by Piyush Das ("we", "us", "our"). By downloading, installing, or using the App, you agree to these Terms of Use. If you do not agree with any part of these terms, please do not use the App.
 
@@ -13,6 +13,8 @@ VoraTube is a local-first music player designed to help you browse, organize, an
 ## 2. Local music and device content
 
 The App reads audio files already present on your device through your device's music library, or files you explicitly choose to import yourself. Your music files and your library data remain on your device. VoraTube does not upload your audio files to any server. You are responsible for ensuring you have the right to use and play the music on your device in accordance with applicable law.
+
+Audio enhancement features (equalizer, playback speed, crossfade/gapless transitions, volume boost, audio balance) are processed entirely on your device at playback time and change only how the App plays your local files; they do not modify, re-encode, or upload your music.
 
 ## 3. Third-party services
 

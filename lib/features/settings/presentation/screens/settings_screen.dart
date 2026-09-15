@@ -5,11 +5,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
+import '../../../../core/audio/audio_effects.dart';
 import '../../../../core/ingest/ingest_service.dart';
 import '../../../../core/privacy/privacy_config.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../features/player/presentation/providers/sleep_timer_provider.dart';
+import '../../../../features/player/presentation/widgets/equalizer_sheet.dart';
 import '../../../../features/player/presentation/widgets/sleep_timer_sheet.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../ads/banner_ad_widget.dart';
@@ -116,6 +118,7 @@ class SettingsScreen extends ConsumerWidget {
 class _PlaybackSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final audio = ref.watch(audioSettingsProvider);
     return SettingsSection(
       title: 'Playback',
       children: [
@@ -134,26 +137,35 @@ class _PlaybackSection extends ConsumerWidget {
           items: const [RepeatMode.off, RepeatMode.all, RepeatMode.one],
           itemBuilder: (context, mode) => Text(mode.name.capitalize()),
         ),
-        SettingsTile(
-          title: 'Crossfade',
-          subtitle: 'Gapless playback is used instead of crossfade',
-          trailing: Icon(
-            Icons.lock_outline_rounded,
-            size: 18,
-            color: Theme.of(context).colorScheme.onSurfaceVariant
-                .withValues(alpha: 0.4),
-          ),
+        SettingsSelectTile<PlaybackTransitionMode>(
+          title: 'Playback Transition',
+          subtitle:
+              'Crossfade blends tracks; Gapless and Off switch instantly',
+          value: audio.transitionMode,
+          onChanged: (mode) =>
+              ref.read(audioSettingsProvider.notifier).setTransitionMode(mode),
+          items: const [
+            PlaybackTransitionMode.crossfade,
+            PlaybackTransitionMode.gapless,
+            PlaybackTransitionMode.off,
+          ],
+          valueBuilder: (context, mode) => Text(mode.label),
+          itemBuilder: (context, mode) => Text(mode.label),
         ),
-        SettingsTile(
-          title: 'Gapless Playback',
-          subtitle: 'Enabled by default for seamless transitions',
-          trailing: Icon(
-            Icons.check_circle_rounded,
-            color: Theme.of(context).colorScheme.tertiary,
-            size: 18,
+        if (audio.transitionMode == PlaybackTransitionMode.crossfade)
+          SettingsSliderTile(
+            title: 'Crossfade duration',
+            subtitle: 'How long the outgoing and incoming tracks blend',
+            value: audio.crossfadeSeconds.toDouble(),
+            onChanged: (v) => ref
+                .read(audioSettingsProvider.notifier)
+                .setCrossfadeSeconds(v.round()),
+            min: kCrossfadeSecondsMin.toDouble(),
+            max: kCrossfadeSecondsMax.toDouble(),
+            divisions: kCrossfadeSecondsMax - kCrossfadeSecondsMin,
+            label: '${audio.crossfadeSeconds}s',
+            isLastInSection: true,
           ),
-          isLastInSection: true,
-        ),
       ],
     );
   }
@@ -233,14 +245,33 @@ class _AudioSection extends ConsumerWidget {
           label: '${audioSettings.preampDb.toStringAsFixed(1)} dB',
         ),
         SettingsTile(
-          title: 'Volume Normalization',
-          subtitle: 'ReplayGain track/album gain applied at playback start',
+          title: 'Equalizer',
+          subtitle: audioSettings.eqEnabled
+              ? 'Active — ${audioSettings.eqPreset.label}'
+              : 'Off — launch from the player to shape the sound',
+          onTap: () => showEqualizerSheet(context),
           trailing: Icon(
-            Icons.info_outline_rounded,
+            Icons.chevron_right_rounded,
             size: 18,
             color: Theme.of(context).colorScheme.onSurfaceVariant
                 .withValues(alpha: 0.4),
           ),
+        ),
+        SettingsSliderTile(
+          title: 'Audio Balance',
+          subtitle:
+              'Device-dependent — applied by the platform where supported',
+          value: audioSettings.audioBalance,
+          onChanged: (v) =>
+              ref.read(audioSettingsProvider.notifier).setAudioBalance(v),
+          min: -1.0,
+          max: 1.0,
+          divisions: 40,
+          label: switch (audioSettings.audioBalance) {
+            <= -0.15 => 'Left',
+            >= 0.15 => 'Right',
+            _ => 'Center',
+          },
           isLastInSection: true,
         ),
       ],

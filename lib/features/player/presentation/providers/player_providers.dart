@@ -231,13 +231,15 @@ Future<void> startPlaybackOfWholeLibrary(WidgetRef ref) async {
   await ref.read(playerProvider).playQueue(songs);
 }
 
-/// Bridges persisted audio settings (ReplayGain mode + preamp) to the player.
+/// Bridges persisted audio settings (ReplayGain, preamp, speed, equalizer,
+/// transitions, balance) to the player.
 ///
 /// The settings UI saves to [audioSettingsProvider], but nothing was forwarding
 /// those values to the player's volume chain — so Preamp appeared to do
 /// nothing. This provider watches the settings and pushes every change to the
-/// player. It also applies the stored values once at startup so the player and
-/// settings agree after a cold launch.
+/// player (unawaited: all setters are async fire-and-forget engine calls). It
+/// also applies the stored values once at startup so the player and settings
+/// agree after a cold launch.
 final audioSettingsBridgeProvider = Provider((ref) {
   final player = ref.watch(playerProvider);
   void push(AudioSettings settings) {
@@ -246,7 +248,22 @@ final audioSettingsBridgeProvider = Provider((ref) {
       ReplayGainPreference.track => ReplayGainMode.track,
       ReplayGainPreference.album => ReplayGainMode.album,
     };
-    player.setReplayGainMode(mode, preampDb: settings.preampDb);
+    unawaited(player.setReplayGainMode(mode, preampDb: settings.preampDb));
+    unawaited(player.setPlaybackSpeed(settings.playbackSpeed));
+    unawaited(
+      player.setEqualizer(
+        enabled: settings.eqEnabled,
+        preset: settings.eqPreset,
+        customLevels: settings.eqCustomLevels,
+      ),
+    );
+    unawaited(
+      player.setTransitionMode(
+        settings.transitionMode,
+        crossfadeSeconds: settings.crossfadeSeconds,
+      ),
+    );
+    unawaited(player.setAudioBalance(settings.audioBalance));
   }
 
   ref.listen<AudioSettings>(
