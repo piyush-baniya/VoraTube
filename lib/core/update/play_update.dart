@@ -25,6 +25,7 @@ class PlayUpdateInfo {
     this.isFlexibleAllowed = false,
     this.downloadedBytes = 0,
     this.totalBytes = 0,
+    this.promptToken = 0,
   });
 
   factory PlayUpdateInfo.fromMap(Map<Object?, Object?> map) {
@@ -51,6 +52,11 @@ class PlayUpdateInfo {
   final int downloadedBytes;
   final int totalBytes;
 
+  /// Incremented by the controller only when a prompt should be presented.
+  /// The host watches this instead of [status] so a re-check for the same
+  /// state cannot open a second sheet.
+  final int promptToken;
+
   bool get canPrompt =>
       status == PlayUpdateStatus.available && isFlexibleAllowed;
 
@@ -61,6 +67,7 @@ class PlayUpdateInfo {
     PlayUpdateStatus? status,
     int? downloadedBytes,
     int? totalBytes,
+    int? promptToken,
   }) {
     return PlayUpdateInfo(
       status: status ?? this.status,
@@ -70,6 +77,7 @@ class PlayUpdateInfo {
       isFlexibleAllowed: isFlexibleAllowed,
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
       totalBytes: totalBytes ?? this.totalBytes,
+      promptToken: promptToken ?? this.promptToken,
     );
   }
 }

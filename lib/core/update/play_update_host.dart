@@ -51,7 +51,8 @@ class _PlayUpdateHostState extends ConsumerState<PlayUpdateHost>
   }
 
   void _onState(PlayUpdateInfo? previous, PlayUpdateInfo next) {
-    if (next.canPrompt && !_prompting) {
+    final requested = next.promptToken > (previous?.promptToken ?? 0);
+    if (requested && !_prompting) {
       _prompting = true;
       _showSheet();
     }

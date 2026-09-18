@@ -20,7 +20,6 @@ import '../../../ads/premium_providers.dart';
 import '../../../ads/premium_sheets.dart';
 import '../../../../core/update/play_update.dart';
 import '../../../../core/update/play_update_controller.dart';
-import '../../../../core/update/play_update_host.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
 import 'faq_screen.dart';
 import 'hidden_songs_screen.dart';
@@ -597,22 +596,14 @@ class _AboutSection extends ConsumerWidget {
         .read(playUpdateControllerProvider.notifier)
         .checkForUpdate(manual: true);
     if (!context.mounted) return;
+    // The PlayUpdateHost owns the sheet (a prompt token in the state opens it),
+    // so only the cases that need no sheet report back here.
     switch (info.status) {
-      case PlayUpdateStatus.available:
-        if (info.canPrompt) {
-          await showPlayUpdateSheet(context);
-        } else {
-          VoraSnackbar.info(context, 'VoraTube is up to date');
-        }
-      case PlayUpdateStatus.downloading:
-        VoraSnackbar.show(
-          context,
-          variant: VoraSnackbarVariant.progress,
-          message: 'Update download in progress',
-          progress: info.progress,
-        );
-      case PlayUpdateStatus.downloaded:
-        await showPlayUpdateSheet(context);
+      case PlayUpdateStatus.available ||
+          PlayUpdateStatus.downloaded ||
+          PlayUpdateStatus.downloading:
+        // The PlayUpdateHost presents the sheet for these.
+        break;
       case PlayUpdateStatus.failed:
         VoraSnackbar.info(context, "Couldn't check for updates. Try later.");
       case PlayUpdateStatus.unsupported:

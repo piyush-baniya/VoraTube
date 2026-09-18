@@ -39,13 +39,13 @@ class PlayUpdateController extends Notifier<PlayUpdateInfo> {
   PlayUpdateInfo build() {
     final api = ref.watch(playUpdateApiProvider);
     ref.onDispose(() => api.onStateChange = null);
-    api.onStateChange = (state) {
-      switch (state.status) {
+    api.onStateChange = (update) {
+      switch (update.status) {
         case PlayUpdateStatus.downloading:
         case PlayUpdateStatus.downloaded:
         case PlayUpdateStatus.installing:
         case PlayUpdateStatus.failed:
-          this.state = state;
+          state = update.copyWith(promptToken: state.promptToken);
         default:
           break;
       }
@@ -57,9 +57,7 @@ class PlayUpdateController extends Notifier<PlayUpdateInfo> {
   /// once-per-launch and persisted-dismissal gates.
   Future<PlayUpdateInfo> checkForUpdate({bool manual = false}) async {
     if (manual) {
-      final info = await _query();
-      state = info;
-      return info;
+      return _publish(await _query(), allowNoUpdate: true);
     }
     if (_checkedThisLaunch || _dismissedToday) return state;
     _checkedThisLaunch = true;
@@ -67,11 +65,19 @@ class PlayUpdateController extends Notifier<PlayUpdateInfo> {
       _dismissedToday = true;
       return state;
     }
-    final info = await _query();
-    state = info.canPrompt || _inProgress(info.status)
+    return _publish(await _query());
+  }
+
+  /// Publishes a query result, bumping the prompt token only when the host
+  /// should present a sheet (an available flexible update, or an update that
+  /// is already running). A plain "no update" result clears the prompt.
+  PlayUpdateInfo _publish(PlayUpdateInfo info, {bool allowNoUpdate = false}) {
+    if (info.canPrompt || _inProgress(info.status)) {
+      return state = info.copyWith(promptToken: state.promptToken + 1);
+    }
+    return state = allowNoUpdate
         ? info
         : const PlayUpdateInfo(status: PlayUpdateStatus.notAvailable);
-    return state;
   }
 
   /// Re-queries Google Play after a resume. A running or downloaded update is
@@ -81,7 +87,8 @@ class PlayUpdateController extends Notifier<PlayUpdateInfo> {
     if (!_checkedThisLaunch) return checkForUpdate();
     final info = await _query();
     if (_inProgress(info.status) || (!_dismissedToday && info.canPrompt)) {
-      state = info;
+      // Passive restore: keep the current token so no extra sheet is opened.
+      state = info.copyWith(promptToken: state.promptToken);
     }
     return state;
   }
