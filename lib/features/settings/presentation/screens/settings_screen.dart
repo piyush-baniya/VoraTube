@@ -18,7 +18,9 @@ import '../../../ads/banner_ad_widget.dart';
 import '../../../ads/premium_models.dart';
 import '../../../ads/premium_providers.dart';
 import '../../../ads/premium_sheets.dart';
-import '../../../customization/presentation/screens/customize_interface_screen.dart';
+import '../../../../core/update/play_update.dart';
+import '../../../../core/update/play_update_controller.dart';
+import '../../../../core/update/play_update_host.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
 import 'faq_screen.dart';
 import 'hidden_songs_screen.dart';
@@ -427,6 +429,7 @@ class _AppearanceSection extends ConsumerWidget {
               .read(appearanceSettingsProvider.notifier)
               .setThemePreset(preset),
           items: [for (final palette in AppPalettes.all) palette.preset],
+          isLastInSection: true,
           itemBuilder: (context, preset) {
             return Row(
               mainAxisSize: MainAxisSize.min,
@@ -453,20 +456,6 @@ class _AppearanceSection extends ConsumerWidget {
             ),
           ),
           menuMaxHeight: _kColorThemeMenuMaxHeight,
-        ),
-        SettingsTile(
-          title: 'Customize Interface',
-          subtitle: 'Reorder, hide and resize screen sections',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const CustomizeInterfaceScreen()),
-          ),
-          trailing: Icon(
-            Icons.chevron_right_rounded,
-            size: 18,
-            color: Theme.of(context).colorScheme.onSurfaceVariant
-                .withValues(alpha: 0.4),
-          ),
-          isLastInSection: true,
         ),
       ],
     );
@@ -554,6 +543,24 @@ class _AboutSection extends ConsumerWidget {
           ),
         ),
         SettingsTile(
+          title: 'Check for updates',
+          subtitle: 'Google Play in-app update',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.tertiary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.system_update_alt_rounded,
+              size: 22,
+              color: colorScheme.tertiary,
+            ),
+          ),
+          onTap: () => _checkForUpdates(context, ref),
+        ),
+        SettingsTile(
           title: 'Support the Developer',
           subtitle: 'Buy Me a Momo donation',
           leading: Container(
@@ -583,6 +590,38 @@ class _AboutSection extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _checkForUpdates(BuildContext context, WidgetRef ref) async {
+    final info = await ref
+        .read(playUpdateControllerProvider.notifier)
+        .checkForUpdate(manual: true);
+    if (!context.mounted) return;
+    switch (info.status) {
+      case PlayUpdateStatus.available:
+        if (info.canPrompt) {
+          await showPlayUpdateSheet(context);
+        } else {
+          VoraSnackbar.info(context, 'VoraTube is up to date');
+        }
+      case PlayUpdateStatus.downloading:
+        VoraSnackbar.show(
+          context,
+          variant: VoraSnackbarVariant.progress,
+          message: 'Update download in progress',
+          progress: info.progress,
+        );
+      case PlayUpdateStatus.downloaded:
+        await showPlayUpdateSheet(context);
+      case PlayUpdateStatus.failed:
+        VoraSnackbar.info(context, "Couldn't check for updates. Try later.");
+      case PlayUpdateStatus.unsupported:
+        // Not a Play-distributed build (dev/sideloaded): never claim to be
+        // up to date, since Play has no update channel for this install.
+        VoraSnackbar.info(context, 'Updates are managed by Google Play');
+      case _:
+        VoraSnackbar.success(context, 'VoraTube is up to date');
+    }
   }
 }
 
