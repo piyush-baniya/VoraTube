@@ -292,14 +292,32 @@ const UiComponentRegistry equalizerComponentRegistry = UiComponentRegistry([
 /// not listed belongs to the fixed bottom zone.
 const List<String> kPlayerTopZoneIds = ['player.artwork', 'player.trackInfo'];
 
-/// Reorders the given player components back into their anchored zones while
-/// keeping the relative order inside each zone: artwork and song info first,
-/// then the progress bar and the control rows.
+/// The hard-coded render order of the player's fixed bottom zone: secondary
+/// controls (shuffle/repeat/effects), then the progress bar, then the primary
+/// transport row. The real screen iterates this order regardless of the stored
+/// component order so the transport is always predictable.
+const List<String> kPlayerBottomZoneIds = [
+  'player.secondaryControls',
+  'player.progress',
+  'player.primaryControls',
+];
+
+/// Reorders the given player components back into their anchored zones: the
+/// dismissable top zone (artwork, song info) first, then the fixed bottom zone
+/// in the render order of [kPlayerBottomZoneIds]: secondary controls, the
+/// progress bar, then the primary transport row.
 List<ComponentLayout> groupPlayerZones(List<ComponentLayout> components) {
-  final top = <ComponentLayout>[];
-  final bottom = <ComponentLayout>[];
-  for (final c in components) {
-    (kPlayerTopZoneIds.contains(c.id) ? top : bottom).add(c);
+  final byId = {for (final c in components) c.id: c};
+  final ordered = <ComponentLayout>[];
+  for (final id in [...kPlayerTopZoneIds, ...kPlayerBottomZoneIds]) {
+    final component = byId[id];
+    if (component != null) ordered.add(component);
   }
-  return [...top, ...bottom];
+  for (final c in components) {
+    if (!kPlayerTopZoneIds.contains(c.id) &&
+        !kPlayerBottomZoneIds.contains(c.id)) {
+      ordered.add(c);
+    }
+  }
+  return ordered;
 }

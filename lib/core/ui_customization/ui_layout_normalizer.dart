@@ -39,11 +39,13 @@ ComponentLayout _clamp(
       ? component.styleId
       : definition.effectiveDefaultStyleId;
   final visible = definition.canHide ? component.visible : true;
+  final rect = (component.rect?.isValid ?? true) ? component.rect : null;
   return ComponentLayout(
     id: component.id,
     visible: visible,
     size: size,
     styleId: style,
+    rect: rect,
   );
 }
 
@@ -79,9 +81,12 @@ LayoutProfile defaultLayoutProfile(
   return LayoutProfile(preset: preset, layouts: layouts);
 }
 
-/// Validates and completes a decoded profile. A profile written by a different
-/// schema version is discarded wholesale; a malformed screen is repaired rather
-/// than thrown away with the whole profile.
+/// Validates and completes a decoded profile. A profile written by a NEWER
+/// schema version than this app understands is discarded wholesale (it may
+/// carry fields that would be mis-parsed); an OLDER version (legacy order-only
+/// layouts) is migrated by keeping order/size/style and leaving geometry null,
+/// which the geometry defaults materialize later. A malformed screen is
+/// repaired rather than thrown away with the whole profile.
 ///
 /// [extraRegistries] maps additional screen ids to their registries so a
 /// stored player or mini player layout is validated the same way. Missing
@@ -95,7 +100,7 @@ LayoutProfile normalizeLayoutProfile(
     kHomeScreenId: registry,
     ...extraRegistries,
   };
-  if (profile.schemaVersion != kUiLayoutSchemaVersion) {
+  if (profile.schemaVersion > kUiLayoutSchemaVersion) {
     return defaultLayoutProfile(
       registry,
       registries: allRegistries,

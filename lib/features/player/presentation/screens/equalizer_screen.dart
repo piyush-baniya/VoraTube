@@ -4,12 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/audio/audio_effects.dart';
-import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../customization/presentation/providers/layout_providers.dart';
-import '../../../customization/presentation/widgets/editable_layout_frame.dart';
-import '../../../customization/presentation/widgets/layout_edit_scope.dart';
 import '../../../settings/data/settings_models.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
 import '../../data/equalizer_settings.dart';
@@ -73,26 +70,14 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
   ComponentSize _sizeOf(String id) =>
       widget.layout.component(id)?.size ?? ComponentSize.medium;
 
-  /// Wraps a block in its editor frame (a no-op pass-through outside a
-  /// customization session).
+  /// Wraps a block (a pass-through — real screens are never inside an edit
+  /// scope anymore; the freeform editor renders its own canvas).
   Widget _frame(
     BuildContext context,
     String componentId, {
     required Widget child,
   }) {
-    final definition = equalizerComponentRegistry.definitionFor(componentId);
-    if (definition == null) return child;
-    final index = widget.layout.components.indexWhere(
-      (c) => c.id == componentId,
-    );
-    if (index < 0) return child;
-    return EditableLayoutFrame(
-      componentId: componentId,
-      index: index,
-      itemCount: widget.layout.components.length,
-      definition: definition,
-      child: child,
-    );
+    return child;
   }
 
   @override
@@ -109,7 +94,6 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
     final preamp = _draftPreamp ?? audio.preampDb;
 
     final wide = widget.variant != LayoutVariant.portrait;
-    final editing = LayoutEditScope.isEditing(context);
     final curve = _curveBlock(context, audio.eqEnabled, levels);
     final controls = _controlsBlock(
       context,
@@ -121,10 +105,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
 
     return Column(
       children: [
-        IgnorePointer(
-          ignoring: editing,
-          child: _topBar(context, audio.eqEnabled),
-        ),
+        _topBar(context, audio.eqEnabled),
         if (_visible('equalizer.nowPlaying'))
           _frame(
             context,
@@ -136,19 +117,16 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
               song?.artPath,
             ),
           ),
-        IgnorePointer(
-          ignoring: editing,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppTokens.s4,
-              AppTokens.s1,
-              AppTokens.s4,
-              AppTokens.s1,
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: _modeBlock(context, ui.mode),
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppTokens.s4,
+            AppTokens.s1,
+            AppTokens.s4,
+            AppTokens.s1,
+          ),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _modeBlock(context, ui.mode),
           ),
         ),
         Expanded(

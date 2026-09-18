@@ -411,7 +411,7 @@ void main() {
   });
 
   group('groupPlayerZones', () {
-    test('sorts player components into anchored top and bottom zones', () {
+    test('orders player components as anchored top then bottom zones', () {
       final layout = applyLayoutPreset(
         LayoutPreset.standard,
         kPlayerScreenId,
@@ -420,18 +420,13 @@ void main() {
       final grouped = groupPlayerZones(layout.components);
 
       final ids = [for (final c in grouped) c.id];
-      expect(
-        ids,
-        kPlayerTopZoneIds +
-            <String>[
-              'player.progress',
-              'player.secondaryControls',
-              'player.primaryControls',
-            ],
-      );
+      expect(ids, kPlayerTopZoneIds + kPlayerBottomZoneIds);
       expect(grouped, hasLength(layout.components.length));
       // Every component survives the grouping exactly once.
       expect(ids.toSet(), layout.components.map((c) => c.id).toSet());
+      // The bottom zone follows the render order used by the real player:
+      // secondary controls, then the progress bar, then the transport row.
+      expect(ids.sublist(kPlayerTopZoneIds.length), kPlayerBottomZoneIds);
     });
   });
 

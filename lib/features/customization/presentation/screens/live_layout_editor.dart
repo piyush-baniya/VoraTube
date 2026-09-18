@@ -3,17 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
-import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
-import '../../../library/presentation/screens/home_screen.dart';
-import '../../../player/presentation/screens/equalizer_screen.dart';
-import '../../../player/presentation/screens/full_player_screen.dart';
-import '../../../player/presentation/widgets/mini_player.dart';
 import '../providers/layout_providers.dart';
-import '../widgets/layout_edit_scope.dart';
+import '../widgets/freeform_layout_canvas.dart';
 
-/// Live customization: renders the REAL screen inside an edit scope where each
-/// customizable block becomes directly draggable/resizable/hideable.
+/// Live customization: a dedicated freeform canvas where each customizable
+/// block of the target screen is directly draggable/resizable. The real screen
+/// keeps its curated hierarchy; the canvas is purely additive.
 ///
 /// Edits go into a [LayoutEditSession] (see [LayoutEditController]): nothing is
 /// persisted until Done, the toolbar mirrors the session state, Cancel discards
@@ -33,25 +29,10 @@ class LiveLayoutEditor extends ConsumerStatefulWidget {
 }
 
 class _LiveLayoutEditorState extends ConsumerState<LiveLayoutEditor> {
-  late LayoutEditBridge _bridge;
+  final GlobalKey<FreeformLayoutCanvasState> _canvasKey = GlobalKey();
   bool _started = false;
   bool _saving = false;
   bool _leaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _bridge = LayoutEditBridge(
-      screenId: widget.screenId,
-      registry: ref.read(screenRegistryProvider(widget.screenId)),
-    );
-  }
-
-  @override
-  void dispose() {
-    _bridge.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,8 +80,8 @@ class _LiveLayoutEditorState extends ConsumerState<LiveLayoutEditor> {
             Expanded(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onTap: () => _bridge.clearSelection(),
-                child: LayoutEditScope(bridge: _bridge, child: _body(context)),
+                onTap: () => _canvasKey.currentState?.clearSelection(),
+                child: _body(context),
               ),
             ),
           ],
@@ -110,25 +91,7 @@ class _LiveLayoutEditorState extends ConsumerState<LiveLayoutEditor> {
   }
 
   Widget _body(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return switch (widget.screenId) {
-      kPlayerScreenId => const FullPlayerScreen(),
-      kMiniScreenId => ColoredBox(
-        color: colorScheme.surface,
-        child: const SafeArea(
-          top: false,
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: AppTokens.s2),
-              child: MiniPlayer(),
-            ),
-          ),
-        ),
-      ),
-      kEqualizerScreenId => const EqualizerScreen(),
-      _ => const HomeScreen(),
-    };
+    return FreeformLayoutCanvas(key: _canvasKey, screenId: widget.screenId);
   }
 
   Future<void> _save() async {
@@ -262,7 +225,8 @@ class _LiveLayoutEditorState extends ConsumerState<LiveLayoutEditor> {
     final variant = layoutVariantForSize(MediaQuery.sizeOf(context));
     final layout = controller.screenLayout(widget.screenId, variant);
     final hidden = [
-      for (final definition in _bridge.registry.definitions)
+      for (final definition
+          in ref.read(screenRegistryProvider(widget.screenId)).definitions)
         if (definition.canHide &&
             (layout?.component(definition.id)?.visible ?? true) == false)
           definition,

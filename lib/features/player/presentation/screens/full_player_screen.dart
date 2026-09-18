@@ -8,27 +8,22 @@ import '../../../../core/player/player_controller.dart';
 import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../app/theme/app_tokens.dart';
-import '../../../../app/widgets/top_toast.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../services/analytics_service.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../features/customization/presentation/providers/layout_providers.dart';
-import '../../../../features/customization/presentation/widgets/editable_layout_frame.dart';
-import '../../../../features/customization/presentation/widgets/layout_edit_scope.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../providers/player_providers.dart';
 import '../providers/sleep_timer_provider.dart';
 import '../widgets/compact_lyrics_panel.dart';
-import '../widgets/player_controls.dart';
-import '../widgets/player_palette_surface.dart';
-import '../widgets/player_progress.dart';
+import '../widgets/player_edit_blocks.dart';
 import '../widgets/player_quick_actions.dart';
 import '../widgets/player_track_info.dart';
-import '../widgets/player_transport_row.dart';
 import '../widgets/queue_sheet.dart';
 import '../widgets/rotating_artwork.dart';
+import '../widgets/player_palette_surface.dart';
 import '../widgets/sleep_timer_sheet.dart';
 import '../widgets/speed_sheet.dart';
 import '../widgets/volume_booster_sheet.dart';
@@ -140,7 +135,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final colorScheme = theme.colorScheme;
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final isDark = theme.brightness == Brightness.dark;
-    final editing = LayoutEditScope.isEditing(context);
     final screen = MediaQuery.sizeOf(context);
     final isLandscape = screen.width > screen.height;
     final variant = layoutVariantForSize(screen);
@@ -164,9 +158,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           extendBodyBehindAppBar: true,
           body: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onVerticalDragStart: editing ? null : _onVerticalDragStart,
-            onVerticalDragUpdate: editing ? null : _onVerticalDragUpdate,
-            onVerticalDragEnd: editing ? null : _onVerticalDragEnd,
+            onVerticalDragStart: _onVerticalDragStart,
+            onVerticalDragUpdate: _onVerticalDragUpdate,
+            onVerticalDragEnd: _onVerticalDragEnd,
             child: Transform.translate(
               offset: Offset(0, _dragOffset * 0.65),
               child: Transform.scale(
@@ -181,7 +175,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                     child: Column(
                       children: [
                         IgnorePointer(
-                          ignoring: editing,
+                          ignoring: false,
                           child: _TopBar(
                             identityKey: current.identityKey,
                             onPlaylistTap: () =>
@@ -274,8 +268,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         for (var i = 0; i < layout.components.length; i++) {
           final c = layout.components[i];
           if (!c.visible) continue;
-          final definition = playerComponentRegistry.definitionFor(c.id);
-          if (definition == null) continue;
           final Widget? child = switch (c.id) {
             'player.artwork' => RotatingArtwork(
               path: current.artPath,
@@ -292,15 +284,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             _ => null,
           };
           if (child == null) continue;
-          blocks.add(
-            EditableLayoutFrame(
-              componentId: c.id,
-              index: i,
-              itemCount: layout.components.length,
-              definition: definition,
-              child: child,
-            ),
-          );
+          blocks.add(child);
         }
 
         return SingleChildScrollView(
@@ -333,8 +317,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         for (var i = 0; i < layout.components.length; i++) {
           final c = layout.components[i];
           if (!c.visible || !kPlayerTopZoneIds.contains(c.id)) continue;
-          final definition = playerComponentRegistry.definitionFor(c.id);
-          if (definition == null) continue;
           final Widget? child = switch (c.id) {
             'player.trackInfo' => PlayerTrackInfo(
               title: current.title,
@@ -345,15 +327,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             _ => null,
           };
           if (child == null) continue;
-          rightBlocks.add(
-            EditableLayoutFrame(
-              componentId: c.id,
-              index: i,
-              itemCount: layout.components.length,
-              definition: definition,
-              child: child,
-            ),
-          );
+          rightBlocks.add(child);
         }
         return Row(
           children: [
@@ -370,21 +344,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                             maxH: pane.maxHeight,
                             size: art.size,
                           );
-                    final artIndex = layout.components.indexWhere(
-                      (c) => c.id == 'player.artwork',
-                    );
-                    return EditableLayoutFrame(
-                      componentId: 'player.artwork',
-                      index: artIndex < 0 ? 0 : artIndex,
-                      itemCount: layout.components.length,
-                      definition: playerComponentRegistry.definitionFor(
-                        'player.artwork',
-                      )!,
-                      child: RotatingArtwork(
-                        path: current.artPath,
-                        heroTag: FullPlayerScreen._heroTag,
-                        size: artSize,
-                      ),
+                    return RotatingArtwork(
+                      path: current.artPath,
+                      heroTag: FullPlayerScreen._heroTag,
+                      size: artSize,
                     );
                   },
                 ),
@@ -534,34 +497,28 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
         ? ComponentSize.small
         : primary?.size ?? ComponentSize.medium;
 
+    // The fixed zone order is hard-coded (secondary controls, progress, primary
+    // controls) so the transport stays predictable regardless of profile order;
+    // visibility still follows the layout profile.
+    const bottomOrder = kPlayerBottomZoneIds;
+
     final rows = <Widget>[];
-    for (var i = 0; i < layout.components.length; i++) {
-      final c = layout.components[i];
-      if (!c.visible) continue;
-      final definition = playerComponentRegistry.definitionFor(c.id);
-      if (definition == null) continue;
-      final Widget? child = switch (c.id) {
-        'player.secondaryControls' => _SecondaryHost(snapshot: snapshot),
-        'player.progress' => _ProgressHost(progress: progress),
-        'player.primaryControls' => _ControlsHost(
+    for (final id in bottomOrder) {
+      final c = layout.component(id);
+      if (c == null || !c.visible) continue;
+      final Widget child = switch (id) {
+        'player.secondaryControls' => PlayerSecondaryHost(snapshot: snapshot),
+        'player.progress' => PlayerProgressHost(progress: progress),
+        'player.primaryControls' => PlayerControlsHost(
           snapshot: snapshot,
           size: primarySize,
         ),
-        _ => null,
+        _ => const SizedBox.shrink(),
       };
-      if (child == null) continue;
       if (rows.isNotEmpty) {
         rows.add(const SizedBox(height: AppTokens.s1));
       }
-      rows.add(
-        EditableLayoutFrame(
-          componentId: c.id,
-          index: i,
-          itemCount: layout.components.length,
-          definition: definition,
-          child: child,
-        ),
-      );
+      rows.add(child);
     }
 
     return Padding(
@@ -624,135 +581,6 @@ class _CurrentLyricLine extends ConsumerWidget {
         fontWeight: FontWeight.w600,
         height: 1.3,
       ),
-    );
-  }
-}
-
-/// The fixed transport zone's shuffle/repeat/effects row.
-class _SecondaryHost extends ConsumerWidget {
-  const _SecondaryHost({required this.snapshot});
-
-  final PlayerSnapshot snapshot;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return PlayerTransportRow(
-      snapshot: snapshot,
-      onToggleShuffle: () {
-        final enabling = !snapshot.shuffleEnabled;
-        ref.read(playerProvider).setShuffle(enabling);
-        showTopToast(
-          context,
-          icon: Icons.shuffle_rounded,
-          message: enabling ? 'Shuffle on' : 'Shuffle off',
-        );
-      },
-      onToggleRepeat: () {
-        final next = switch (snapshot.repeatMode) {
-          RepeatMode.off => RepeatMode.all,
-          RepeatMode.all => RepeatMode.one,
-          RepeatMode.one => RepeatMode.off,
-        };
-        ref.read(playerProvider).setRepeat(next);
-        showTopToast(
-          context,
-          icon: next == RepeatMode.one
-              ? Icons.repeat_one_rounded
-              : Icons.repeat_rounded,
-          message: switch (next) {
-            RepeatMode.off => 'Repeat off',
-            RepeatMode.all => 'Repeat all',
-            RepeatMode.one => 'Repeat one',
-          },
-        );
-      },
-    );
-  }
-}
-
-/// The progress block: watches [playbackPositionProvider] so only it rebuilds
-/// on position ticks.
-class _ProgressHost extends ConsumerWidget {
-  const _ProgressHost({required this.progress});
-
-  final ComponentLayout? progress;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final snapshot = ref.watch(playbackStateProvider);
-    final size = progress?.size ?? ComponentSize.medium;
-    return ref
-        .watch(playbackPositionProvider)
-        .when(
-          data: (position) => PlayerProgress(
-            snapshot: snapshot,
-            position: position,
-            onSeek: (pos) => ref.read(playerProvider).seek(pos),
-            size: size,
-          ),
-          loading: () => PlayerProgress(
-            snapshot: snapshot,
-            position: Duration.zero,
-            onSeek: (pos) => ref.read(playerProvider).seek(pos),
-            size: size,
-          ),
-          error: (_, _) => PlayerProgress(
-            snapshot: snapshot,
-            position: Duration.zero,
-            onSeek: (pos) => ref.read(playerProvider).seek(pos),
-            size: size,
-          ),
-        );
-  }
-}
-
-/// The primary transport row.
-class _ControlsHost extends ConsumerWidget {
-  const _ControlsHost({required this.snapshot, required this.size});
-
-  final PlayerSnapshot snapshot;
-  final ComponentSize size;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return PlayerControls(
-      snapshot: snapshot,
-      onToggleShuffle: () {
-        final enabling = !snapshot.shuffleEnabled;
-        ref.read(playerProvider).setShuffle(enabling);
-        showTopToast(
-          context,
-          icon: Icons.shuffle_rounded,
-          message: enabling ? 'Shuffle on' : 'Shuffle off',
-        );
-      },
-      onToggleRepeat: () {
-        final next = switch (snapshot.repeatMode) {
-          RepeatMode.off => RepeatMode.all,
-          RepeatMode.all => RepeatMode.one,
-          RepeatMode.one => RepeatMode.off,
-        };
-        ref.read(playerProvider).setRepeat(next);
-        showTopToast(
-          context,
-          icon: next == RepeatMode.one
-              ? Icons.repeat_one_rounded
-              : Icons.repeat_rounded,
-          message: switch (next) {
-            RepeatMode.off => 'Repeat off',
-            RepeatMode.all => 'Repeat all',
-            RepeatMode.one => 'Repeat one',
-          },
-        );
-      },
-      onTogglePlay: () => ref.read(playerProvider).togglePlay(),
-      onPrevious: () => ref.read(playerProvider).previous(),
-      onNext: () => ref.read(playerProvider).next(),
-      onRewind10: () =>
-          ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
-      onForward10: () =>
-          ref.read(playerProvider).seekBy(const Duration(seconds: 10)),
-      size: size,
     );
   }
 }

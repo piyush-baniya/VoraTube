@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/ui_customization/layout_edit_session.dart';
+import '../../../../core/ui_customization/layout_geometry.dart';
 import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../core/ui_customization/ui_layout_normalizer.dart';
@@ -141,6 +142,31 @@ class LayoutEditController extends Notifier<LayoutProfile?> {
     state = baseline;
   }
 
+  /// Applies a freeform placement as ONE undoable step. The canvas updates a
+  /// per-block visual during the gesture and calls this once on release; the
+  /// whole drag/resize collapses into a single undo entry.
+  void commitRect(
+    String screenId,
+    LayoutVariant variant,
+    String componentId,
+    NormalizedRect rect,
+  ) {
+    final layout = state?.screenLayout(screenId, variant);
+    if (layout == null) return;
+    final component = layout.component(componentId);
+    if (component == null) return;
+    _session?.beginGesture();
+    _session?.applyLive(
+      state!.replaceScreen(
+        screenId,
+        variant,
+        layout.replaceComponent(component.copyWith(rect: rect)),
+      ),
+    );
+    _session?.commitGesture();
+    state = _session?.current;
+  }
+
   void _apply(LayoutProfile next) {
     _session?.apply(next);
     state = _session?.current;
@@ -279,12 +305,17 @@ class LayoutEditController extends Notifier<LayoutProfile?> {
     if (layout == null || registry == null) return;
     final definition = registry.definitionFor(componentId);
     if (definition == null) return;
+    final restored = definition
+        .defaultLayout()
+        .copyWith(
+          rect: defaultGeometryFor(
+            screenId,
+            variant,
+            componentId,
+          ),
+        );
     _apply(
-      state!.replaceScreen(
-        screenId,
-        variant,
-        layout.replaceComponent(definition.defaultLayout()),
-      ),
+      state!.replaceScreen(screenId, variant, layout.replaceComponent(restored)),
     );
   }
 
@@ -323,12 +354,19 @@ class LayoutEditController extends Notifier<LayoutProfile?> {
     if (_session?.redo() == true) state = _session!.current;
   }
 
-  /// Commits the session to the persisted profile and ends editing.
+  /// Commits the session to the persisted profile and ends editing. Geometry is
+  /// materialized first so any component that was not touched during the edit
+  /// still ends up with a guaranteed placement.
   Future<void> save() async {
     final session = _session;
     if (session == null) return;
-    await ref.read(layoutProfileProvider.notifier).save(session.current);
-    session.markSaved();
+    final toPersist = ensureProfileGeometry(
+      session.current,
+      registries: layoutSceneRegistries,
+    );
+    await ref
+        .read(layoutProfileProvider.notifier)
+        .save(toPersist);
     _session = null;
     state = null;
   }

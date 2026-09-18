@@ -19,6 +19,10 @@ import 'volume_booster_sheet.dart';
 /// buttons open bottom sheets that edit [audioSettingsProvider], with
 /// non-default states highlighted (a non-1x speed, a non-flat preset, or any
 /// boost).
+///
+/// All five actions are ALWAYS visible: on the widest screens they sit in one
+/// evenly spaced row; once the width cannot fit five touch targets the buttons
+/// compact and wrap to a second line instead of dropping any action.
 class PlayerTransportRow extends ConsumerWidget {
   const PlayerTransportRow({
     super.key,
@@ -39,69 +43,75 @@ class PlayerTransportRow extends ConsumerWidget {
     final eqActive = audio.eqEnabled || audio.eqPreset != EqPreset.flat;
     final boostActive = audio.preampDb > 0;
 
+    final buttons = <Widget>[
+      _TransportButton(
+        icon: snapshot.repeatMode == RepeatMode.one
+            ? Icons.repeat_one_on_rounded
+            : snapshot.repeatMode == RepeatMode.all
+            ? Icons.repeat_on_rounded
+            : Icons.repeat_rounded,
+        label: switch (snapshot.repeatMode) {
+          RepeatMode.off => 'Repeat',
+          RepeatMode.all => 'Repeat all',
+          RepeatMode.one => 'Repeat one',
+        },
+        isActive: snapshot.repeatMode != RepeatMode.off,
+        onTap: onToggleRepeat,
+      ),
+      _TransportButton(
+        icon: Icons.speed_rounded,
+        label: speedActive
+            ? '${audio.playbackSpeed.toStringAsFixed(2)}x'.replaceFirst(
+                '.00',
+                '',
+              )
+            : 'Playback speed',
+        isActive: speedActive,
+        onTap: () => showSpeedSheet(context),
+      ),
+      _TransportButton(
+        icon: Icons.equalizer_rounded,
+        label: 'Equalizer',
+        isActive: eqActive,
+        onTap: () => showEqualizer(context),
+      ),
+      _TransportButton(
+        icon: Icons.volume_up_rounded,
+        label: boostActive
+            ? '+${audio.preampDb.toStringAsFixed(0)} dB'
+            : 'Volume boost',
+        isActive: boostActive,
+        onTap: () => showVolumeBoosterSheet(context),
+      ),
+      _TransportButton(
+        icon: snapshot.shuffleEnabled
+            ? Icons.shuffle_on_rounded
+            : Icons.shuffle_rounded,
+        label: 'Shuffle',
+        isActive: snapshot.shuffleEnabled,
+        onTap: onToggleShuffle,
+      ),
+    ];
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Buttons are uniform touch targets; when the row is narrower than all
-        // of them, keep the repeat/shuffle anchors and drop the trailing
-        // effect buttons (speed, equalizer, boost) — all three stay reachable
-        // through the top bar's overflow menu on such tight screens.
-        final visible = (constraints.maxWidth / AppTokens.touchTarget)
-            .floor()
-            .clamp(2, 5);
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _TransportButton(
-              icon: snapshot.repeatMode == RepeatMode.one
-                  ? Icons.repeat_one_on_rounded
-                  : snapshot.repeatMode == RepeatMode.all
-                  ? Icons.repeat_on_rounded
-                  : Icons.repeat_rounded,
-              label: switch (snapshot.repeatMode) {
-                RepeatMode.off => 'Repeat',
-                RepeatMode.all => 'Repeat all',
-                RepeatMode.one => 'Repeat one',
-              },
-              isActive: snapshot.repeatMode != RepeatMode.off,
-              onTap: onToggleRepeat,
-            ),
-            if (visible >= 3)
-              _TransportButton(
-                icon: Icons.speed_rounded,
-                label: speedActive
-                    ? '${audio.playbackSpeed.toStringAsFixed(2)}x'.replaceFirst(
-                        '.00',
-                        '',
-                      )
-                    : 'Playback speed',
-                isActive: speedActive,
-                onTap: () => showSpeedSheet(context),
-              ),
-            if (visible >= 4)
-              _TransportButton(
-                icon: Icons.equalizer_rounded,
-                label: 'Equalizer',
-                isActive: eqActive,
-                onTap: () => showEqualizer(context),
-              ),
-            if (visible >= 5)
-              _TransportButton(
-                icon: Icons.volume_up_rounded,
-                label: boostActive
-                    ? '+${audio.preampDb.toStringAsFixed(0)} dB'
-                    : 'Volume boost',
-                isActive: boostActive,
-                onTap: () => showVolumeBoosterSheet(context),
-              ),
-            _TransportButton(
-              icon: snapshot.shuffleEnabled
-                  ? Icons.shuffle_on_rounded
-                  : Icons.shuffle_rounded,
-              label: 'Shuffle',
-              isActive: snapshot.shuffleEnabled,
-              onTap: onToggleShuffle,
-            ),
-          ],
+        // Five touch targets side by side only fit once the row is wide
+        // enough; below that the buttons wrap so every action stays reachable.
+        final fitsSingleRow =
+            constraints.maxWidth >= 5 * AppTokens.touchTarget - 1;
+        if (fitsSingleRow) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: buttons,
+          );
+        }
+        return Wrap(
+          alignment: WrapAlignment.center,
+          runAlignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppTokens.s2,
+          runSpacing: 2,
+          children: buttons,
         );
       },
     );

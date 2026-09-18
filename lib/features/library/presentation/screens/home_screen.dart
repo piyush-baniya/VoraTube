@@ -8,13 +8,10 @@ import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/scroll_reveal.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/player/player_controller.dart';
-import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../ads/banner_ad_widget.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
 import '../../../customization/presentation/providers/layout_providers.dart';
-import '../../../customization/presentation/widgets/editable_layout_frame.dart';
-import '../../../customization/presentation/widgets/layout_edit_scope.dart';
 import '../../../playlists/presentation/widgets/home_playlist_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
@@ -39,29 +36,22 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // During live customization the unshelled screen is shown: the header and
-    // ad are inert so only the editor controls respond.
-    final editing = LayoutEditScope.isEditing(context);
     return SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          IgnorePointer(
-            ignoring: editing,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _HomeHeader(),
-                // A single, small, unobtrusive banner that never overlaps
-                // playback controls. It sits under the Home header and
-                // collapses to nothing when Premium is active or the ad fails
-                // to load.
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
-                  child: VoraTubeBannerAd(),
-                ),
-              ],
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _HomeHeader(),
+              // A single, small, unobtrusive banner that never overlaps
+              // playback controls. It sits under the Home header and collapses
+              // to nothing when Premium is active or the ad fails to load.
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+                child: VoraTubeBannerAd(),
+              ),
+            ],
           ),
           Expanded(child: _DashboardBody(onSeeAllSongs: onSeeAllSongs)),
         ],
@@ -209,118 +199,9 @@ class _DashboardBody extends ConsumerWidget {
       );
     }
 
-    // In a customization session the scroll view becomes a plain list of
-    // framed panels so each section is directly draggable/resizable.
-    if (LayoutEditScope.isEditing(context)) {
-      final panels = <Widget>[];
-      for (var i = 0; i < layout.components.length; i++) {
-        final component = layout.components[i];
-        if (!component.visible) continue;
-        final definition = homeComponentRegistry.definitionFor(component.id);
-        if (definition == null) continue;
-        final child = _editPanel(context, ref, component, current, isScanning);
-        if (child == null) continue;
-        panels.add(
-          EditableLayoutFrame(
-            componentId: component.id,
-            index: i,
-            itemCount: layout.components.length,
-            definition: definition,
-            child: child,
-          ),
-        );
-      }
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: panels,
-      );
-    }
-
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: slivers,
-    );
-  }
-
-  /// Non-sliver panel for one section during live customization.
-  Widget? _editPanel(
-    BuildContext context,
-    WidgetRef ref,
-    ComponentLayout component,
-    SongRef? current,
-    bool isScanning,
-  ) {
-    switch (component.id) {
-      case 'home.continueListening':
-        return current != null
-            ? _ContinueListeningHero(
-                current: current,
-                size: component.size,
-                styleId: component.styleId,
-              )
-            : _EmptyStateHero();
-      case 'home.listeningInsights':
-        return ListeningInsightsStrip(
-          size: component.size,
-          styleId: component.styleId,
-        );
-      case 'home.playlists':
-        return HomePlaylistStrip(
-          size: component.size,
-          styleId: component.styleId,
-        );
-      case 'home.allSongs':
-        return _allSongsEditPanel(context, ref, component, isScanning);
-      default:
-        return null;
-    }
-  }
-
-  Widget _allSongsEditPanel(
-    BuildContext context,
-    WidgetRef ref,
-    ComponentLayout component,
-    bool isScanning,
-  ) {
-    final limit = homePreviewLimitFor(component.size);
-    final homeSongs = ref.watch(homeSongsPreviewProvider(limit));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const _SectionHeader(title: 'All Songs'),
-        homeSongs.when(
-          loading: () => Column(
-            children: [
-              for (var i = 0; i < limit; i++) const _SkeletonSongTile(),
-            ],
-          ),
-          error: (e, _) => _HomeError(
-            retry: () => ref.invalidate(homeSongsPreviewProvider(limit)),
-          ),
-          data: (tiles) {
-            if (tiles.isEmpty) {
-              return isScanning
-                  ? const _ScanningState()
-                  : const EmptyState(
-                      icon: Icons.library_music_rounded,
-                      title: 'No Music',
-                      message: 'Add music to your device to get started.',
-                    );
-            }
-            return Column(
-              children: [
-                for (var i = 0; i < tiles.length; i++)
-                  SongTile(
-                    key: ValueKey(tiles[i].song.id),
-                    tile: tiles[i],
-                    index: i,
-                    onPlay: (_) => _playFrom(context, ref, tiles, i),
-                  ),
-              ],
-            );
-          },
-        ),
-      ],
     );
   }
 

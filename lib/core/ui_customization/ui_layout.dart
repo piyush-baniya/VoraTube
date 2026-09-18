@@ -4,9 +4,10 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 
 /// Bump when the persisted layout shape changes incompatibly. A profile whose
-/// stored [LayoutProfile.schemaVersion] does not match is discarded and the
-/// default layout is used instead of risking a mis-parse.
-const int kUiLayoutSchemaVersion = 1;
+/// stored [LayoutProfile.schemaVersion] is NEWER than this is discarded and
+/// the default layout is used instead of risking a mis-parse; older versions
+/// are migrated by the normalizer (see [normalizeLayoutProfile]).
+const int kUiLayoutSchemaVersion = 2;
 
 /// Wide layouts (tablets / desktop windows) are selected from the shortest
 /// side so a landscape phone is not mistaken for a large screen.
@@ -85,6 +86,89 @@ class LayoutKey {
   String toString() => '$screenId/${variant.name}';
 }
 
+/// A component's placement on the freeform edit canvas, normalized to the
+/// canvas bounds (each value is a fraction of the canvas width/height in the
+/// inclusive range 0.0..1.0). Only normalized geometry is persisted — raw
+/// pixel coordinates are never stored, so a saved layout re-flows cleanly
+/// across orientations and device sizes.
+@immutable
+class NormalizedRect {
+  const NormalizedRect({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  double get right => x + width;
+  double get bottom => y + height;
+  double get centerX => x + width / 2;
+  double get centerY => y + height / 2;
+
+  /// Fully inside 0..1 with a positive area.
+  bool get isValid =>
+      width > 0 && height > 0 && x >= 0 && y >= 0 && right <= 1 && bottom <= 1;
+
+  NormalizedRect copyWith({
+    double? x,
+    double? y,
+    double? width,
+    double? height,
+  }) {
+    return NormalizedRect(
+      x: x ?? this.x,
+      y: y ?? this.y,
+      width: width ?? this.width,
+      height: height ?? this.height,
+    );
+  }
+
+  Map<String, Object?> toJson() => {'x': x, 'y': y, 'w': width, 'h': height};
+
+  /// Reads a stored rect, clamping out-of-range values into the canvas and
+  /// returning null when the entry is unusable (not a map or no positive
+  /// area after clamping).
+  static NormalizedRect? tryFromJson(Object? json) {
+    if (json is! Map) return null;
+    num? numField(Object? value) => value is num ? value : null;
+    double clamp01(num value) => value.toDouble().clamp(0.0, 1.0).toDouble();
+    final x = numField(json['x']);
+    final y = numField(json['y']);
+    final w = numField(json['w']);
+    final h = numField(json['h']);
+    if (x == null || y == null || w == null || h == null) return null;
+    final rect = NormalizedRect(
+      x: clamp01(x),
+      y: clamp01(y),
+      width: clamp01(w),
+      height: clamp01(h),
+    );
+    return rect.isValid ? rect : null;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NormalizedRect &&
+          other.x == x &&
+          other.y == y &&
+          other.width == width &&
+          other.height == height;
+
+  @override
+  int get hashCode => Object.hash(x, y, width, height);
+
+  @override
+  String toString() =>
+      'NormalizedRect(${x.toStringAsFixed(3)}, ${y.toStringAsFixed(3)}, '
+      '${width.toStringAsFixed(3)}, ${height.toStringAsFixed(3)})';
+}
+
 /// The persisted arrangement of a single component on a screen.
 @immutable
 class ComponentLayout {
@@ -93,6 +177,7 @@ class ComponentLayout {
     this.visible = true,
     this.size = ComponentSize.medium,
     this.styleId,
+    this.rect,
   });
 
   /// Stable component id declared by the registry (e.g. `home.playlists`).
@@ -108,17 +193,25 @@ class ComponentLayout {
   /// registry default.
   final String? styleId;
 
+  /// Normalized freeform placement on the edit canvas. Null while the profile
+  /// still describes a legacy order-only layout; the editor and the save path
+  /// materialize it via the geometry defaults ([DefaultGeometry]).
+  final NormalizedRect? rect;
+
   ComponentLayout copyWith({
     bool? visible,
     ComponentSize? size,
     String? styleId,
+    NormalizedRect? rect,
     bool clearStyle = false,
+    bool clearRect = false,
   }) {
     return ComponentLayout(
       id: id,
       visible: visible ?? this.visible,
       size: size ?? this.size,
       styleId: clearStyle ? null : (styleId ?? this.styleId),
+      rect: clearRect ? null : (rect ?? this.rect),
     );
   }
 
@@ -127,6 +220,7 @@ class ComponentLayout {
     'visible': visible,
     'size': size.name,
     if (styleId != null) 'style': styleId,
+    if (rect != null) 'rect': rect!.toJson(),
   };
 
   static ComponentLayout? tryFromJson(Object? json) {
@@ -141,6 +235,7 @@ class ComponentLayout {
         orElse: () => ComponentSize.medium,
       ),
       styleId: json['style'] is String ? json['style'] as String : null,
+      rect: NormalizedRect.tryFromJson(json['rect']),
     );
   }
 
@@ -151,10 +246,11 @@ class ComponentLayout {
           other.id == id &&
           other.visible == visible &&
           other.size == size &&
-          other.styleId == styleId;
+          other.styleId == styleId &&
+          other.rect == rect;
 
   @override
-  int get hashCode => Object.hash(id, visible, size, styleId);
+  int get hashCode => Object.hash(id, visible, size, styleId, rect);
 }
 
 /// An ordered list of component layouts for one screen.
