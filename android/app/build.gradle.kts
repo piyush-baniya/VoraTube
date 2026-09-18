@@ -8,6 +8,18 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// A release build must be signed with the real upload/release credentials. When
+// they are missing we fail the release build loudly instead of silently falling
+// back to debug signing. Debug builds never touch this config.
+val releaseStoreFile = keystoreProperties["storeFile"]?.let { file(it) }
+val hasReleaseKeystore =
+    keystorePropertiesFile.exists() &&
+        keystoreProperties["keyAlias"] != null &&
+        keystoreProperties["keyPassword"] != null &&
+        keystoreProperties["storePassword"] != null &&
+        releaseStoreFile != null &&
+        releaseStoreFile.isFile
+
 
 plugins {
     id("com.android.application")
@@ -24,11 +36,16 @@ android {
 
 
     signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
+        // Only define the release signing config when real credentials exist.
+        // This is read during configuration; skipping it keeps debug builds
+        // working without key.properties/upload-keystore.jks.
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = releaseStoreFile
+                storePassword = keystoreProperties["storePassword"] as String
+            }
         }
     }
 
@@ -57,18 +74,38 @@ android {
         // released app always serves live ads and never a demo app ID.
         manifestPlaceholders["admobAppId"] =
             "ca-app-pub-3940256099942544~3347511713"
+        // Default app label; the debug buildType overrides this with the
+        // side-by-side dev name so both apps are distinguishable on-device.
+        manifestPlaceholders["appLabel"] = "VoraTube"
     }
 
     buildTypes {
+        debug {
+            // Side-by-side development install. The production package,
+            // namespace and release signing are left untouched; only the debug
+            // variant is re-branded so it can coexist with the Play install.
+            // A distinct applicationId gives V2 Dev its own sandbox (storage,
+            // databases, preferences and rewarded/premium state) and lets it be
+            // uninstalled without touching production data.
+            applicationIdSuffix = ".v2dev"
+            // "-v2dev" makes the build origin obvious in Settings and crash
+            // reports while the production versionName stays untouched.
+            versionNameSuffix = "-v2dev"
+            manifestPlaceholders["appLabel"] = "VoraTube V2 Dev"
+        }
         release {
             // Production AdMob app ID: a released build must serve live IDs.
             // (VoraTubeAds.useTestAds is false in release and every unit +
             // this app-level ID resolves to the production AdMob app.)
             manifestPlaceholders["admobAppId"] =
                 "ca-app-pub-5203454754912425~2417374767"
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("release")
+            // Release builds are signed with the real upload/release key from
+            // key.properties. When that configuration is absent the build must
+            // fail loudly (see the taskGraph guard below) — never silently fall
+            // back to debug credentials.
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             // Shrink Java/Kotlin plugin code and strip unused Android resources.
             // audio_service/just_audio/ExoPlayer entry points plus the
             // string-referenced notification drawables need explicit keeps:
@@ -84,10 +121,50 @@ android {
     }
 }
 
+// ── Side-by-side Firebase handling ──────────────────────────────────────────
+// google-services.json currently registers only the production package
+// (com.piyushbaniya.vora_tube). The v2dev debug variant has no matching client,
+// and Google's plugin fails the build when one is missing. Rather than
+// fabricating a registration, skip Firebase processing for just that variant:
+// the V2 Dev build runs without analytics (see lib/main.dart) and never reports
+// development activity into the production Firebase project. Release and
+// profile variants keep the production client and are unaffected.
+tasks.matching { it.name == "processDebugGoogleServices" }.configureEach {
+    enabled = false
+}
+
+// A production release requires real signing credentials. If they are missing,
+// stop the build at planning time with a clear message instead of allowing the
+// artifact to be produced unsigned / debug-signed. Debug builds never reach a
+// Release task and are unaffected.
+gradle.taskGraph.whenReady {
+    val releaseSigningRequired = allTasks.any { task ->
+        when {
+            task.name == "bundleRelease" -> true
+            task.name == "assembleRelease" -> true
+            task.name.startsWith("packageRelease") -> true
+            task.name.startsWith("bundleRelease") -> true
+            else -> false
+        }
+    }
+    if (releaseSigningRequired && !hasReleaseKeystore) {
+        throw GradleException(
+            "Release signing configuration is missing.\n" +
+                "Configure key.properties and the upload keystore " +
+                "before building a production release."
+        )
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+dependencies {
+    implementation("com.google.android.play:app-update:2.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 }
 
 flutter {

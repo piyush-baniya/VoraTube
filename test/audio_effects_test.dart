@@ -5,11 +5,16 @@ void main() {
   group('EqPreset', () {
     test('all presets have exactly 10 bands', () {
       for (final preset in EqPreset.values) {
-        expect(preset.levels.length, eqVirtualBandCount,
-            reason: '${preset.name} levels length');
-        expect(preset.levels.every(
-          (l) => l >= kEqLevelMin && l <= kEqLevelMax,
-        ), isTrue, reason: '${preset.name} levels within range');
+        expect(
+          preset.levels.length,
+          eqVirtualBandCount,
+          reason: '${preset.name} levels length',
+        );
+        expect(
+          preset.levels.every((l) => l >= kEqLevelMin && l <= kEqLevelMax),
+          isTrue,
+          reason: '${preset.name} levels within range',
+        );
       }
     });
 
@@ -21,8 +26,11 @@ void main() {
           .where((p) => p != EqPreset.custom)
           .toList();
       final labels = storedPresets.map((p) => p.levels.join(',')).toList();
-      expect(labels.toSet().length, storedPresets.length,
-          reason: 'stored presets should have distinct levels');
+      expect(
+        labels.toSet().length,
+        storedPresets.length,
+        reason: 'stored presets should have distinct levels',
+      );
     });
 
     test('labels are readable and non-empty', () {
@@ -108,8 +116,11 @@ void main() {
       );
       expect(result.length, deviceBands.length);
       for (var i = 0; i < deviceBands.length; i++) {
-        expect(result[i], closeTo(curve[i], 0.001),
-            reason: 'band at ${deviceBands[i]}Hz');
+        expect(
+          result[i],
+          closeTo(curve[i], 0.001),
+          reason: 'band at ${deviceBands[i]}Hz',
+        );
       }
     });
 
@@ -144,7 +155,18 @@ void main() {
 
     test('clamps to the device supported range', () {
       final result = mapVirtualCurveToBands(
-        virtualLevels: [99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 99.0, 99.0],
+        virtualLevels: [
+          99.0,
+          99.0,
+          99.0,
+          99.0,
+          99.0,
+          99.0,
+          99.0,
+          99.0,
+          99.0,
+          99.0,
+        ],
         centerFrequencies: [250.0, 4000.0],
         minDb: 0.0,
         maxDb: 5.0,
@@ -183,6 +205,83 @@ void main() {
     test('offers exactly the five expected speeds', () {
       expect(kPlaybackSpeeds, [0.25, 0.5, 1.0, 1.5, 2.0]);
       expect(kDefaultPlaybackSpeed, 1.0);
+    });
+  });
+
+  group('EqMode', () {
+    test('exposes Simple and Advanced with readable labels', () {
+      expect(EqMode.values, [EqMode.simple, EqMode.advanced]);
+      expect(EqMode.simple.label, 'Simple');
+      expect(EqMode.advanced.label, 'Advanced');
+    });
+  });
+
+  group('EqQuickControl', () {
+    test('every control maps to real band indices', () {
+      for (final control in EqQuickControl.values) {
+        expect(control.bandIndices, isNotEmpty);
+        for (final index in control.bandIndices) {
+          expect(index, greaterThanOrEqualTo(0));
+          expect(index, lessThan(eqVirtualBandCount));
+        }
+      }
+    });
+
+    test('quick control value averages only its own bands', () {
+      final levels = List<double>.filled(eqVirtualBandCount, 0.0);
+      levels[0] = 4.0;
+      levels[1] = 8.0;
+      expect(eqQuickControlValue(levels, EqQuickControl.subBass), 6.0);
+      expect(eqQuickControlValue(levels, EqQuickControl.treble), 0.0);
+    });
+
+    test('applying a quick control writes to every owned band', () {
+      final levels = List<double>.filled(eqVirtualBandCount, 0.0);
+      final updated = applyEqQuickControl(levels, EqQuickControl.bass, -6.0);
+      for (final index in EqQuickControl.bass.bandIndices) {
+        expect(updated[index], -6.0);
+      }
+      // Untouched bands stay neutral.
+      expect(updated[0], 0.0);
+      expect(updated[9], 0.0);
+    });
+
+    test('quick control clamps out-of-range gains', () {
+      final updated = applyEqQuickControl(
+        List<double>.filled(eqVirtualBandCount, 0.0),
+        EqQuickControl.treble,
+        99.0,
+      );
+      for (final index in EqQuickControl.treble.bandIndices) {
+        expect(updated[index], kEqLevelMax);
+      }
+    });
+  });
+
+  group('clipping helpers', () {
+    test('maxEqBoostDb reports the loudest positive band', () {
+      expect(maxEqBoostDb(List.filled(10, -3.0)), 0.0);
+      expect(maxEqBoostDb([1.0, 5.5, -2.0, 0.0, 0, 0, 0, 0, 0, 0]), 5.5);
+    });
+
+    test('suggestedPreampDb offsets the loudest boost', () {
+      expect(suggestedPreampDb([6.0, 5.0, 0, 0, 0, 0, 0, 0, 0, 0]), -6.0);
+      expect(suggestedPreampDb(List.filled(10, -4.0)), 0.0);
+      expect(suggestedPreampDb(List.filled(10, 0.0)), 0.0);
+    });
+
+    test('effectiveEqLevels returns preset or custom curve', () {
+      expect(
+        effectiveEqLevels(
+          preset: EqPreset.rock,
+          customLevels: List.filled(10, 9.0),
+        ),
+        EqPreset.rock.levels,
+      );
+      expect(
+        effectiveEqLevels(preset: EqPreset.custom, customLevels: [3.0, -3.0]),
+        [3.0, -3.0, 0, 0, 0, 0, 0, 0, 0, 0],
+      );
     });
   });
 }

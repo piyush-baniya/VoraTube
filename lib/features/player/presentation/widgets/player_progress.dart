@@ -15,13 +15,15 @@ void disableWaveTimelineForTesting() {
 
 /// Purple, smooth flowing wave progress bar for the full-screen player.
 ///
-/// A single sine-based wave path is drawn as a continuous curve — deliberately
+/// A single sine-based wave path is drawn as a continuous curve â€” deliberately
 /// NOT equalizer bars. The wave is split at the playback progress point: the
 /// played region is stroked in vivid purple, the remainder in a faint purple
 /// tint, so progress stays readable while the shape stays a smooth flowing
 /// single line. While playing the phase advances so the wave gently flows;
 /// when paused the phase freezes and the painter only repaints on progress
 /// changes.
+///
+/// A subtle flowing wave ripple on top of a thin progress line.
 class PlayerProgress extends StatefulWidget {
   const PlayerProgress({
     super.key,
@@ -258,13 +260,13 @@ class _WaveTimeline extends StatelessWidget {
 
 /// Paints the thin progress line with a subtle ripple on the played portion.
 ///
-/// BUG #3 redesign (visual only — seeking/progress semantics unchanged):
+/// BUG #3 redesign (visual only â€” seeking/progress semantics unchanged):
 /// - The UNPLAYED portion is a straight line: a brand-new song shows a plain
 ///   purple line, never an animated wave.
 /// - The PLAYED portion develops a very low-amplitude, continuous sine ripple
 ///   whose size grows with the fraction of the song already played (so the
 ///   wave "belongs" to that song's accumulated playback and follows the
-///   persisted position after a restart — no separate storage).
+///   persisted position after a restart â€” no separate storage).
 /// - Only the wave PHASE animates while playing; pausing freezes it and the
 ///   accumulated ripple stays exactly where it is (no reset, no motion).
 /// - Amplitude no longer depends on [isPlaying], so pausing no longer jumps.
@@ -319,7 +321,7 @@ class _WavePainter extends CustomPainter {
     final playedWidth = size.width * progress.clamp(0.0, 1.0);
 
     // BUG #3: max ripple is a small fraction of the (already slim) paint band
-    // — a gentle ±~1.5 logical px at full playback, not a large oscillation —
+    // â€” a gentle Â±~1.5 logical px at full playback, not a large oscillation â€”
     // and it scales with the played fraction so an unstarted song paints a
     // perfectly straight line.
     final maxAmplitude = size.height * 0.25;

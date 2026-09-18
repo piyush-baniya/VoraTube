@@ -112,6 +112,8 @@ class HomePlaylistStrip extends ConsumerWidget {
           );
         }
 
+        final (cardWidth, stripHeight, collageSize) = (148.0, 176.0, 104.0);
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -120,14 +122,17 @@ class HomePlaylistStrip extends ConsumerWidget {
               trailing: _buildCreateButton(context, ref),
             ),
             SizedBox(
-              height: 176,
+              height: stripHeight,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
                 itemCount: playlists.length,
                 separatorBuilder: (_, _) => const SizedBox(width: AppTokens.s3),
-                itemBuilder: (context, index) =>
-                    _HomePlaylistCard(playlist: playlists[index]),
+                itemBuilder: (context, index) => _HomePlaylistCard(
+                  playlist: playlists[index],
+                  width: cardWidth,
+                  collageSize: collageSize,
+                ),
               ),
             ),
           ],
@@ -160,9 +165,18 @@ class HomePlaylistStrip extends ConsumerWidget {
 }
 
 class _HomePlaylistCard extends ConsumerWidget {
-  const _HomePlaylistCard({required this.playlist});
+  const _HomePlaylistCard({
+    required this.playlist,
+    this.width = 148,
+    this.collageSize = 104,
+  });
 
   final PlaylistSummary playlist;
+
+  /// Fixed width in the horizontal carousel; `double.infinity` fills a grid
+  /// cell instead.
+  final double width;
+  final double collageSize;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -180,7 +194,7 @@ class _HomePlaylistCard extends ConsumerWidget {
       // Long-press shows the same context menu as the Playlists tab cards.
       onLongPress: () => showPlaylistContextMenu(context, ref, playlist),
       child: Container(
-        width: 148,
+        width: width,
         padding: const EdgeInsets.all(AppTokens.s3),
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerLow,
@@ -206,7 +220,7 @@ class _HomePlaylistCard extends ConsumerWidget {
           children: [
             PlaylistCollage(
               summary: playlist,
-              size: 104,
+              size: collageSize,
               radius: AppTokens.rMd,
             ),
             const SizedBox(height: AppTokens.s2),

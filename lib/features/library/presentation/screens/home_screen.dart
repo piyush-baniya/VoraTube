@@ -38,13 +38,18 @@ class HomeScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _HomeHeader(),
-          // A single, small, unobtrusive banner that never overlaps playback
-          // controls. It sits under the Home header and collapses to nothing
-          // when Premium is active or the ad fails to load.
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
-            child: VoraTubeBannerAd(),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _HomeHeader(),
+              // A single, small, unobtrusive banner that never overlaps
+              // playback controls. It sits under the Home header and collapses
+              // to nothing when Premium is active or the ad fails to load.
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+                child: VoraTubeBannerAd(),
+              ),
+            ],
           ),
           Expanded(child: _DashboardBody(onSeeAllSongs: onSeeAllSongs)),
         ],
@@ -107,7 +112,7 @@ class _HomeHeader extends ConsumerWidget {
             ),
           ),
           if (current != null) ...[
-            const SizedBox(width: AppTokens.s3),
+            const SizedBox(width: AppTokens.s1),
             _NowPlayingBadge(current: current),
           ],
         ],
@@ -172,7 +177,6 @@ class _DashboardBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final homeSongs = ref.watch(homeSongsProvider);
     // Narrow watch so the whole dashboard body does not rebuild on coarse
     // playback emissions (play/pause, buffering, seeks). It only re-renders
     // when the loaded track identity changes.
@@ -180,87 +184,103 @@ class _DashboardBody extends ConsumerWidget {
     final scanState = ref.watch(scanControllerProvider);
     final isScanning = scanState is ScanRunning;
 
+    final slivers = <Widget>[
+      ..._continueListeningSlivers(current),
+      SliverToBoxAdapter(child: const ListeningInsightsStrip()),
+      SliverToBoxAdapter(child: const HomePlaylistStrip()),
+      ..._allSongsSlivers(context, ref, isScanning),
+    ];
+
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        if (current != null)
-          SliverToBoxAdapter(child: _ContinueListeningHero(current: current))
-        else
-          SliverToBoxAdapter(child: _EmptyStateHero()),
-
-        SliverToBoxAdapter(child: ListeningInsightsStrip()),
-
-        SliverToBoxAdapter(child: HomePlaylistStrip()),
-
-        SliverToBoxAdapter(
-          child: _SectionHeader(
-            title: 'All Songs',
-            actionLabel: 'See All',
-            onAction:
-                onSeeAllSongs ??
-                () => Navigator.of(
-                  context,
-                ).push(pushSharedAxis<void>(context, const AllSongsScreen())),
-          ),
-        ),
-
-        AsyncValueSwitcher<List<SongTileData>>(
-          value: homeSongs,
-          loading: SliverFixedExtentList(
-            itemExtent: 84,
-            delegate: SliverChildBuilderDelegate(
-              (_, index) => const _SkeletonSongTile(),
-              childCount: 10,
-            ),
-          ),
-          errorBuilder: (e, _) => SliverToBoxAdapter(
-            child: _HomeError(retry: () => ref.invalidate(homeSongsProvider)),
-          ),
-          data: (tiles) {
-            if (tiles.isEmpty) {
-              return SliverToBoxAdapter(
-                // Home's All Songs preview is always the whole library (a
-                // bounded peek), so an empty preview genuinely means the
-                // device has no music yet — unless a scan is still running, in
-                // which case we surface a progress state instead of a dead end.
-                child: isScanning
-                    ? const _ScanningState()
-                    : const EmptyState(
-                        icon: Icons.library_music_rounded,
-                        title: 'No Music',
-                        message: 'Add music to your device to get started.',
-                      ),
-              );
-            }
-            return SliverList.separated(
-              itemCount: tiles.length,
-              separatorBuilder: (_, i) => i == tiles.length - 1
-                  ? const SizedBox.shrink()
-                  : Divider(
-                      height: AppTokens.borderHairline,
-                      thickness: AppTokens.borderHairline,
-                      indent: AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
-                      endIndent: AppTokens.s4,
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-              itemBuilder: (context, index) {
-                return ScrollReveal(
-                  // Same scroll-jank rationale as All Songs: only the initial
-                  // screenful animates in.
-                  enabled: index < scrollRevealInitialItems,
-                  child: SongTile(
-                    key: ValueKey(tiles[index].song.id),
-                    tile: tiles[index],
-                    index: index,
-                    onPlay: (_) => _playFrom(context, ref, tiles, index),
-                  ),
-                );
-              },
-            );
-          },
-        ),
-      ],
+      slivers: slivers,
     );
+  }
+
+  List<Widget> _continueListeningSlivers(SongRef? current) {
+    return [
+      SliverToBoxAdapter(
+        child: current != null
+            ? _ContinueListeningHero(current: current)
+            : _EmptyStateHero(),
+      ),
+    ];
+  }
+
+  List<Widget> _allSongsSlivers(
+    BuildContext context,
+    WidgetRef ref,
+    bool isScanning,
+  ) {
+    const limit = 10;
+    final homeSongs = ref.watch(homeSongsProvider);
+    return [
+      SliverToBoxAdapter(
+        child: _SectionHeader(
+          title: 'All Songs',
+          actionLabel: 'See All',
+          onAction:
+              onSeeAllSongs ??
+              () => Navigator.of(context)
+                  .push(pushSharedAxis<void>(context, const AllSongsScreen())),
+        ),
+      ),
+      AsyncValueSwitcher<List<SongTileData>>(
+        value: homeSongs,
+        loading: SliverFixedExtentList(
+          itemExtent: 84,
+          delegate: SliverChildBuilderDelegate(
+            (_, index) => const _SkeletonSongTile(),
+            childCount: limit,
+          ),
+        ),
+        errorBuilder: (e, _) => SliverToBoxAdapter(
+          child: _HomeError(retry: () => ref.invalidate(homeSongsProvider)),
+        ),
+        data: (tiles) {
+          if (tiles.isEmpty) {
+            return SliverToBoxAdapter(
+              // Home's All Songs preview is always the whole library (a
+              // bounded peek), so an empty preview genuinely means the
+              // device has no music yet — unless a scan is still running, in
+              // which case we surface a progress state instead of a dead end.
+              child: isScanning
+                  ? const _ScanningState()
+                  : const EmptyState(
+                      icon: Icons.library_music_rounded,
+                      title: 'No Music',
+                      message: 'Add music to your device to get started.',
+                    ),
+            );
+          }
+          return SliverList.separated(
+            itemCount: tiles.length,
+            separatorBuilder: (_, i) => i == tiles.length - 1
+                ? const SizedBox.shrink()
+                : Divider(
+                    height: AppTokens.borderHairline,
+                    thickness: AppTokens.borderHairline,
+                    indent: AppTokens.artworkLg + AppTokens.s3 + AppTokens.s4,
+                    endIndent: AppTokens.s4,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+            itemBuilder: (context, index) {
+              return ScrollReveal(
+                // Same scroll-jank rationale as All Songs: only the initial
+                // screenful animates in.
+                enabled: index < scrollRevealInitialItems,
+                child: SongTile(
+                  key: ValueKey(tiles[index].song.id),
+                  tile: tiles[index],
+                  index: index,
+                  onPlay: (_) => _playFrom(context, ref, tiles, index),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    ];
   }
 
   Future<void> _playFrom(
@@ -305,6 +325,8 @@ class _ContinueListeningHero extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
     final accent = theme.colorScheme.primary;
     final isPlaying = ref.watch(playbackIsPlayingProvider);
+    final artworkSize = 112.0;
+    final showArtist = current.artist != null;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(
@@ -346,8 +368,8 @@ class _ContinueListeningHero extends ConsumerWidget {
           GestureDetector(
             onTap: () => _openFullPlayer(context),
             child: Container(
-              width: 112,
-              height: 112,
+              width: artworkSize,
+              height: artworkSize,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppTokens.rLg),
                 boxShadow: [
@@ -363,7 +385,7 @@ class _ContinueListeningHero extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(AppTokens.rLg),
                 child: ArtworkView(
                   path: current.artPath,
-                  size: 112,
+                  size: artworkSize,
                   radius: AppTokens.rLg,
                   showShadow: true,
                 ),
@@ -399,7 +421,7 @@ class _ContinueListeningHero extends ConsumerWidget {
                           height: 1.2,
                         ),
                       ),
-                      if (current.artist != null) ...[
+                      if (showArtist) ...[
                         const SizedBox(height: AppTokens.s1),
                         Text(
                           current.artist!,

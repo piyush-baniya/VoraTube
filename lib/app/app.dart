@@ -5,6 +5,7 @@ import 'home_shell.dart';
 import 'splash_screen.dart';
 import 'theme/app_theme.dart';
 import '../core/permissions/permission_gate.dart';
+import '../core/update/play_update_host.dart';
 import '../features/ads/interstitial_ads_provider.dart';
 import '../features/player/presentation/providers/player_providers.dart';
 import '../features/settings/presentation/providers/settings_providers.dart';
@@ -37,7 +38,9 @@ class VoraTubeApp extends ConsumerWidget {
       // The splash and permission gates live inside the MaterialApp so they
       // have Directionality/Theme/MediaQuery ancestors. This is the single,
       // correct application root: ProviderScope → MaterialApp → gates → shell.
-      home: const SplashGate(child: PermissionGate(child: HomeShell())),
+      home: const SplashGate(
+        child: PermissionGate(child: PlayUpdateHost(child: HomeShell())),
+      ),
     );
   }
 }

@@ -48,7 +48,8 @@ class ListeningInsightsStrip extends ConsumerStatefulWidget {
       _ListeningInsightsStripState();
 }
 
-class _ListeningInsightsStripState extends ConsumerState<ListeningInsightsStrip> {
+class _ListeningInsightsStripState
+    extends ConsumerState<ListeningInsightsStrip> {
   ListeningStats? _stats;
   ListeningBreakdown? _breakdown;
 
@@ -68,6 +69,7 @@ class _ListeningInsightsStripState extends ConsumerState<ListeningInsightsStrip>
     }
     final accent = Theme.of(context).colorScheme.primary;
     final breakdown = _breakdown;
+    final chipBaseHeight = 96.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -81,9 +83,9 @@ class _ListeningInsightsStripState extends ConsumerState<ListeningInsightsStrip>
           child: SectionLabel(
             title: 'Your Listening',
             trailing: PressableScale(
-              onTap: () => Navigator.of(context).push(
-                pushSharedAxis<void>(context, const StatisticsScreen()),
-              ),
+              onTap: () => Navigator.of(
+                context,
+              ).push(pushSharedAxis<void>(context, const StatisticsScreen())),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -109,7 +111,7 @@ class _ListeningInsightsStripState extends ConsumerState<ListeningInsightsStrip>
         // never overflow or clip at larger system font scales.
         SizedBox(
           height: MediaQuery.textScalerOf(context)
-              .scale(96)
+              .scale(chipBaseHeight)
               .clamp(80.0, 160.0),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),

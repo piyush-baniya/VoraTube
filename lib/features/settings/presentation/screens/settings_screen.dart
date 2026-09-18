@@ -11,13 +11,15 @@ import '../../../../core/privacy/privacy_config.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../features/player/presentation/providers/sleep_timer_provider.dart';
-import '../../../../features/player/presentation/widgets/equalizer_sheet.dart';
+import '../../../../features/player/presentation/screens/equalizer_screen.dart';
 import '../../../../features/player/presentation/widgets/sleep_timer_sheet.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../ads/banner_ad_widget.dart';
 import '../../../ads/premium_models.dart';
 import '../../../ads/premium_providers.dart';
 import '../../../ads/premium_sheets.dart';
+import '../../../../core/update/play_update.dart';
+import '../../../../core/update/play_update_controller.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
 import 'faq_screen.dart';
 import 'hidden_songs_screen.dart';
@@ -139,8 +141,7 @@ class _PlaybackSection extends ConsumerWidget {
         ),
         SettingsSelectTile<PlaybackTransitionMode>(
           title: 'Playback Transition',
-          subtitle:
-              'Crossfade blends tracks; Gapless and Off switch instantly',
+          subtitle: 'Crossfade blends tracks; Gapless and Off switch instantly',
           value: audio.transitionMode,
           onChanged: (mode) =>
               ref.read(audioSettingsProvider.notifier).setTransitionMode(mode),
@@ -249,7 +250,7 @@ class _AudioSection extends ConsumerWidget {
           subtitle: audioSettings.eqEnabled
               ? 'Active — ${audioSettings.eqPreset.label}'
               : 'Off — launch from the player to shape the sound',
-          onTap: () => showEqualizerSheet(context),
+          onTap: () => showEqualizer(context),
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 18,
@@ -382,19 +383,11 @@ class _LibrarySection extends ConsumerWidget {
         final removed = await controller.reconcileMissingFiles();
         if (!context.mounted) return;
         final result = missingFileCleanupResult(removed);
-        VoraSnackbar.success(
-          context,
-          result.message,
-          title: result.title,
-        );
+        VoraSnackbar.success(context, result.message, title: result.title);
       } catch (_) {
         if (!context.mounted) return;
         final result = missingFileCleanupResult(null);
-        VoraSnackbar.error(
-          context,
-          result.message,
-          title: result.title,
-        );
+        VoraSnackbar.error(context, result.message, title: result.title);
       }
     }
   }
@@ -435,6 +428,7 @@ class _AppearanceSection extends ConsumerWidget {
               .read(appearanceSettingsProvider.notifier)
               .setThemePreset(preset),
           items: [for (final palette in AppPalettes.all) palette.preset],
+          isLastInSection: true,
           itemBuilder: (context, preset) {
             return Row(
               mainAxisSize: MainAxisSize.min,
@@ -461,7 +455,6 @@ class _AppearanceSection extends ConsumerWidget {
             ),
           ),
           menuMaxHeight: _kColorThemeMenuMaxHeight,
-          isLastInSection: true,
         ),
       ],
     );
@@ -549,6 +542,24 @@ class _AboutSection extends ConsumerWidget {
           ),
         ),
         SettingsTile(
+          title: 'Check for updates',
+          subtitle: 'Google Play in-app update',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.tertiary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.system_update_alt_rounded,
+              size: 22,
+              color: colorScheme.tertiary,
+            ),
+          ),
+          onTap: () => _checkForUpdates(context, ref),
+        ),
+        SettingsTile(
           title: 'Support the Developer',
           subtitle: 'Buy Me a Momo donation',
           leading: Container(
@@ -578,6 +589,30 @@ class _AboutSection extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _checkForUpdates(BuildContext context, WidgetRef ref) async {
+    final info = await ref
+        .read(playUpdateControllerProvider.notifier)
+        .checkForUpdate(manual: true);
+    if (!context.mounted) return;
+    // The PlayUpdateHost owns the sheet (a prompt token in the state opens it),
+    // so only the cases that need no sheet report back here.
+    switch (info.status) {
+      case PlayUpdateStatus.available ||
+          PlayUpdateStatus.downloaded ||
+          PlayUpdateStatus.downloading:
+        // The PlayUpdateHost presents the sheet for these.
+        break;
+      case PlayUpdateStatus.failed:
+        VoraSnackbar.info(context, "Couldn't check for updates. Try later.");
+      case PlayUpdateStatus.unsupported:
+        // Not a Play-distributed build (dev/sideloaded): never claim to be
+        // up to date, since Play has no update channel for this install.
+        VoraSnackbar.info(context, 'Updates are managed by Google Play');
+      case _:
+        VoraSnackbar.success(context, 'VoraTube is up to date');
+    }
   }
 }
 

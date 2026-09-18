@@ -101,7 +101,9 @@ class AudioSettings {
           : normalizeEqLevels(eqCustomLevels),
       playbackSpeed: playbackSpeed == null
           ? this.playbackSpeed
-          : playbackSpeed.clamp(kPlaybackSpeedMin, kPlaybackSpeedMax).toDouble(),
+          : playbackSpeed
+                .clamp(kPlaybackSpeedMin, kPlaybackSpeedMax)
+                .toDouble(),
       transitionMode: transitionMode ?? this.transitionMode,
       crossfadeSeconds: crossfadeSeconds == null
           ? this.crossfadeSeconds
@@ -253,6 +255,11 @@ class SettingsKeys {
   static const String library = 'settings.library';
   static const String appearance = 'settings.appearance';
 
+  /// Equalizer UI preferences that are not part of the audio pipeline itself:
+  /// the selected Simple/Advanced mode, the user's saved curves and which one
+  /// is selected. Stored separately so the audio JSON format stays untouched.
+  static const String equalizer = 'settings.equalizer';
+
   /// The last-browsed Library section (Songs/Albums/Artists/Genres), so the
   /// Library tab reopens where the user left off across restarts.
   static const String librarySection = 'settings.librarySection';
@@ -286,15 +293,15 @@ extension AudioSettingsJson on AudioSettings {
           .firstMatch(json);
       final eqPresetMatch = RegExp(r'"eqPreset"\s*:\s*"(\w+)"')
           .firstMatch(json);
-      final eqCustomLevelsMatch =
-          RegExp(r'"eqCustomLevels"\s*:\s*(\[[0-9\.,\-\s]*\])')
-              .firstMatch(json);
+      final eqCustomLevelsMatch = RegExp(
+        r'"eqCustomLevels"\s*:\s*(\[[0-9\.,\-\s]*\])',
+      ).firstMatch(json);
       final playbackSpeedMatch = RegExp(r'"playbackSpeed"\s*:\s*([\d\.\-]+)')
           .firstMatch(json);
       final transitionModeMatch = RegExp(r'"transitionMode"\s*:\s*"(\w+)"')
           .firstMatch(json);
-      final crossfadeSecondsMatch =
-          RegExp(r'"crossfadeSeconds"\s*:\s*(\d+)').firstMatch(json);
+      final crossfadeSecondsMatch = RegExp(r'"crossfadeSeconds"\s*:\s*(\d+)')
+          .firstMatch(json);
       final audioBalanceMatch = RegExp(r'"audioBalance"\s*:\s*([\d\.\-]+)')
           .firstMatch(json);
 
@@ -330,7 +337,9 @@ extension AudioSettingsJson on AudioSettings {
           orElse: () => EqPreset.flat,
         ),
         eqCustomLevels: parsedCustomLevels,
-        playbackSpeed: parsedSpeed.clamp(kPlaybackSpeedMin, kPlaybackSpeedMax).toDouble(),
+        playbackSpeed: parsedSpeed
+            .clamp(kPlaybackSpeedMin, kPlaybackSpeedMax)
+            .toDouble(),
         transitionMode: parsedTransition,
         crossfadeSeconds: clampCrossfadeSeconds(parsedCrossfadeSeconds),
         audioBalance: clampAudioBalance(parsedBalance),

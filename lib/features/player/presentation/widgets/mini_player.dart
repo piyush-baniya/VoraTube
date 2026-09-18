@@ -11,8 +11,9 @@ import '../providers/player_providers.dart';
 
 /// Compact now-playing bar docked above the bottom navigation.
 ///
-/// Design: Premium elevated surface with artwork, metadata, progress indicator,
-/// and transport controls. Seamless Hero transition to full-screen player.
+/// Artwork, song info, the progress line, the transport controls and the
+/// shuffle toggle render from the fixed layout. Seamless Hero transition to
+/// the full-screen player.
 class MiniPlayer extends ConsumerStatefulWidget {
   const MiniPlayer({super.key});
 
@@ -147,6 +148,10 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
+    final artSize = 48.0;
+    final controlWidth = 44;
+    final showShuffle = true;
+
     final canStep =
         snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
     _hasPrevious = canStep && snapshot.currentIndex >= 0;
@@ -167,7 +172,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
         }
       },
       // Animated horizontal card swipe (see [_onHorizontalDragEnd]). The
-      // recognizers live on the whole card — artwork, title, progress bar and
+      // recognizers live on the whole card — artwork, title, progress line and
       // transport controls included — so a swipe started anywhere skips.
       onHorizontalDragStart: _onHorizontalDragStart,
       onHorizontalDragUpdate: _onHorizontalDragUpdate,
@@ -220,20 +225,20 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                 ),
               ],
             ),
-child: SafeArea(
+            child: SafeArea(
               top: false,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 60),
                 child: Row(
                   children: [
                     const SizedBox(width: AppTokens.s2),
-                    // Artwork with Hero. Uses the shared CompactArtwork rather than
-                    // a local copy: the private duplicate it replaced had no
-                    // `errorBuilder`, so an undecodable file left Flutter's red
-                    // error box in the MiniPlayer for the rest of the session.
+                    // Artwork with Hero. Uses the shared CompactArtwork rather
+                    // than a local copy: the private duplicate it replaced had
+                    // no `errorBuilder`, so an undecodable file left Flutter's
+                    // red error box in the MiniPlayer for the whole session.
                     CompactArtwork(
                       path: current.artPath,
-                      size: 44,
+                      size: artSize,
                       heroTag: MiniPlayer._heroTag,
                       borderRadius: AppTokens.rMd,
                     ),
@@ -262,32 +267,34 @@ child: SafeArea(
                               ),
                             ),
                           const SizedBox(height: 2),
-                          // Progress bar
                           _MiniProgress(
                             snapshot: snapshot,
                             onSeek: (pos) => ref.read(playerProvider).seek(pos),
+                            style: 'thin',
                           ),
                         ],
                       ),
                     ),
-                    // Transport cluster: shuffle | previous | play/pause | next
-                    const SizedBox(width: 2),
-                    Semantics(
-                      button: true,
-                      label: 'Shuffle',
-                      child: _TransportButton(
-                        icon: snapshot.shuffleEnabled
-                            ? Icons.shuffle_on_rounded
-                            : Icons.shuffle_rounded,
-                        enabled: true,
-                        active: snapshot.shuffleEnabled,
-                        onTap: () {
-                          final enabling = !snapshot.shuffleEnabled;
-                          ref.read(playerProvider).setShuffle(enabling);
-                        },
-                        colorScheme: colorScheme,
+                    if (showShuffle) ...[
+                      const SizedBox(width: 2),
+                      Semantics(
+                        button: true,
+                        label: 'Shuffle',
+                        child: _TransportButton(
+                          icon: snapshot.shuffleEnabled
+                              ? Icons.shuffle_on_rounded
+                              : Icons.shuffle_rounded,
+                          enabled: true,
+                          active: snapshot.shuffleEnabled,
+                          onTap: () {
+                            final enabling = !snapshot.shuffleEnabled;
+                            ref.read(playerProvider).setShuffle(enabling);
+                          },
+                          colorScheme: colorScheme,
+                          width: controlWidth,
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(width: 2),
                     Semantics(
                       button: true,
@@ -299,6 +306,7 @@ child: SafeArea(
                           ref.read(playerProvider).previous();
                         },
                         colorScheme: colorScheme,
+                        width: controlWidth,
                       ),
                     ),
                     const SizedBox(width: 2),
@@ -308,12 +316,12 @@ child: SafeArea(
                       child: PressableScale(
                         onTap: () => ref.read(playerProvider).togglePlay(),
                         child: SizedBox(
-                          width: 44,
+                          width: controlWidth.toDouble(),
                           height: AppTokens.touchTarget,
                           child: Center(
                             child: Container(
-                              width: 36,
-                              height: 36,
+                              width: _playCircle(controlWidth),
+                              height: _playCircle(controlWidth),
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   begin: Alignment.topLeft,
@@ -338,7 +346,7 @@ child: SafeArea(
                                 snapshot.isPlaying
                                     ? Icons.pause_rounded
                                     : Icons.play_arrow_rounded,
-                                size: 20,
+                                size: _playIcon(controlWidth),
                                 color: colorScheme.onPrimary,
                               ),
                             ),
@@ -357,6 +365,7 @@ child: SafeArea(
                           ref.read(playerProvider).next();
                         },
                         colorScheme: colorScheme,
+                        width: controlWidth,
                       ),
                     ),
                     const SizedBox(width: AppTokens.s2),
@@ -370,6 +379,22 @@ child: SafeArea(
     );
   }
 
+  static double _playCircle(int controlWidth) {
+    return switch (controlWidth) {
+      <= 40 => 32,
+      >= 48 => 40,
+      _ => 36,
+    };
+  }
+
+  static double _playIcon(int controlWidth) {
+    return switch (controlWidth) {
+      <= 40 => 18,
+      >= 48 => 22,
+      _ => 20,
+    };
+  }
+
   void _openFullPlayer(BuildContext context) {
     // Immersive full player: push on the root navigator so it covers the whole
     // shell, including this MiniPlayer and the bottom bar.
@@ -377,8 +402,8 @@ child: SafeArea(
       PageRouteBuilder(
         transitionDuration: AppTokens.slow,
         reverseTransitionDuration: AppTokens.medium,
-        pageBuilder: (_, __, ___) => const FullPlayerScreen(),
-        transitionsBuilder: (_, animation, __, child) {
+        pageBuilder: (_, _, _) => const FullPlayerScreen(),
+        transitionsBuilder: (_, animation, _, child) {
           final curved = CurvedAnimation(
             parent: animation,
             curve: AppTokens.easeOutExpo,
@@ -401,13 +426,14 @@ child: SafeArea(
 }
 
 /// A compact circular transport button with a disabled state and an optional
-/// active ("on") highlight shared with the Full Player's mode toggles.
+/// active ("on") highlight.
 class _TransportButton extends StatelessWidget {
   const _TransportButton({
     required this.icon,
     required this.enabled,
     required this.onTap,
     required this.colorScheme,
+    required this.width,
     this.active = false,
   });
 
@@ -419,23 +445,37 @@ class _TransportButton extends StatelessWidget {
   /// Tints the icon [colorScheme.primary] instead of the muted inactive shade.
   final bool active;
 
+  /// Horizontal hit-area width; the visual circle stays 28px so the compact
+  /// bar keeps its proportions at every size.
+  final int width;
+
   @override
   Widget build(BuildContext context) {
     final iconColor = active
         ? colorScheme.primary
         : colorScheme.onSurfaceVariant.withValues(alpha: enabled ? 0.9 : 0.35);
+    final circle = width <= 40
+        ? 24.0
+        : width >= 48
+        ? 32.0
+        : 28.0;
+    final iconSize = width <= 40
+        ? 16.0
+        : width >= 48
+        ? 20.0
+        : 18.0;
     return PressableScale(
       onTap: enabled ? onTap : null,
       child: SizedBox(
-        // A 44dp-wide, 48dp-tall hit area for accessibility, with the smaller
-        // visual circle centered inside so the compact bar keeps its visual
-        // proportions and the controls sit close together.
-        width: 44,
+        // A 38-48dp-wide, 48dp-tall hit area for accessibility, with the
+        // smaller visual circle centered inside so the compact bar keeps its
+        // visual proportions and the controls sit close together.
+        width: width.toDouble(),
         height: AppTokens.touchTarget,
         child: Center(
           child: Container(
-            width: 28,
-            height: 28,
+            width: circle,
+            height: circle,
             decoration: BoxDecoration(
               color: enabled
                   ? colorScheme.surfaceContainerHighest
@@ -448,7 +488,7 @@ class _TransportButton extends StatelessWidget {
                 width: AppTokens.borderHairline,
               ),
             ),
-            child: Icon(icon, size: 18, color: iconColor),
+            child: Icon(icon, size: iconSize, color: iconColor),
           ),
         ),
       ),
@@ -457,10 +497,15 @@ class _TransportButton extends StatelessWidget {
 }
 
 class _MiniProgress extends ConsumerWidget {
-  const _MiniProgress({required this.snapshot, required this.onSeek});
+  const _MiniProgress({
+    required this.snapshot,
+    required this.onSeek,
+    this.style = 'thin',
+  });
 
   final PlayerSnapshot snapshot;
   final ValueChanged<Duration> onSeek;
+  final String style;
 
   void _seekAt(BuildContext context, double dx, Duration duration) {
     final width = context.size?.width ?? 0;
@@ -476,6 +521,7 @@ class _MiniProgress extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
+    final lineHeight = style == 'bold' ? 4.0 : 2.0;
 
     return ref
         .watch(playbackPositionProvider)
@@ -488,11 +534,11 @@ class _MiniProgress extends ConsumerWidget {
                 ? position.inMilliseconds / duration.inMilliseconds
                 : 0.0;
 
-            // Tappable progress: a taller invisible hit area so the thin 2px
-            // bar is easy to seek without hurting the compact layout. A tap
-            // seeks to the tapped fraction. Horizontal drags deliberately do
-            // NOT belong to this region: they belong to the whole-card swipe
-            // (next/previous), so a swipe started over the progress bar works
+            // Tappable progress: a taller invisible hit area so the thin line
+            // is easy to seek without hurting the compact layout. A tap seeks
+            // to the tapped fraction. Horizontal drags deliberately do NOT
+            // belong to this region: they belong to the whole-card swipe
+            // (next/previous), so a swipe started over the progress line works
             // exactly like one started anywhere else on the card.
             return GestureDetector(
               key: const Key('mini_progress'),
@@ -508,7 +554,7 @@ class _MiniProgress extends ConsumerWidget {
                   child: Stack(
                     children: [
                       Container(
-                        height: 2,
+                        height: lineHeight,
                         decoration: BoxDecoration(
                           color: colorScheme.outlineVariant.withValues(
                             alpha: 0.3,
@@ -519,7 +565,7 @@ class _MiniProgress extends ConsumerWidget {
                       FractionallySizedBox(
                         widthFactor: progress.clamp(0.0, 1.0),
                         child: Container(
-                          height: 2,
+                          height: lineHeight,
                           decoration: BoxDecoration(
                             color: colorScheme.primary,
                             borderRadius: BorderRadius.circular(
@@ -535,14 +581,14 @@ class _MiniProgress extends ConsumerWidget {
             );
           },
           loading: () => Container(
-            height: 2,
+            height: lineHeight,
             decoration: BoxDecoration(
               color: colorScheme.outlineVariant.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(AppTokens.rFull),
             ),
           ),
-          error: (_, __) => Container(
-            height: 2,
+          error: (_, _) => Container(
+            height: lineHeight,
             decoration: BoxDecoration(
               color: colorScheme.outlineVariant.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(AppTokens.rFull),

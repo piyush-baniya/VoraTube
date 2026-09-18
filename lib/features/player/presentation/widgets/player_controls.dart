@@ -7,6 +7,9 @@ import '../../../../app/theme/app_tokens.dart';
 ///
 /// Layout:  [previous]  [rewind-10]  [play/pause]  [forward-10]  [next]
 ///
+/// In [compact] mode the ten-second seek buttons are dropped so the row stays
+/// tight:  [previous]  [play/pause]  [next]
+///
 /// Shuffle and repeat live in [PlayerModeRow] above the wave timeline
 /// (repeat on the left, shuffle on the right). Play/pause is the largest
 /// element with a prominent shadow; rewind/forward-10 are compact glass
@@ -23,6 +26,7 @@ class PlayerControls extends StatelessWidget {
     this.showModeToggles = false,
     this.onToggleShuffle,
     this.onToggleRepeat,
+    this.compact = false,
   });
 
   final PlayerSnapshot snapshot;
@@ -39,6 +43,10 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback? onToggleShuffle;
   final VoidCallback? onToggleRepeat;
 
+  /// True on compact-height layouts (e.g. landscape phones): the play button
+  /// footprint shrinks and the ten-second seek buttons are dropped.
+  final bool compact;
+
   bool get _canStep =>
       snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
 
@@ -49,12 +57,14 @@ class PlayerControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final playFootprint = 68.0;
+    final playFootprint = compact ? 52.0 : 68.0;
     final unit = AppTokens.touchTarget; // 48
+    final hasTenSec = !compact;
+    final nonPlayCount = (hasTenSec ? 2 : 0) + 2 + (showModeToggles ? 2 : 0);
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final needed = playFootprint + unit * (showModeToggles ? 6 : 4);
+        final needed = playFootprint + unit * nonPlayCount;
         final scale = constraints.maxWidth < needed
             ? constraints.maxWidth / needed
             : 1.0;
@@ -88,23 +98,25 @@ class PlayerControls extends StatelessWidget {
                   : colorScheme.onSurface.withValues(alpha: 0.2),
               onTap: _canPrevious ? onPrevious : null,
             ),
-            _TenSecButton(
-              width: baseUnit,
-              icon: Icons.replay_10_rounded,
-              onTap: onRewind10,
-              color: colorScheme.onSurface,
-            ),
+            if (hasTenSec)
+              _TenSecButton(
+                width: baseUnit,
+                icon: Icons.replay_10_rounded,
+                onTap: onRewind10,
+                color: colorScheme.onSurface,
+              ),
             _PlayButton(
               diameter: basePlay,
               isPlaying: snapshot.isPlaying,
               onTap: onTogglePlay,
             ),
-            _TenSecButton(
-              width: baseUnit,
-              icon: Icons.forward_10_rounded,
-              onTap: onForward10,
-              color: colorScheme.onSurface,
-            ),
+            if (hasTenSec)
+              _TenSecButton(
+                width: baseUnit,
+                icon: Icons.forward_10_rounded,
+                onTap: onForward10,
+                color: colorScheme.onSurface,
+              ),
             _ControlButton(
               width: baseUnit,
               icon: Icons.skip_next_rounded,
