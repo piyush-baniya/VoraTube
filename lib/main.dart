@@ -4,8 +4,10 @@ import 'package:drift_flutter/drift_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'app/app.dart';
+import 'core/app_variant.dart';
 import 'core/db/app_database.dart';
 import 'firebase_options.dart';
 import 'services/analytics_service.dart';
@@ -139,6 +141,11 @@ Future<void> main() async {
 /// Initializes Firebase and the analytics facade without ever blocking or
 /// failing startup. Firebase/analytics problems are deliberately non-fatal.
 Future<void> _initializeAnalytics() async {
+  // V2 Dev (`applicationId` …​.v2dev) is a side-by-side build with no dedicated
+  // Firebase app registration yet. Skip analytics entirely rather than reporting
+  // development activity into the production Firebase project. Production and
+  // profile builds (production applicationId) are unaffected.
+  if (await _isSideBySideDevBuild()) return;
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -150,4 +157,19 @@ Future<void> _initializeAnalytics() async {
   // Independent of the native Firebase outcome: the facade no-ops safely when
   // the underlying instance is missing.
   AnalyticsService.instance.initialize();
+}
+
+/// True for the side-by-side development build (`com.piyushbaniya.vora_tube.v2dev`).
+///
+/// Detected from the runtime package name so plain `flutter run` and
+/// `flutter build apk --debug` are correctly classified without requiring a
+/// `--dart-define`. Any failure resolves to `false` (treated as production),
+/// which is the safe default for analytics.
+Future<bool> _isSideBySideDevBuild() async {
+  try {
+    final info = await PackageInfo.fromPlatform();
+    return isSideBySideDevPackage(info.packageName);
+  } catch (_) {
+    return false;
+  }
 }

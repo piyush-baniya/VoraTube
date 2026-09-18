@@ -74,9 +74,25 @@ android {
         // released app always serves live ads and never a demo app ID.
         manifestPlaceholders["admobAppId"] =
             "ca-app-pub-3940256099942544~3347511713"
+        // Default app label; the debug buildType overrides this with the
+        // side-by-side dev name so both apps are distinguishable on-device.
+        manifestPlaceholders["appLabel"] = "VoraTube"
     }
 
     buildTypes {
+        debug {
+            // Side-by-side development install. The production package,
+            // namespace and release signing are left untouched; only the debug
+            // variant is re-branded so it can coexist with the Play install.
+            // A distinct applicationId gives V2 Dev its own sandbox (storage,
+            // databases, preferences and rewarded/premium state) and lets it be
+            // uninstalled without touching production data.
+            applicationIdSuffix = ".v2dev"
+            // "-v2dev" makes the build origin obvious in Settings and crash
+            // reports while the production versionName stays untouched.
+            versionNameSuffix = "-v2dev"
+            manifestPlaceholders["appLabel"] = "VoraTube V2 Dev"
+        }
         release {
             // Production AdMob app ID: a released build must serve live IDs.
             // (VoraTubeAds.useTestAds is false in release and every unit +
@@ -103,6 +119,18 @@ android {
             )
         }
     }
+}
+
+// ── Side-by-side Firebase handling ──────────────────────────────────────────
+// google-services.json currently registers only the production package
+// (com.piyushbaniya.vora_tube). The v2dev debug variant has no matching client,
+// and Google's plugin fails the build when one is missing. Rather than
+// fabricating a registration, skip Firebase processing for just that variant:
+// the V2 Dev build runs without analytics (see lib/main.dart) and never reports
+// development activity into the production Firebase project. Release and
+// profile variants keep the production client and are unaffected.
+tasks.matching { it.name == "processDebugGoogleServices" }.configureEach {
+    enabled = false
 }
 
 // A production release requires real signing credentials. If they are missing,

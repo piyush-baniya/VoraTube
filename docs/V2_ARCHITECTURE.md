@@ -370,17 +370,92 @@ then run `flutter build appbundle --release`. Both files are gitignored in the
 worktree, so the validation never pollutes the diff. Remove them afterwards if
 desired.
 
-## 6. Validation (V2)
+## 6. Side-by-side V2 development install
+
+V2 can be installed next to the Play (production) build for on-device testing.
+
+**Strategy — debug build type, not product flavors.** `flutter run` and
+`flutter build apk --debug` target the `debug` build type by default, so a
+single `applicationIdSuffix` on `debug` gives a side-by-side install with no
+`--flavor` flag and no change to the production package, namespace or release
+signing. A flavor would force every command to opt in and would multiply the
+release variant matrix.
+
+| Property        | Debug (V2 Dev)                     | Release (production)          |
+| --------------- | ---------------------------------- | ----------------------------- |
+| `applicationId` | `com.piyushbaniya.vora_tube.v2dev` | `com.piyushbaniya.vora_tube`  |
+| versionName     | `1.2.3-v2dev` (Flutter versionName + `-v2dev`) | `1.2.3` (unchanged) |
+| versionCode     | 24 (same as production)            | 24 (unchanged)                |
+| App label       | `VoraTube V2 Dev`                  | `VoraTube`                    |
+| AdMob app ID    | Google sample test ID              | VoraTube production app ID    |
+
+- **App label** comes from the `appLabel` manifest placeholder
+  (`AndroidManifest.xml` uses `android:label="${appLabel}"`): `defaultConfig`
+  sets `VoraTube`, `debug` overrides it with `VoraTube V2 Dev`.
+- **Data isolation** is automatic: a distinct `applicationId` gives V2 Dev its
+  own support directory, Drift database, SharedPreferences, artwork/palette
+  caches, notification settings and premium/rewarded state. Uninstalling V2 Dev
+  never touches production data, and vice versa.
+- **Launcher icon** is reused from production; the visible app name is the
+  on-device disambiguator. A DEV badge is an optional, non-blocking polish.
+- **AdMob** needs no per-build-type wiring: every unit ID is centralized in
+  `lib/features/ads/ads_config.dart`, where `VoraTubeAds.useTestAds` is
+  `kDebugMode` — debug resolves to Google's official test units and the manifest
+  `admobAppId` defaults to the sample test App ID, while release resolves to the
+  production units and app ID.
+
+**Firebase.** `google-services.json` and `firebase_options.dart` register only
+the production package, and no `com.piyushbaniya.vora_tube.v2dev` client
+exists yet. Rather than fabricate credentials, both layers skip Firebase for the
+dev variant:
+
+- Gradle: `tasks.matching { it.name == "processDebugGoogleServices" }` is
+  disabled, so the plugin does not fail the debug build with "no matching
+  client". Release and profile variants keep the production client.
+- Dart: `lib/main.dart` skips `Firebase.initializeApp` when the runtime package
+  name matches `com.piyushbaniya.vora_tube.v2dev` (`lib/core/app_variant.dart`),
+  so development activity is never attributed to the production Firebase app.
+  Failures resolve to production (analytics enabled), the safe default.
+
+To enable analytics for V2 Dev later: register `com.piyushbaniya.vora_tube.v2dev`
+as a second Android app in the Firebase project, download the updated
+`google-services.json` (with both clients), add the dev `FirebaseOptions` to
+`firebase_options.dart`, then remove the `processDebugGoogleServices` guard.
+
+**Native audit (no collisions).**
+
+- No `FileProvider`, `<provider>` or custom authority is declared, so there is
+  nothing to suffix.
+- Method channels (`VoraTube*Bridge`) and the audio-service notification channel
+  (`voratube.playback`) are app-internal names; Android scopes channels and media
+  sessions per package, so both installs stay isolated. Channel names are not
+  renamed.
+- The only intent filters are `MAIN/LAUNCHER`, `MediaBrowserService` and
+  `MEDIA_BUTTON`; there are no deep-link `<data>` schemes or hosts.
+- `android:taskAffinity=""` on `MainActivity` is unchanged.
+
+**Build commands.**
+
+```
+flutter run                          # debug → installs VoraTube V2 Dev
+flutter build apk --debug            # side-by-side dev artifact
+flutter build appbundle --release    # production (requires upload keystore)
+```
+
+## 7. Validation (V2)
 
 - `flutter analyze`: **0 errors, 0 warnings** in new code. Remaining issues are
   pre-existing info-level lints (repo-wide style) and one pre-existing
   `unused_import` in `smart_mixes_screen.dart`.
 - `flutter test`: all green.
-- `flutter build apk --debug` succeeds (no new dependencies surfaced at build
-  time).
+- `flutter build apk --debug` succeeds and produces
+  `applicationId=com.piyushbaniya.vora_tube.v2dev`, `versionName=1.2.3-v2dev`,
+  label `VoraTube V2 Dev`.
 - Release: builds only with the upload keystore present; fails fast otherwise.
+  Verified `applicationId=com.piyushbaniya.vora_tube`, `versionName=1.2.3`,
+  label `VoraTube`, production AdMob app ID, signed by the VoraTube upload cert.
 
-## 7. Privacy
+## 8. Privacy
 
 Palette analysis is carried out **on-device only**: image bytes are decoded and
 analyzed locally; nothing (artwork, extracted data, or cache contents) leaves
