@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -87,7 +86,7 @@ void main() {
 
   group('listPlaylists', () {
     test('orders pinned first, then by updatedAt desc', () async {
-      final id1 = await playlistRepo.createPlaylist('A');
+      await playlistRepo.createPlaylist('A');
       final id2 = await playlistRepo.createPlaylist('B');
       await playlistRepo.createPlaylist('C');
 

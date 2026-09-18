@@ -435,7 +435,7 @@ class _PlaylistMenuButton extends ConsumerWidget {
       try {
         await repository.renamePlaylist(playlistId, result);
         ref.read(playlistRefreshTickProvider.notifier).state++;
-      } on DuplicatePlaylistNameException catch (e) {
+      } on DuplicatePlaylistNameException {
         if (context.mounted) {
           VoraSnackbar.error(
             context,

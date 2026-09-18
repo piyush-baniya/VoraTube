@@ -5,10 +5,6 @@ import 'mood_engine.dart';
 import 'smart_mix_service.dart';
 
 class SmartQueueService {
-  SmartQueueService({MoodEngine? moodEngine})
-    : _moodEngine = moodEngine ?? MoodEngine();
-
-  final MoodEngine _moodEngine;
   final Random _random = Random();
 
   List<SongRef> reorderForVariety(
@@ -222,8 +218,6 @@ class SmartQueueService {
     final result = <SongRef>[];
     final used = <String>{};
 
-    final i1 = 0;
-    final i2 = 0;
     var idx1 = 0;
     var idx2 = 0;
 

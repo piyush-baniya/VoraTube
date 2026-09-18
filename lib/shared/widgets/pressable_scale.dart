@@ -223,13 +223,6 @@ class _PressableCardState extends State<PressableCard>
     }
   }
 
-  void _handleTapCancel() {
-    if (_isPressed) {
-      _isPressed = false;
-      _controller.reverse();
-    }
-  }
-
   void _handlePointerCancel(PointerCancelEvent event) {
     if (_isPressed) {
       _isPressed = false;

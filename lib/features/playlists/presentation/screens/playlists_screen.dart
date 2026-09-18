@@ -844,7 +844,7 @@ class _PlaylistCard extends ConsumerWidget {
           title: 'Playlist duplicated',
         );
       }
-    } on DuplicatePlaylistNameException catch (e) {
+    } on DuplicatePlaylistNameException {
       if (context.mounted) {
         VoraSnackbar.error(
           context,
@@ -858,7 +858,6 @@ class _PlaylistCard extends ConsumerWidget {
 
 class _ContextMenuTile extends StatelessWidget {
   const _ContextMenuTile({
-    super.key,
     required this.icon,
     required this.label,
     required this.onTap,

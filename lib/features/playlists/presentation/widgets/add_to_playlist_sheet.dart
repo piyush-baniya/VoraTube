@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../data/playlist_models.dart';
-import '../../../../app/theme/app_tokens.dart';
-import '../../data/playlist_models.dart';
 import '../../data/playlist_repository.dart';
 import '../providers/playlist_providers.dart';
 
@@ -31,8 +29,6 @@ class _AddToPlaylistBody extends ConsumerStatefulWidget {
 }
 
 class _AddToPlaylistBodyState extends ConsumerState<_AddToPlaylistBody> {
-  bool _modified = false;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -112,7 +108,7 @@ class _AddToPlaylistBodyState extends ConsumerState<_AddToPlaylistBody> {
                     playlists: playlists,
                     songRowId: widget.songRowId,
                     scrollController: scrollController,
-                    onChanged: () => _modified = true,
+                    onChanged: () {},
                   );
                 },
               ),
@@ -154,7 +150,7 @@ class _AddToPlaylistBodyState extends ConsumerState<_AddToPlaylistBody> {
         final repository = ref.read(playlistRepositoryProvider);
         await repository.createPlaylist(result);
         ref.read(playlistRefreshTickProvider.notifier).state++;
-      } on DuplicatePlaylistNameException catch (e) {
+      } on DuplicatePlaylistNameException {
         if (context.mounted) {
           VoraSnackbar.error(
             context,

@@ -8,7 +8,6 @@ import 'package:file_picker/file_picker.dart';
 
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
-import '../../../../core/genre/genre_enrichment_service.dart';
 import '../../../../core/genre/genre_providers.dart';
 import '../../../../core/ingest/artwork/artwork_file_cache.dart';
 import '../../../../core/player/player_controller.dart';
@@ -69,7 +68,6 @@ class SongActions {
     int? removeFromPlaylistId,
   }) async {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final song = tile.song;
     final isFavorite = ref.read(
       favoriteIdsProvider.select((ids) => ids.contains(song.id)),

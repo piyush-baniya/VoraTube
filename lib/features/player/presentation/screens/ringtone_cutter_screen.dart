@@ -196,12 +196,6 @@ class _RingtoneCutterScreenState extends ConsumerState<RingtoneCutterScreen>
     );
   }
 
-  static String _fileNameOf(String path) {
-    final uri = Uri.tryParse(path);
-    final segs = uri?.pathSegments ?? const <String>[];
-    return segs.isNotEmpty ? segs.last : path;
-  }
-
   void _snack(
     String message, {
     VoraSnackbarVariant variant = VoraSnackbarVariant.info,

@@ -117,7 +117,6 @@ void main() {
       'lib/shared/widgets/artwork_view.dart',
       'lib/features/player/presentation/widgets/queue_sheet.dart',
       'lib/features/player/presentation/widgets/rotating_artwork.dart',
-      'lib/features/player/presentation/widgets/player_artwork.dart',
       'lib/features/smart_music/presentation/widgets/mix_card.dart',
       'lib/features/smart_music/presentation/screens/smart_mix_detail_screen.dart',
     ];

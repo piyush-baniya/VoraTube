@@ -111,7 +111,6 @@ void main() {
   });
 
   test('invalidateCache writes a stale sentinel', () async {
-    final service = GenreEnrichmentService();
     var capturedKey = '';
     var capturedValue = '';
     await GenreEnrichmentService.invalidateCache(

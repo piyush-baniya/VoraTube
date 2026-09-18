@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../app/widgets/vora_snackbar.dart';
-import '../../../library/data/library_models.dart';
-
 import '../../../library/data/library_models.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart'
@@ -169,7 +166,7 @@ Future<({int id, String name})?> promptCreatePlaylist(
     final id = await repository.createPlaylist(result);
     ref.read(playlistRefreshTickProvider.notifier).state++;
     return (id: id, name: result);
-  } on DuplicatePlaylistNameException catch (e) {
+  } on DuplicatePlaylistNameException {
     if (context.mounted) {
       VoraSnackbar.error(
         context,

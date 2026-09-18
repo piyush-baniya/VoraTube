@@ -31,9 +31,13 @@ It is designed around three principles:
 
 * 🎨 **Beautiful UI** — modern, polished interfaces and animations
 * ⚡ **Smooth experience** — responsive playback and navigation
-* 🔒 **Local-first** — your music library and listening experience stay on your device
+* 🔒 **Local-first** — your music files and library stay on your device, and no account is required for the core player
 
 VoraTube does not require an account to use the core music-player experience.
+
+### Privacy
+
+VoraTube is local-first: your music files, library and playback history are stored and processed on your device. The app may use network access for optional metadata enrichment, and the production build includes Firebase Analytics and Google AdMob. The full text is available in the in-app privacy policy and in [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md).
 
 ---
 
@@ -196,6 +200,14 @@ Features include:
 
 VoraTube provides additional audio controls for users who want more control over playback.
 
+### Equalizer
+
+A 10-band equalizer with selectable presets for shaping the sound of your music.
+
+### Volume Booster
+
+Boost playback volume beyond the device level when you need extra headroom.
+
 ### Preamp
 
 Adjust the preamp level to control the audio signal before playback processing.
@@ -203,6 +215,14 @@ Adjust the preamp level to control the audio signal before playback processing.
 ### ReplayGain
 
 Support for ReplayGain-based volume normalization.
+
+### Crossfade
+
+Blend the end of one track into the start of the next for smoother transitions.
+
+### Playback Speed
+
+Adjust the playback speed for spoken-word, podcast-style and long-form tracks.
 
 ---
 
@@ -350,10 +370,14 @@ VoraTube includes a dedicated settings area for configuring the listening experi
 
 Available controls include:
 
-* Theme
-* Audio settings
+* Theme presets (Purple, Aurora, Ocean, Ember, Emerald, Rosé, Midnight, OLED, Sepia)
+* Equalizer presets
 * Preamp
 * ReplayGain
+* Crossfade
+* Playback speed
+* Sleep timer
+* Hidden songs
 * Storage information
 * App usage
 
@@ -361,7 +385,7 @@ Available controls include:
 
 # 🎨 Design
 
-VoraTube uses a dark, modern visual language with a distinctive purple-themed identity.
+VoraTube uses a dark, modern visual language with a distinctive purple-themed identity, and ships with nine selectable theme presets: Purple, Aurora, Ocean, Ember, Emerald, Rosé, Midnight, OLED and Sepia.
 
 The UI focuses on:
 
@@ -388,6 +412,7 @@ VoraTube is built using the Flutter ecosystem.
 | **Flutter**              | Application framework                 |
 | **Dart**                 | Programming language                  |
 | **Riverpod**             | State management                      |
+| **Drift (SQLite)**       | Local library, playlists & statistics |
 | **just_audio**           | Audio playback                        |
 | **audio_service**        | Background playback & media controls  |
 | **Android MediaSession** | Lock-screen and notification controls |
@@ -404,19 +429,23 @@ Major areas include:
 
 ```text
 lib/
-├── app/
-├── core/
+├── app/            # theme, shared app widgets
+├── core/           # db, player, ingest, storage, permissions, audio, genre
 ├── features/
+│   ├── ads/
+│   ├── collections/   # listening statistics & history
+│   ├── donation/
 │   ├── library/
+│   ├── lyrics/
 │   ├── player/
 │   ├── playlists/
+│   ├── ringtones/
 │   ├── search/
 │   ├── settings/
-│   ├── statistics/
-│   ├── lyrics/
-│   ├── ringtone/
 │   └── smart_music/
-├── shared/
+├── services/       # analytics
+├── shared/         # reusable widgets, extensions, utils
+├── firebase_options.dart
 └── main.dart
 ```
 

@@ -25,8 +25,7 @@ final smartPlaylistServiceProvider = Provider<SmartPlaylistService>((ref) {
 });
 
 final smartQueueServiceProvider = Provider<SmartQueueService>((ref) {
-  final moodEngine = ref.watch(moodEngineProvider);
-  return SmartQueueService(moodEngine: moodEngine);
+  return SmartQueueService();
 });
 
 final smartMixesProvider = FutureProvider.autoDispose<List<SmartMix>>((

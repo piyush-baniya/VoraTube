@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../app/theme/app_colors.dart';
 import '../../app/theme/app_tokens.dart';
 
 /// Intentional empty-state with icon, message, and optional action.
