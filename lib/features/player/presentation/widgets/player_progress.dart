@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_tokens.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 
 /// Can be disabled in tests to prevent the infinite pulse animation.
 bool waveTimelineEnabled = true;
@@ -16,7 +15,7 @@ void disableWaveTimelineForTesting() {
 
 /// Purple, smooth flowing wave progress bar for the full-screen player.
 ///
-/// A single sine-based wave path is drawn as a continuous curve — deliberately
+/// A single sine-based wave path is drawn as a continuous curve â€” deliberately
 /// NOT equalizer bars. The wave is split at the playback progress point: the
 /// played region is stroked in vivid purple, the remainder in a faint purple
 /// tint, so progress stays readable while the shape stays a smooth flowing
@@ -24,24 +23,18 @@ void disableWaveTimelineForTesting() {
 /// when paused the phase freezes and the painter only repaints on progress
 /// changes.
 ///
-/// [size] scales the widget: [ComponentSize.small] renders a slim plain line
-/// so tight layouts keep seeking without the wave's visual weight.
+/// A subtle flowing wave ripple on top of a thin progress line.
 class PlayerProgress extends StatefulWidget {
   const PlayerProgress({
     super.key,
     required this.snapshot,
     required this.position,
     required this.onSeek,
-    this.size = ComponentSize.medium,
   });
 
   final PlayerSnapshot snapshot;
   final Duration position;
   final Future<void> Function(Duration position) onSeek;
-
-  /// Scales the timeline: small renders a slim line, medium the flowing wave,
-  /// large a taller wave.
-  final ComponentSize size;
 
   @override
   State<PlayerProgress> createState() => _PlayerProgressState();
@@ -135,49 +128,25 @@ class _PlayerProgressState extends State<PlayerProgress>
     // the painted band is now a few logical pixels tall instead of a large
     // oscillation. The outer box keeps a comfortable seek hit-target.
     final compactHeight = MediaQuery.sizeOf(context).height < 480;
-    final isWave = widget.size != ComponentSize.small;
-    final waveHeight = compactHeight
-        ? 20.0
-        : switch (widget.size) {
-            ComponentSize.small => 20.0,
-            ComponentSize.medium => 26.0,
-            ComponentSize.large => 34.0,
-          };
-    final wavePaintHeight = compactHeight
-        ? 10.0
-        : switch (widget.size) {
-            ComponentSize.small => 10.0,
-            ComponentSize.medium => 12.0,
-            ComponentSize.large => 16.0,
-          };
+    final waveHeight = compactHeight ? 20.0 : 26.0;
+    final wavePaintHeight = compactHeight ? 10.0 : 12.0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (isWave)
-          _WaveTimeline(
-            progress: totalMs > 0 ? _progress : 0,
-            isPlaying: widget.snapshot.isPlaying,
-            pulse: _pulse,
-            activeColor: colorScheme.primary,
-            inactiveColor: colorScheme.primary.withValues(alpha: 0.16),
-            height: waveHeight,
-            paintHeight: wavePaintHeight,
-            onDragStart: _startDrag,
-            onDrag: _updateDrag,
-            onDragEnd: _endDrag,
-            onTap: _tapAt,
-          )
-        else
-          _LineTimeline(
-            progress: totalMs > 0 ? _progress : 0,
-            activeColor: colorScheme.primary,
-            inactiveColor: colorScheme.primary.withValues(alpha: 0.16),
-            onDragStart: _startDrag,
-            onDrag: _updateDrag,
-            onDragEnd: _endDrag,
-            onTap: _tapAt,
-          ),
+        _WaveTimeline(
+          progress: totalMs > 0 ? _progress : 0,
+          isPlaying: widget.snapshot.isPlaying,
+          pulse: _pulse,
+          activeColor: colorScheme.primary,
+          inactiveColor: colorScheme.primary.withValues(alpha: 0.16),
+          height: waveHeight,
+          paintHeight: wavePaintHeight,
+          onDragStart: _startDrag,
+          onDrag: _updateDrag,
+          onDragEnd: _endDrag,
+          onTap: _tapAt,
+        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
           child: Row(
@@ -201,86 +170,6 @@ class _PlayerProgressState extends State<PlayerProgress>
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Slim interactive line track with tap/drag seeking (used by the `small`
-/// progress variant so tight layouts keep the exact same seek semantics).
-class _LineTimeline extends StatelessWidget {
-  const _LineTimeline({
-    required this.progress,
-    required this.activeColor,
-    required this.inactiveColor,
-    required this.onDragStart,
-    required this.onDrag,
-    required this.onDragEnd,
-    required this.onTap,
-  });
-
-  final double progress;
-  final Color activeColor;
-  final Color inactiveColor;
-  final ValueChanged<double> onDragStart;
-  final ValueChanged<double> onDrag;
-  final VoidCallback onDragEnd;
-  final ValueChanged<double> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-
-        double toFraction(double dx) => (dx / width).clamp(0.0, 1.0);
-
-        return Semantics(
-          slider: true,
-          label: 'Seek',
-          value: '${(progress * 100).round()} percent',
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapUp: (details) => onTap(toFraction(details.localPosition.dx)),
-            onHorizontalDragStart: (details) =>
-                onDragStart(toFraction(details.localPosition.dx)),
-            onHorizontalDragUpdate: (details) =>
-                onDrag(toFraction(details.localPosition.dx)),
-            onHorizontalDragEnd: (_) => onDragEnd(),
-            onHorizontalDragCancel: onDragEnd,
-            child: SizedBox(
-              height: 28,
-              width: width,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
-                  child: Stack(
-                    alignment: Alignment.centerLeft,
-                    children: [
-                      Container(
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: inactiveColor,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      FractionallySizedBox(
-                        widthFactor: progress.clamp(0.0, 1.0),
-                        child: Container(
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: activeColor,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -371,13 +260,13 @@ class _WaveTimeline extends StatelessWidget {
 
 /// Paints the thin progress line with a subtle ripple on the played portion.
 ///
-/// BUG #3 redesign (visual only — seeking/progress semantics unchanged):
+/// BUG #3 redesign (visual only â€” seeking/progress semantics unchanged):
 /// - The UNPLAYED portion is a straight line: a brand-new song shows a plain
 ///   purple line, never an animated wave.
 /// - The PLAYED portion develops a very low-amplitude, continuous sine ripple
 ///   whose size grows with the fraction of the song already played (so the
 ///   wave "belongs" to that song's accumulated playback and follows the
-///   persisted position after a restart — no separate storage).
+///   persisted position after a restart â€” no separate storage).
 /// - Only the wave PHASE animates while playing; pausing freezes it and the
 ///   accumulated ripple stays exactly where it is (no reset, no motion).
 /// - Amplitude no longer depends on [isPlaying], so pausing no longer jumps.
@@ -432,7 +321,7 @@ class _WavePainter extends CustomPainter {
     final playedWidth = size.width * progress.clamp(0.0, 1.0);
 
     // BUG #3: max ripple is a small fraction of the (already slim) paint band
-    // — a gentle ±~1.5 logical px at full playback, not a large oscillation —
+    // â€” a gentle Â±~1.5 logical px at full playback, not a large oscillation â€”
     // and it scales with the played fraction so an unstarted song paints a
     // perfectly straight line.
     final maxAmplitude = size.height * 0.25;

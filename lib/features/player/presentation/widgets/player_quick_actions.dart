@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../providers/player_providers.dart';
@@ -12,12 +11,10 @@ class PlayerFavoriteButton extends ConsumerWidget {
   const PlayerFavoriteButton({
     super.key,
     required this.identityKey,
-    this.size = ComponentSize.medium,
     this.compact = false,
   });
 
   final String identityKey;
-  final ComponentSize size;
 
   /// A tighter 44dp footprint for the top action bar.
   final bool compact;
@@ -26,11 +23,7 @@ class PlayerFavoriteButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isFavorite = ref.watch(currentSongIsFavoriteProvider);
     final colorScheme = Theme.of(context).colorScheme;
-    final iconSize = switch (size) {
-      ComponentSize.small => 20.0,
-      ComponentSize.medium => 22.0,
-      ComponentSize.large => 24.0,
-    };
+    final iconSize = compact ? 20.0 : 22.0;
 
     return PressableScale(
       onTap: () {

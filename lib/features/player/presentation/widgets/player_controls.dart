@@ -2,14 +2,13 @@ import 'package:flutter/material.dart' hide RepeatMode;
 
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_tokens.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 
 /// Central playback controls for the full-screen player.
 ///
 /// Layout:  [previous]  [rewind-10]  [play/pause]  [forward-10]  [next]
 ///
-/// At [ComponentSize.small] the ten-second seek buttons are dropped so the
-/// row stays tight:  [previous]  [play/pause]  [next]
+/// In [compact] mode the ten-second seek buttons are dropped so the row stays
+/// tight:  [previous]  [play/pause]  [next]
 ///
 /// Shuffle and repeat live in [PlayerModeRow] above the wave timeline
 /// (repeat on the left, shuffle on the right). Play/pause is the largest
@@ -27,7 +26,7 @@ class PlayerControls extends StatelessWidget {
     this.showModeToggles = false,
     this.onToggleShuffle,
     this.onToggleRepeat,
-    this.size = ComponentSize.medium,
+    this.compact = false,
   });
 
   final PlayerSnapshot snapshot;
@@ -44,9 +43,9 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback? onToggleShuffle;
   final VoidCallback? onToggleRepeat;
 
-  /// Scales the play button footprint and drops the ten-second seek buttons
-  /// below [ComponentSize.medium].
-  final ComponentSize size;
+  /// True on compact-height layouts (e.g. landscape phones): the play button
+  /// footprint shrinks and the ten-second seek buttons are dropped.
+  final bool compact;
 
   bool get _canStep =>
       snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
@@ -58,13 +57,9 @@ class PlayerControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final playFootprint = switch (size) {
-      ComponentSize.small => 52.0,
-      ComponentSize.medium => 68.0,
-      ComponentSize.large => 84.0,
-    };
+    final playFootprint = compact ? 52.0 : 68.0;
     final unit = AppTokens.touchTarget; // 48
-    final hasTenSec = size != ComponentSize.small;
+    final hasTenSec = !compact;
     final nonPlayCount = (hasTenSec ? 2 : 0) + 2 + (showModeToggles ? 2 : 0);
 
     return LayoutBuilder(

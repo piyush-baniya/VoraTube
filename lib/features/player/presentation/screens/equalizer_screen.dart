@@ -4,9 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/audio/audio_effects.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../shared/widgets/artwork_view.dart';
-import '../../../customization/presentation/providers/layout_providers.dart';
 import '../../../settings/data/settings_models.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
 import '../../data/equalizer_settings.dart';
@@ -35,25 +33,17 @@ class EqualizerScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final variant = layoutVariantForSize(MediaQuery.sizeOf(context));
-    final layout = ref.watch(equalizerScreenLayoutProvider(variant));
-
     return PlayerPaletteSurface(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: _EqualizerBody(variant: variant, layout: layout),
-        ),
+        body: SafeArea(child: _EqualizerBody()),
       ),
     );
   }
 }
 
 class _EqualizerBody extends ConsumerStatefulWidget {
-  const _EqualizerBody({required this.variant, required this.layout});
-
-  final LayoutVariant variant;
-  final ScreenLayout layout;
+  const _EqualizerBody();
 
   @override
   ConsumerState<_EqualizerBody> createState() => _EqualizerBodyState();
@@ -64,21 +54,6 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
   /// gesture ends so a drag does not write storage on every frame.
   List<double>? _draftLevels;
   double? _draftPreamp;
-
-  bool _visible(String id) => widget.layout.component(id)?.visible ?? true;
-
-  ComponentSize _sizeOf(String id) =>
-      widget.layout.component(id)?.size ?? ComponentSize.medium;
-
-  /// Wraps a block (a pass-through — real screens are never inside an edit
-  /// scope anymore; the freeform editor renders its own canvas).
-  Widget _frame(
-    BuildContext context,
-    String componentId, {
-    required Widget child,
-  }) {
-    return child;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +68,8 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
     final levels = _draftLevels ?? baseLevels;
     final preamp = _draftPreamp ?? audio.preampDb;
 
-    final wide = widget.variant != LayoutVariant.portrait;
+    final screen = MediaQuery.sizeOf(context);
+    final wide = screen.width > screen.height;
     final curve = _curveBlock(context, audio.eqEnabled, levels);
     final controls = _controlsBlock(
       context,
@@ -106,17 +82,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
     return Column(
       children: [
         _topBar(context, audio.eqEnabled),
-        if (_visible('equalizer.nowPlaying'))
-          _frame(
-            context,
-            'equalizer.nowPlaying',
-            child: _nowPlaying(
-              context,
-              song?.title,
-              song?.artist,
-              song?.artPath,
-            ),
-          ),
+        _nowPlaying(context, song?.title, song?.artist, song?.artPath),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             AppTokens.s4,
@@ -146,11 +112,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
                               AppTokens.s2,
                               AppTokens.s6,
                             ),
-                            child: _frame(
-                              context,
-                              'equalizer.curve',
-                              child: curve,
-                            ),
+                            child: curve,
                           ),
                         ),
                         const VerticalDivider(width: 1),
@@ -177,10 +139,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _frame(context, 'equalizer.curve', child: curve),
-                          controls,
-                        ],
+                        children: [curve, controls],
                       ),
                     ),
             ),
@@ -280,9 +239,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
   // ── Curve ────────────────────────────────────────────────────────────
 
   Widget _curveBlock(BuildContext context, bool enabled, List<double> levels) {
-    final height = _sizeOf('equalizer.curve') == ComponentSize.large
-        ? 280.0
-        : 220.0;
+    const height = 220.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppTokens.s2),
       child: Column(
@@ -320,52 +277,13 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
     required List<double> levels,
     required double preamp,
   }) {
-    final blocks = <Widget>[];
-    if (_visible('equalizer.presets')) {
-      blocks.add(
-        _frame(
-          context,
-          'equalizer.presets',
-          child: _presetsBlock(context, audio, ui, levels),
-        ),
-      );
-    }
-    if (ui.mode == EqMode.simple && _visible('equalizer.quickControls')) {
-      blocks.add(
-        _frame(
-          context,
-          'equalizer.quickControls',
-          child: _quickControlsBlock(context, levels),
-        ),
-      );
-    }
-    if (ui.mode == EqMode.advanced && _visible('equalizer.bandControls')) {
-      blocks.add(
-        _frame(
-          context,
-          'equalizer.bandControls',
-          child: _bandControlsBlock(context, levels),
-        ),
-      );
-    }
-    if (_visible('equalizer.preamp')) {
-      blocks.add(
-        _frame(
-          context,
-          'equalizer.preamp',
-          child: _preampBlock(context, audio, levels, preamp),
-        ),
-      );
-    }
-    if (_visible('equalizer.processing')) {
-      blocks.add(
-        _frame(
-          context,
-          'equalizer.processing',
-          child: _processingBlock(context),
-        ),
-      );
-    }
+    final blocks = <Widget>[
+      _presetsBlock(context, audio, ui, levels),
+      if (ui.mode == EqMode.simple) _quickControlsBlock(context, levels),
+      if (ui.mode == EqMode.advanced) _bandControlsBlock(context, levels),
+      _preampBlock(context, audio, levels, preamp),
+      _processingBlock(context),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

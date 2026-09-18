@@ -8,10 +8,8 @@ import '../../../../shared/widgets/transitions.dart';
 import '../../../../shared/widgets/scroll_reveal.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/player/player_controller.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../ads/banner_ad_widget.dart';
 import '../../../collections/presentation/widgets/listening_insights.dart';
-import '../../../customization/presentation/providers/layout_providers.dart';
 import '../../../playlists/presentation/widgets/home_playlist_strip.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../../player/presentation/screens/full_player_screen.dart';
@@ -179,11 +177,6 @@ class _DashboardBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // The user's saved layout drives order, visibility, size and style. A
-    // missing/loading profile resolves to the default arrangement, so Home
-    // renders the pre-customization UI until (or unless) a profile exists.
-    final variant = layoutVariantForSize(MediaQuery.sizeOf(context));
-    final layout = ref.watch(homeScreenLayoutProvider(variant));
     // Narrow watch so the whole dashboard body does not rebuild on coarse
     // playback emissions (play/pause, buffering, seeks). It only re-renders
     // when the loaded track identity changes.
@@ -191,13 +184,12 @@ class _DashboardBody extends ConsumerWidget {
     final scanState = ref.watch(scanControllerProvider);
     final isScanning = scanState is ScanRunning;
 
-    final slivers = <Widget>[];
-    for (final component in layout.components) {
-      if (!component.visible) continue;
-      slivers.addAll(
-        _sectionSlivers(context, ref, component, current, isScanning),
-      );
-    }
+    final slivers = <Widget>[
+      ..._continueListeningSlivers(current),
+      SliverToBoxAdapter(child: const ListeningInsightsStrip()),
+      SliverToBoxAdapter(child: const HomePlaylistStrip()),
+      ..._allSongsSlivers(context, ref, isScanning),
+    ];
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -205,60 +197,23 @@ class _DashboardBody extends ConsumerWidget {
     );
   }
 
-  /// Expands one configured component into its slivers, in the saved order.
-  List<Widget> _sectionSlivers(
-    BuildContext context,
-    WidgetRef ref,
-    ComponentLayout component,
-    SongRef? current,
-    bool isScanning,
-  ) {
-    switch (component.id) {
-      case 'home.continueListening':
-        return [
-          SliverToBoxAdapter(
-            child: current != null
-                ? _ContinueListeningHero(
-                    current: current,
-                    size: component.size,
-                    styleId: component.styleId,
-                  )
-                : _EmptyStateHero(),
-          ),
-        ];
-      case 'home.listeningInsights':
-        return [
-          SliverToBoxAdapter(
-            child: ListeningInsightsStrip(
-              size: component.size,
-              styleId: component.styleId,
-            ),
-          ),
-        ];
-      case 'home.playlists':
-        return [
-          SliverToBoxAdapter(
-            child: HomePlaylistStrip(
-              size: component.size,
-              styleId: component.styleId,
-            ),
-          ),
-        ];
-      case 'home.allSongs':
-        return _allSongsSlivers(context, ref, component, isScanning);
-      default:
-        return const [];
-    }
+  List<Widget> _continueListeningSlivers(SongRef? current) {
+    return [
+      SliverToBoxAdapter(
+        child: current != null
+            ? _ContinueListeningHero(current: current)
+            : _EmptyStateHero(),
+      ),
+    ];
   }
 
   List<Widget> _allSongsSlivers(
     BuildContext context,
     WidgetRef ref,
-    ComponentLayout component,
     bool isScanning,
   ) {
-    final limit = homePreviewLimitFor(component.size);
-    final homeSongs = ref.watch(homeSongsPreviewProvider(limit));
+    const limit = 10;
+    final homeSongs = ref.watch(homeSongsProvider);
     return [
       SliverToBoxAdapter(
         child: _SectionHeader(
@@ -280,9 +235,7 @@ class _DashboardBody extends ConsumerWidget {
           ),
         ),
         errorBuilder: (e, _) => SliverToBoxAdapter(
-          child: _HomeError(
-            retry: () => ref.invalidate(homeSongsPreviewProvider(limit)),
-          ),
+          child: _HomeError(retry: () => ref.invalidate(homeSongsProvider)),
         ),
         data: (tiles) {
           if (tiles.isEmpty) {
@@ -362,15 +315,9 @@ class _DashboardBody extends ConsumerWidget {
 }
 
 class _ContinueListeningHero extends ConsumerWidget {
-  const _ContinueListeningHero({
-    required this.current,
-    this.size = ComponentSize.medium,
-    this.styleId,
-  });
+  const _ContinueListeningHero({required this.current});
 
   final SongRef current;
-  final ComponentSize size;
-  final String? styleId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -378,16 +325,8 @@ class _ContinueListeningHero extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
     final accent = theme.colorScheme.primary;
     final isPlaying = ref.watch(playbackIsPlayingProvider);
-    final compact = styleId == 'compact';
-    final artworkSize = switch (size) {
-      ComponentSize.small => 72.0,
-      ComponentSize.medium => 112.0,
-      ComponentSize.large => 136.0,
-    };
-    // The compact style trades the artist line for a slimmer card; the size
-    // preset never pushes the artwork past what a compact row can hold.
-    final effectiveArtwork = compact && artworkSize > 88 ? 88.0 : artworkSize;
-    final showArtist = !compact && current.artist != null;
+    final artworkSize = 112.0;
+    final showArtist = current.artist != null;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(
@@ -429,8 +368,8 @@ class _ContinueListeningHero extends ConsumerWidget {
           GestureDetector(
             onTap: () => _openFullPlayer(context),
             child: Container(
-              width: effectiveArtwork,
-              height: effectiveArtwork,
+              width: artworkSize,
+              height: artworkSize,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppTokens.rLg),
                 boxShadow: [
@@ -446,7 +385,7 @@ class _ContinueListeningHero extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(AppTokens.rLg),
                 child: ArtworkView(
                   path: current.artPath,
-                  size: effectiveArtwork,
+                  size: artworkSize,
                   radius: AppTokens.rLg,
                   showShadow: true,
                 ),

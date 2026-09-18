@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/library_repository.dart';
 import '../../../library/presentation/providers/library_providers.dart';
@@ -42,18 +41,7 @@ final listeningStatsProvider = FutureProvider.autoDispose<ListeningStats>((
 /// means a reload re-renders the old numbers until the new ones land, never a
 /// blank hole.
 class ListeningInsightsStrip extends ConsumerStatefulWidget {
-  const ListeningInsightsStrip({
-    super.key,
-    this.size = ComponentSize.medium,
-    this.styleId,
-  });
-
-  /// Layout size preset chosen in the Home customizer.
-  final ComponentSize size;
-
-  /// `chips` collapses the block to the two compact stat cards; `full` (or
-  /// null) also shows the featured most-played card.
-  final String? styleId;
+  const ListeningInsightsStrip({super.key});
 
   @override
   ConsumerState<ListeningInsightsStrip> createState() =>
@@ -81,15 +69,7 @@ class _ListeningInsightsStripState
     }
     final accent = Theme.of(context).colorScheme.primary;
     final breakdown = _breakdown;
-    // `chips` (or the smallest size) keeps the block to its compact stat cards.
-    final showFeatured =
-        widget.size != ComponentSize.small &&
-        (widget.styleId ?? 'full') != 'chips';
-    final chipBaseHeight = switch (widget.size) {
-      ComponentSize.small => 80.0,
-      ComponentSize.medium => 96.0,
-      ComponentSize.large => 112.0,
-    };
+    final chipBaseHeight = 96.0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -160,14 +140,12 @@ class _ListeningInsightsStripState
             ),
           ),
         ),
-        if (showFeatured) ...[
-          const SizedBox(height: AppTokens.s2),
-          // Featured: most played song (or library summary when idle).
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-            child: _FeaturedCard(stats: stats),
-          ),
-        ],
+        const SizedBox(height: AppTokens.s2),
+        // Featured: most played song (or library summary when idle).
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+          child: _FeaturedCard(stats: stats),
+        ),
         const SizedBox(height: AppTokens.s3),
       ],
     );

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/widgets/top_toast.dart';
 import '../../../../core/player/player_controller.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 import '../providers/player_providers.dart';
 import 'player_controls.dart';
 import 'player_progress.dart';
@@ -57,14 +56,11 @@ class PlayerSecondaryHost extends ConsumerWidget {
 /// The progress block: watches [playbackPositionProvider] so only it rebuilds
 /// on position ticks.
 class PlayerProgressHost extends ConsumerWidget {
-  const PlayerProgressHost({super.key, required this.progress});
-
-  final ComponentLayout? progress;
+  const PlayerProgressHost({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final snapshot = ref.watch(playbackStateProvider);
-    final size = progress?.size ?? ComponentSize.medium;
     return ref
         .watch(playbackPositionProvider)
         .when(
@@ -72,19 +68,16 @@ class PlayerProgressHost extends ConsumerWidget {
             snapshot: snapshot,
             position: position,
             onSeek: (pos) => ref.read(playerProvider).seek(pos),
-            size: size,
           ),
           loading: () => PlayerProgress(
             snapshot: snapshot,
             position: Duration.zero,
             onSeek: (pos) => ref.read(playerProvider).seek(pos),
-            size: size,
           ),
           error: (_, _) => PlayerProgress(
             snapshot: snapshot,
             position: Duration.zero,
             onSeek: (pos) => ref.read(playerProvider).seek(pos),
-            size: size,
           ),
         );
   }
@@ -95,11 +88,14 @@ class PlayerControlsHost extends ConsumerWidget {
   const PlayerControlsHost({
     super.key,
     required this.snapshot,
-    required this.size,
+    this.compact = false,
   });
 
   final PlayerSnapshot snapshot;
-  final ComponentSize size;
+
+  /// True on compact-height layouts (e.g. landscape phones): drops the
+  /// ten-second seek buttons and shrinks the play button.
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -140,7 +136,7 @@ class PlayerControlsHost extends ConsumerWidget {
           ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
       onForward10: () =>
           ref.read(playerProvider).seekBy(const Duration(seconds: 10)),
-      size: size,
+      compact: compact,
     );
   }
 }

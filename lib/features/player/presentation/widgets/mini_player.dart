@@ -2,21 +2,18 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
-import '../../../../features/customization/presentation/providers/layout_providers.dart';
 import '../../presentation/screens/full_player_screen.dart';
 import '../providers/player_providers.dart';
 
 /// Compact now-playing bar docked above the bottom navigation.
 ///
-/// The bar is driven by the [miniScreenLayoutProvider] customization profile:
-/// artwork, song info, the progress line, the transport controls and the
-/// shuffle toggle each render from their layout component (honoring visibility
-/// and size). Seamless Hero transition to the full-screen player.
+/// Artwork, song info, the progress line, the transport controls and the
+/// shuffle toggle render from the fixed layout. Seamless Hero transition to
+/// the full-screen player.
 class MiniPlayer extends ConsumerStatefulWidget {
   const MiniPlayer({super.key});
 
@@ -151,25 +148,9 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
-    final variant = layoutVariantForSize(MediaQuery.sizeOf(context));
-    final layout = ref.watch(miniScreenLayoutProvider(variant));
-    final art = layout.component('mini.artwork');
-    final controls = layout.component('mini.controls');
-    final trackInfo = layout.component('mini.trackInfo');
-    final progress = layout.component('mini.progress');
-    final secondary = layout.component('mini.secondaryControls');
-
-    final artSize = switch (art?.size ?? ComponentSize.medium) {
-      ComponentSize.small => 40.0,
-      ComponentSize.medium => 48.0,
-      ComponentSize.large => 56.0,
-    };
-    final controlWidth = switch (controls?.size ?? ComponentSize.medium) {
-      ComponentSize.small => 38,
-      ComponentSize.medium => 44,
-      ComponentSize.large => 48,
-    };
-    final showShuffle = secondary?.visible != false;
+    final artSize = 48.0;
+    final controlWidth = 44;
+    final showShuffle = true;
 
     final canStep =
         snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
@@ -268,30 +249,28 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (trackInfo?.visible != false) ...[
+                          Text(
+                            current.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (current.artist != null)
                             Text(
-                              current.title,
+                              current.artist!,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
                               ),
                             ),
-                            if (current.artist != null)
-                              Text(
-                                current.artist!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            const SizedBox(height: 2),
-                          ],
+                          const SizedBox(height: 2),
                           _MiniProgress(
                             snapshot: snapshot,
                             onSeek: (pos) => ref.read(playerProvider).seek(pos),
-                            style: progress?.styleId ?? 'thin',
+                            style: 'thin',
                           ),
                         ],
                       ),

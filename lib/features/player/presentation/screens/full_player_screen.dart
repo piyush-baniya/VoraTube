@@ -5,13 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
-import '../../../../core/ui_customization/ui_component_registry.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../services/analytics_service.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
-import '../../../../features/customization/presentation/providers/layout_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
@@ -31,11 +28,10 @@ import 'equalizer_screen.dart';
 
 /// Full-screen immersive music player.
 ///
-/// The player is driven by the [playerScreenLayoutProvider] customization
-/// profile: the artwork + song info form a dismissable top zone while the
-/// progress bar and control rows form a fixed bottom zone. The whole surface
-/// is wrapped in [PlayerPaletteSurface] so colors and the backdrop derive
-/// from the current artwork's palette.
+/// The artwork + song info form a dismissable top zone while the progress bar
+/// and control rows form a fixed bottom zone. The whole surface is wrapped in
+/// [PlayerPaletteSurface] so colors and the backdrop derive from the current
+/// artwork's palette.
 class FullPlayerScreen extends ConsumerStatefulWidget {
   const FullPlayerScreen({super.key});
 
@@ -137,10 +133,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final isDark = theme.brightness == Brightness.dark;
     final screen = MediaQuery.sizeOf(context);
     final isLandscape = screen.width > screen.height;
-    final variant = layoutVariantForSize(screen);
-    final layout = ref.watch(playerScreenLayoutProvider(variant));
-    final artworkComp = layout.component('player.artwork');
-    final immersive = artworkComp?.styleId == 'immersive';
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
@@ -152,7 +144,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             : Brightness.dark,
       ),
       child: PlayerPaletteSurface(
-        intensity: immersive ? 1.0 : 0.0,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           extendBodyBehindAppBar: true,
@@ -198,10 +189,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                   current,
                                   snapshot,
                                   isLandscape,
-                                  layout,
                                 ),
                         ),
-                        _buildBottomZone(context, snapshot, layout),
+                        _buildBottomZone(context, snapshot),
                         SizedBox(height: bottomPadding + AppTokens.s5),
                       ],
                     ),
@@ -233,30 +223,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     SongRef current,
     PlayerSnapshot snapshot,
     bool isLandscape,
-    ScreenLayout layout,
   ) {
     return isLandscape
-        ? _buildLandscapeMode(context, current, layout)
-        : _buildPortraitMode(context, current, layout);
+        ? _buildLandscapeMode(context, current)
+        : _buildPortraitMode(context, current);
   }
 
-  Widget _buildPortraitMode(
-    BuildContext context,
-    SongRef current,
-    ScreenLayout layout,
-  ) {
+  Widget _buildPortraitMode(BuildContext context, SongRef current) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final topGap = (constraints.maxHeight * 0.05).clamp(8.0, 32.0);
         final bottomGap = (constraints.maxHeight * 0.04).clamp(8.0, 28.0);
-        final art = layout.component('player.artwork');
-        final artSize = art == null
-            ? 140.0
-            : _responsiveArtwork(
-                maxW: constraints.maxWidth,
-                maxH: constraints.maxHeight,
-                size: art.size,
-              );
+        final artSize = _responsiveArtwork(
+          maxW: constraints.maxWidth,
+          maxH: constraints.maxHeight,
+        );
         // The content never overflows: the artwork is sized to fit the region
         // so the dismiss swipe always starts on a reachable surface.
         final estimatedContent = topGap + artSize + bottomGap + 112;
@@ -264,28 +245,20 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             ? const NeverScrollableScrollPhysics()
             : const BouncingScrollPhysics();
 
-        final blocks = <Widget>[];
-        for (var i = 0; i < layout.components.length; i++) {
-          final c = layout.components[i];
-          if (!c.visible) continue;
-          final Widget? child = switch (c.id) {
-            'player.artwork' => RotatingArtwork(
-              path: current.artPath,
-              heroTag: FullPlayerScreen._heroTag,
-              size: artSize,
-            ),
-            'player.trackInfo' => PlayerTrackInfo(
-              title: current.title,
-              artist: current.artist,
-              album: current.album,
-              size: c.size,
-              compact: constraints.maxWidth < 380,
-            ),
-            _ => null,
-          };
-          if (child == null) continue;
-          blocks.add(child);
-        }
+        final blocks = <Widget>[
+          RotatingArtwork(
+            path: current.artPath,
+            heroTag: FullPlayerScreen._heroTag,
+            size: artSize,
+          ),
+          const SizedBox(height: AppTokens.s3),
+          PlayerTrackInfo(
+            title: current.title,
+            artist: current.artist,
+            album: current.album,
+            compact: constraints.maxWidth < 380,
+          ),
+        ];
 
         return SingleChildScrollView(
           physics: physics,
@@ -306,29 +279,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
   /// Landscape two-pane layout: artwork pane on the left (another dismissable
   /// surface), song info and the fixed controls on the right.
-  Widget _buildLandscapeMode(
-    BuildContext context,
-    SongRef current,
-    ScreenLayout layout,
-  ) {
+  Widget _buildLandscapeMode(BuildContext context, SongRef current) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final rightBlocks = <Widget>[];
-        for (var i = 0; i < layout.components.length; i++) {
-          final c = layout.components[i];
-          if (!c.visible || !kPlayerTopZoneIds.contains(c.id)) continue;
-          final Widget? child = switch (c.id) {
-            'player.trackInfo' => PlayerTrackInfo(
-              title: current.title,
-              artist: current.artist,
-              album: current.album,
-              size: c.size,
-            ),
-            _ => null,
-          };
-          if (child == null) continue;
-          rightBlocks.add(child);
-        }
+        final rightBlocks = <Widget>[
+          PlayerTrackInfo(
+            title: current.title,
+            artist: current.artist,
+            album: current.album,
+          ),
+        ];
         return Row(
           children: [
             Expanded(
@@ -336,14 +296,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
               child: Center(
                 child: LayoutBuilder(
                   builder: (context, pane) {
-                    final art = layout.component('player.artwork');
-                    final artSize = art == null
-                        ? 180.0
-                        : _responsiveArtwork(
-                            maxW: pane.maxWidth,
-                            maxH: pane.maxHeight,
-                            size: art.size,
-                          );
+                    final artSize = _responsiveArtwork(
+                      maxW: pane.maxWidth,
+                      maxH: pane.maxHeight,
+                    );
                     return RotatingArtwork(
                       path: current.artPath,
                       heroTag: FullPlayerScreen._heroTag,
@@ -481,45 +437,18 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
 
   // ── Fixed bottom zone ────────────────────────────────────────────────────
 
-  Widget _buildBottomZone(
-    BuildContext context,
-    PlayerSnapshot snapshot,
-    ScreenLayout layout,
-  ) {
+  Widget _buildBottomZone(BuildContext context, PlayerSnapshot snapshot) {
     // On short (landscape) viewports the transport is tightened so the fixed
     // zone never crowds the artwork pane: tighter gaps and a small play button.
     final compact = MediaQuery.sizeOf(context).height < 480;
-    final progress = layout.component('player.progress');
-    final primary = layout.component('player.primaryControls');
-    final primarySize =
-        compact &&
-            (primary?.size ?? ComponentSize.medium) == ComponentSize.medium
-        ? ComponentSize.small
-        : primary?.size ?? ComponentSize.medium;
 
-    // The fixed zone order is hard-coded (secondary controls, progress, primary
-    // controls) so the transport stays predictable regardless of profile order;
-    // visibility still follows the layout profile.
-    const bottomOrder = kPlayerBottomZoneIds;
-
-    final rows = <Widget>[];
-    for (final id in bottomOrder) {
-      final c = layout.component(id);
-      if (c == null || !c.visible) continue;
-      final Widget child = switch (id) {
-        'player.secondaryControls' => PlayerSecondaryHost(snapshot: snapshot),
-        'player.progress' => PlayerProgressHost(progress: progress),
-        'player.primaryControls' => PlayerControlsHost(
-          snapshot: snapshot,
-          size: primarySize,
-        ),
-        _ => const SizedBox.shrink(),
-      };
-      if (rows.isNotEmpty) {
-        rows.add(const SizedBox(height: AppTokens.s1));
-      }
-      rows.add(child);
-    }
+    final rows = <Widget>[
+      PlayerSecondaryHost(snapshot: snapshot),
+      const SizedBox(height: AppTokens.s1),
+      const PlayerProgressHost(),
+      const SizedBox(height: AppTokens.s1),
+      PlayerControlsHost(snapshot: snapshot, compact: compact),
+    ];
 
     return Padding(
       key: _bottomZoneKey,
@@ -529,23 +458,15 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   }
 
   /// Size of the artwork inside the top zone, sized to FIT the available
-  /// region (never overflowing it) while honoring the component's [size].
-  double _responsiveArtwork({
-    required double maxW,
-    required double maxH,
-    required ComponentSize size,
-  }) {
+  /// region (never overflowing it).
+  double _responsiveArtwork({required double maxW, required double maxH}) {
     final topGap = (maxH * 0.05).clamp(8.0, 32.0);
     final bottomGap = (maxH * 0.04).clamp(8.0, 28.0);
-    final reserve = size == ComponentSize.small ? 92.0 : 112.0;
+    const reserve = 112.0;
     final heightFit = math.max(0.0, maxH - topGap - bottomGap - reserve);
     final widthCap = math.min(maxW * 0.78, AppTokens.artworkHeroMax);
     final base = math.min(heightFit, widthCap);
-    return switch (size) {
-      ComponentSize.small => base.clamp(120.0, 200.0),
-      ComponentSize.medium => base.clamp(140.0, AppTokens.artworkHeroMax),
-      ComponentSize.large => base.clamp(180.0, AppTokens.artworkHeroMax),
-    };
+    return base.clamp(140.0, AppTokens.artworkHeroMax);
   }
 }
 

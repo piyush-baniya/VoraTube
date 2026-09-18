@@ -1,27 +1,25 @@
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_tokens.dart';
-import '../../../../core/ui_customization/ui_layout.dart';
 
-/// The song title / artist / album block used by the player's `trackInfo`
-/// layout component and the collapsed lyrics reveal.
+/// The song title / artist / album block used by the player and the collapsed
+/// lyrics reveal.
 ///
-/// [compact] reproduces the narrow-phone stepping from the pre-customization
-/// player; otherwise the typography scales with the component's [size].
+/// [compact] reproduces the narrow-phone stepping: title / artist step down
+/// one size so the block stays proportionate to the smaller responsive
+/// artwork.
 class PlayerTrackInfo extends StatelessWidget {
   const PlayerTrackInfo({
     super.key,
     required this.title,
     this.artist,
     this.album,
-    this.size = ComponentSize.medium,
     this.compact = false,
   });
 
   final String title;
   final String? artist;
   final String? album;
-  final ComponentSize size;
 
   /// True on narrow phones: title / artist step down one size so the block
   /// stays proportionate to the smaller responsive artwork.
@@ -34,14 +32,8 @@ class PlayerTrackInfo extends StatelessWidget {
 
     final titleStyle = compact
         ? theme.textTheme.titleLarge
-        : switch (size) {
-            ComponentSize.small => theme.textTheme.titleLarge,
-            ComponentSize.medium => theme.textTheme.headlineSmall,
-            ComponentSize.large => theme.textTheme.headlineMedium,
-          };
+        : theme.textTheme.headlineSmall;
     final artistStyle = compact
-        ? theme.textTheme.bodyMedium
-        : size == ComponentSize.small
         ? theme.textTheme.bodyMedium
         : theme.textTheme.bodyLarge;
 
@@ -72,7 +64,7 @@ class PlayerTrackInfo extends StatelessWidget {
             ),
           ),
         ],
-        if (album != null && !compact && size != ComponentSize.small) ...[
+        if (album != null && !compact) ...[
           const SizedBox(height: AppTokens.s1),
           Text(
             album!,
