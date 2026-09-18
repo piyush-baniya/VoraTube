@@ -67,7 +67,6 @@ class SongActions {
     /// from that playlist.
     int? removeFromPlaylistId,
   }) async {
-    final theme = Theme.of(context);
     final song = tile.song;
     final isFavorite = ref.read(
       favoriteIdsProvider.select((ids) => ids.contains(song.id)),
