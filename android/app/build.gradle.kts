@@ -8,6 +8,13 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+val hasReleaseKeystore =
+    keystorePropertiesFile.exists() &&
+        keystoreProperties["keyAlias"] != null &&
+        keystoreProperties["keyPassword"] != null &&
+        keystoreProperties["storeFile"] != null &&
+        keystoreProperties["storePassword"] != null
+
 
 plugins {
     id("com.android.application")
@@ -24,11 +31,13 @@ android {
 
 
     signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
         }
     }
 
@@ -68,7 +77,11 @@ android {
                 "ca-app-pub-5203454754912425~2417374767"
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("release")
+            // When key.properties is absent (CI/worktrees) this is omitted and
+            // the release APK falls back to debug signing.
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             // Shrink Java/Kotlin plugin code and strip unused Android resources.
             // audio_service/just_audio/ExoPlayer entry points plus the
             // string-referenced notification drawables need explicit keeps:
