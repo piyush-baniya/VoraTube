@@ -83,6 +83,19 @@ class UiComponentRegistry {
 /// Screen id for the Home dashboard.
 const String kHomeScreenId = 'home';
 
+/// Screen id for the full-screen Now Playing player.
+const String kPlayerScreenId = 'player';
+
+/// Screen id for the compact Now Playing bar.
+const String kMiniScreenId = 'mini';
+
+/// The ids of every customizable screen.
+const List<String> kLayoutScreenIds = [
+  kHomeScreenId,
+  kPlayerScreenId,
+  kMiniScreenId,
+];
+
 /// Home dashboard components, in the original pre-customization order so the
 /// default profile reproduces the existing UI exactly.
 const UiComponentRegistry homeComponentRegistry = UiComponentRegistry([
@@ -120,3 +133,121 @@ const UiComponentRegistry homeComponentRegistry = UiComponentRegistry([
     canHide: false,
   ),
 ]);
+
+/// Full player components, in the default rendering order.
+///
+/// The player is composed of two anchored zones: the top zone holds artwork
+/// and song info (dismissable, scrollable) while the bottom zone holds the
+/// progress bar and the control rows (fixed, never dismissed with the swipe).
+const UiComponentRegistry playerComponentRegistry = UiComponentRegistry([
+  UiComponentDefinition(
+    id: 'player.artwork',
+    label: 'Artwork',
+    description: 'The rotating cover art of the current track',
+    defaultSize: ComponentSize.medium,
+    allowedStyleIds: ['standard', 'immersive'],
+    defaultStyleId: 'standard',
+    // The artwork is the player's centerpiece and is always shown.
+    canHide: false,
+  ),
+  UiComponentDefinition(
+    id: 'player.trackInfo',
+    label: 'Song Info',
+    description: 'The title and artist of the current track',
+    defaultSize: ComponentSize.medium,
+  ),
+  UiComponentDefinition(
+    id: 'player.progress',
+    label: 'Progress Bar',
+    description: 'Track position and the seek bar',
+    defaultSize: ComponentSize.medium,
+    // The progress bar always stays on screen so seeking is always possible.
+    canHide: false,
+    canReorder: false,
+  ),
+  UiComponentDefinition(
+    id: 'player.secondaryControls',
+    label: 'Playback Modes',
+    description: 'Shuffle, repeat and playback effects',
+    defaultSize: ComponentSize.medium,
+    canResize: false,
+  ),
+  UiComponentDefinition(
+    id: 'player.primaryControls',
+    label: 'Playback Controls',
+    description: 'Previous, play and next with ten second seek',
+    defaultSize: ComponentSize.medium,
+    // The transport controls always stay on screen.
+    canHide: false,
+  ),
+  UiComponentDefinition(
+    id: 'player.quickActions',
+    label: 'Quick Actions',
+    description: 'Favorite and open the queue',
+    defaultSize: ComponentSize.medium,
+  ),
+]);
+
+/// Mini player components, in the default rendering order. The mini bar is a
+/// single-row surface: its blocks are never reordered.
+const UiComponentRegistry miniComponentRegistry = UiComponentRegistry([
+  UiComponentDefinition(
+    id: 'mini.artwork',
+    label: 'Artwork',
+    description: 'The cover art of the current track',
+    defaultSize: ComponentSize.medium,
+    canHide: false,
+    canReorder: false,
+    canResize: true,
+  ),
+  UiComponentDefinition(
+    id: 'mini.trackInfo',
+    label: 'Song Info',
+    description: 'The title and artist of the current track',
+    defaultSize: ComponentSize.medium,
+    canReorder: false,
+  ),
+  UiComponentDefinition(
+    id: 'mini.progress',
+    label: 'Progress Bar',
+    description: 'Track position as a thin line',
+    defaultSize: ComponentSize.medium,
+    allowedStyleIds: ['thin', 'bold'],
+    defaultStyleId: 'thin',
+    canHide: false,
+    canReorder: false,
+    canResize: false,
+  ),
+  UiComponentDefinition(
+    id: 'mini.controls',
+    label: 'Playback Controls',
+    description: 'Previous, play and next buttons',
+    defaultSize: ComponentSize.medium,
+    canHide: false,
+    canReorder: false,
+  ),
+  UiComponentDefinition(
+    id: 'mini.secondaryControls',
+    label: 'Shuffle',
+    description: 'Toggle shuffle from the bar',
+    defaultSize: ComponentSize.medium,
+    canReorder: false,
+    canResize: false,
+  ),
+]);
+
+/// Component ids that belong to the player's dismissable top zone. Anything
+/// not listed belongs to the fixed bottom zone.
+const List<String> kPlayerTopZoneIds = ['player.artwork', 'player.trackInfo'];
+
+/// Reorders the given player components back into their anchored zones while
+/// keeping the relative order inside each zone: artwork and song info first,
+/// then the progress bar and the control rows.
+List<ComponentLayout> groupPlayerZones(List<ComponentLayout> components) {
+  final top = <ComponentLayout>[];
+  final bottom = <ComponentLayout>[];
+  for (final c in components) {
+    (kPlayerTopZoneIds.contains(c.id) ? top : bottom).add(c);
+  }
+  return [...top, ...bottom];
+}

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../core/ui_customization/ui_layout.dart';
 
 /// Can be disabled in tests to prevent the infinite pulse animation.
 bool waveTimelineEnabled = true;
@@ -22,17 +23,25 @@ void disableWaveTimelineForTesting() {
 /// single line. While playing the phase advances so the wave gently flows;
 /// when paused the phase freezes and the painter only repaints on progress
 /// changes.
+///
+/// [size] scales the widget: [ComponentSize.small] renders a slim plain line
+/// so tight layouts keep seeking without the wave's visual weight.
 class PlayerProgress extends StatefulWidget {
   const PlayerProgress({
     super.key,
     required this.snapshot,
     required this.position,
     required this.onSeek,
+    this.size = ComponentSize.medium,
   });
 
   final PlayerSnapshot snapshot;
   final Duration position;
   final Future<void> Function(Duration position) onSeek;
+
+  /// Scales the timeline: small renders a slim line, medium the flowing wave,
+  /// large a taller wave.
+  final ComponentSize size;
 
   @override
   State<PlayerProgress> createState() => _PlayerProgressState();
@@ -126,25 +135,49 @@ class _PlayerProgressState extends State<PlayerProgress>
     // the painted band is now a few logical pixels tall instead of a large
     // oscillation. The outer box keeps a comfortable seek hit-target.
     final compactHeight = MediaQuery.sizeOf(context).height < 480;
-    final waveHeight = compactHeight ? 20.0 : 26.0;
-    final wavePaintHeight = compactHeight ? 10.0 : 12.0;
+    final isWave = widget.size != ComponentSize.small;
+    final waveHeight = compactHeight
+        ? 20.0
+        : switch (widget.size) {
+            ComponentSize.small => 20.0,
+            ComponentSize.medium => 26.0,
+            ComponentSize.large => 34.0,
+          };
+    final wavePaintHeight = compactHeight
+        ? 10.0
+        : switch (widget.size) {
+            ComponentSize.small => 10.0,
+            ComponentSize.medium => 12.0,
+            ComponentSize.large => 16.0,
+          };
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _WaveTimeline(
-          progress: totalMs > 0 ? _progress : 0,
-          isPlaying: widget.snapshot.isPlaying,
-          pulse: _pulse,
-          activeColor: colorScheme.primary,
-          inactiveColor: colorScheme.primary.withValues(alpha: 0.16),
-          height: waveHeight,
-          paintHeight: wavePaintHeight,
-          onDragStart: _startDrag,
-          onDrag: _updateDrag,
-          onDragEnd: _endDrag,
-          onTap: _tapAt,
-        ),
+        if (isWave)
+          _WaveTimeline(
+            progress: totalMs > 0 ? _progress : 0,
+            isPlaying: widget.snapshot.isPlaying,
+            pulse: _pulse,
+            activeColor: colorScheme.primary,
+            inactiveColor: colorScheme.primary.withValues(alpha: 0.16),
+            height: waveHeight,
+            paintHeight: wavePaintHeight,
+            onDragStart: _startDrag,
+            onDrag: _updateDrag,
+            onDragEnd: _endDrag,
+            onTap: _tapAt,
+          )
+        else
+          _LineTimeline(
+            progress: totalMs > 0 ? _progress : 0,
+            activeColor: colorScheme.primary,
+            inactiveColor: colorScheme.primary.withValues(alpha: 0.16),
+            onDragStart: _startDrag,
+            onDrag: _updateDrag,
+            onDragEnd: _endDrag,
+            onTap: _tapAt,
+          ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
           child: Row(
@@ -168,6 +201,86 @@ class _PlayerProgressState extends State<PlayerProgress>
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Slim interactive line track with tap/drag seeking (used by the `small`
+/// progress variant so tight layouts keep the exact same seek semantics).
+class _LineTimeline extends StatelessWidget {
+  const _LineTimeline({
+    required this.progress,
+    required this.activeColor,
+    required this.inactiveColor,
+    required this.onDragStart,
+    required this.onDrag,
+    required this.onDragEnd,
+    required this.onTap,
+  });
+
+  final double progress;
+  final Color activeColor;
+  final Color inactiveColor;
+  final ValueChanged<double> onDragStart;
+  final ValueChanged<double> onDrag;
+  final VoidCallback onDragEnd;
+  final ValueChanged<double> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+
+        double toFraction(double dx) => (dx / width).clamp(0.0, 1.0);
+
+        return Semantics(
+          slider: true,
+          label: 'Seek',
+          value: '${(progress * 100).round()} percent',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (details) => onTap(toFraction(details.localPosition.dx)),
+            onHorizontalDragStart: (details) =>
+                onDragStart(toFraction(details.localPosition.dx)),
+            onHorizontalDragUpdate: (details) =>
+                onDrag(toFraction(details.localPosition.dx)),
+            onHorizontalDragEnd: (_) => onDragEnd(),
+            onHorizontalDragCancel: onDragEnd,
+            child: SizedBox(
+              height: 28,
+              width: width,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      Container(
+                        height: 3,
+                        decoration: BoxDecoration(
+                          color: inactiveColor,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      FractionallySizedBox(
+                        widthFactor: progress.clamp(0.0, 1.0),
+                        child: Container(
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: activeColor,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

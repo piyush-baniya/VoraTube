@@ -8,11 +8,13 @@ import '../../../settings/presentation/widgets/settings_section.dart';
 import '../../../settings/presentation/widgets/settings_tile.dart';
 import '../providers/layout_providers.dart';
 import 'customize_home_screen.dart';
+import 'customize_mini_player_screen.dart';
+import 'customize_player_screen.dart';
 
 /// Hub for interface customization: curated presets, per-screen editors and a
-/// global reset. Future screens (Player, Equalizer, Lyrics, Statistics) are
-/// listed so the model is visibly ready for them, but stay disabled until
-/// their registries ship.
+/// global reset. Future screens (Equalizer, Lyrics, Statistics) are listed so
+/// the model is visibly ready for them, but stay disabled until their
+/// registries ship.
 class CustomizeInterfaceScreen extends ConsumerWidget {
   const CustomizeInterfaceScreen({super.key});
 
@@ -77,6 +79,28 @@ class CustomizeInterfaceScreen extends ConsumerWidget {
                     builder: (_) => const CustomizeHomeScreen(),
                   ),
                 ),
+              ),
+              SettingsTile(
+                title: 'Player',
+                subtitle: 'Tune the full-screen Now Playing layout',
+                leading: _leading(context, Icons.disc_full_rounded),
+                trailing: _chevron(context),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CustomizePlayerScreen(),
+                  ),
+                ),
+              ),
+              SettingsTile(
+                title: 'Mini Player',
+                subtitle: 'Tune the compact Now Playing bar',
+                leading: _leading(context, Icons.minimize_rounded),
+                trailing: _chevron(context),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CustomizeMiniPlayerScreen(),
+                  ),
+                ),
                 isLastInSection: true,
               ),
             ],
@@ -99,7 +123,6 @@ class CustomizeInterfaceScreen extends ConsumerWidget {
           SettingsSection(
             title: 'Coming soon',
             children: [
-              _comingSoon(context, 'Player'),
               _comingSoon(context, 'Equalizer'),
               _comingSoon(context, 'Lyrics'),
               _comingSoon(context, 'Statistics', isLast: true),

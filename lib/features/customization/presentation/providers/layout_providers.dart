@@ -14,6 +14,26 @@ final uiComponentRegistryProvider = Provider<UiComponentRegistry>(
   (ref) => homeComponentRegistry,
 );
 
+/// The registry for any customizable screen. Unknown screens fall back to the
+/// Home registry so lookup never throws.
+final screenRegistryProvider = Provider.family<UiComponentRegistry, String>((
+  ref,
+  screenId,
+) {
+  return switch (screenId) {
+    kPlayerScreenId => playerComponentRegistry,
+    kMiniScreenId => miniComponentRegistry,
+    _ => homeComponentRegistry,
+  };
+});
+
+/// Every customizable screen id and its registry.
+Map<String, UiComponentRegistry> get layoutSceneRegistries => const {
+  kHomeScreenId: homeComponentRegistry,
+  kPlayerScreenId: playerComponentRegistry,
+  kMiniScreenId: miniComponentRegistry,
+};
+
 final layoutRepositoryProvider = Provider<LayoutRepository>((ref) {
   return KvLayoutRepository(
     LibraryLayoutKeyValueStore(ref.watch(libraryRepositoryProvider)),
@@ -30,35 +50,57 @@ class LayoutProfileController extends AsyncNotifier<LayoutProfile> {
   Future<LayoutProfile> build() async {
     final registry = ref.watch(uiComponentRegistryProvider);
     final stored = await ref.watch(layoutRepositoryProvider).load();
-    if (stored == null) return defaultLayoutProfile(registry);
-    return normalizeLayoutProfile(stored, registry);
+    if (stored == null) {
+      return defaultLayoutProfile(
+        registry,
+        registries: layoutSceneRegistries,
+        screens: kLayoutScreenIds,
+      );
+    }
+    return normalizeLayoutProfile(
+      stored,
+      registry,
+      extraRegistries: layoutSceneRegistries,
+    );
   }
 
   Future<void> save(LayoutProfile profile) async {
     final registry = ref.read(uiComponentRegistryProvider);
-    final normalized = normalizeLayoutProfile(profile, registry);
+    final normalized = normalizeLayoutProfile(
+      profile,
+      registry,
+      extraRegistries: layoutSceneRegistries,
+    );
     state = AsyncData(normalized);
     await ref.read(layoutRepositoryProvider).save(normalized);
   }
 
   /// Applies a curated preset to every screen and variant and commits it.
   Future<void> applyPreset(LayoutPreset preset) async {
-    final registry = ref.read(uiComponentRegistryProvider);
     final layouts = <LayoutKey, ScreenLayout>{};
-    for (final variant in LayoutVariant.values) {
-      layouts[LayoutKey(kHomeScreenId, variant)] = applyLayoutPreset(
-        preset,
-        kHomeScreenId,
-        registry,
-      );
+    for (final screenId in kLayoutScreenIds) {
+      final registry = layoutSceneRegistries[screenId]!;
+      for (final variant in LayoutVariant.values) {
+        layouts[LayoutKey(screenId, variant)] = applyLayoutPreset(
+          preset,
+          screenId,
+          registry,
+        );
+      }
     }
     await save(LayoutProfile(preset: preset, layouts: layouts));
   }
 
-  /// Restores the default layout and commits it.
+  /// Restores the default layout for every screen and commits it.
   Future<void> reset() async {
     final registry = ref.read(uiComponentRegistryProvider);
-    await save(defaultLayoutProfile(registry));
+    await save(
+      defaultLayoutProfile(
+        registry,
+        registries: layoutSceneRegistries,
+        screens: kLayoutScreenIds,
+      ),
+    );
   }
 }
 
@@ -78,6 +120,33 @@ final homeScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>((
   if (profile == null) return defaultScreenLayout(kHomeScreenId, registry);
   return profile.screenLayout(kHomeScreenId, variant) ??
       defaultScreenLayout(kHomeScreenId, registry);
+});
+
+/// The resolved full player layout for one device variant. Until the profile
+/// loads (or the profile has no player entry) this yields the player default.
+final playerScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>(
+  (ref, variant) {
+    final profile = ref.watch(layoutProfileProvider).valueOrNull;
+    if (profile == null) {
+      return defaultScreenLayout(kPlayerScreenId, playerComponentRegistry);
+    }
+    return profile.screenLayout(kPlayerScreenId, variant) ??
+        defaultScreenLayout(kPlayerScreenId, playerComponentRegistry);
+  },
+);
+
+/// The resolved mini player layout for one device variant, mirroring
+/// [playerScreenLayoutProvider].
+final miniScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>((
+  ref,
+  variant,
+) {
+  final profile = ref.watch(layoutProfileProvider).valueOrNull;
+  if (profile == null) {
+    return defaultScreenLayout(kMiniScreenId, miniComponentRegistry);
+  }
+  return profile.screenLayout(kMiniScreenId, variant) ??
+      defaultScreenLayout(kMiniScreenId, miniComponentRegistry);
 });
 
 /// Home "All Songs" preview size for a component size preset.

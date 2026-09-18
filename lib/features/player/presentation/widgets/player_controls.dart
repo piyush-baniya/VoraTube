@@ -2,10 +2,14 @@ import 'package:flutter/material.dart' hide RepeatMode;
 
 import '../../../../core/player/player_controller.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../core/ui_customization/ui_layout.dart';
 
 /// Central playback controls for the full-screen player.
 ///
 /// Layout:  [previous]  [rewind-10]  [play/pause]  [forward-10]  [next]
+///
+/// At [ComponentSize.small] the ten-second seek buttons are dropped so the
+/// row stays tight:  [previous]  [play/pause]  [next]
 ///
 /// Shuffle and repeat live in [PlayerModeRow] above the wave timeline
 /// (repeat on the left, shuffle on the right). Play/pause is the largest
@@ -23,6 +27,7 @@ class PlayerControls extends StatelessWidget {
     this.showModeToggles = false,
     this.onToggleShuffle,
     this.onToggleRepeat,
+    this.size = ComponentSize.medium,
   });
 
   final PlayerSnapshot snapshot;
@@ -39,6 +44,10 @@ class PlayerControls extends StatelessWidget {
   final VoidCallback? onToggleShuffle;
   final VoidCallback? onToggleRepeat;
 
+  /// Scales the play button footprint and drops the ten-second seek buttons
+  /// below [ComponentSize.medium].
+  final ComponentSize size;
+
   bool get _canStep =>
       snapshot.queueLength > 1 || snapshot.repeatMode == RepeatMode.all;
 
@@ -49,12 +58,18 @@ class PlayerControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final playFootprint = 68.0;
+    final playFootprint = switch (size) {
+      ComponentSize.small => 52.0,
+      ComponentSize.medium => 68.0,
+      ComponentSize.large => 84.0,
+    };
     final unit = AppTokens.touchTarget; // 48
+    final hasTenSec = size != ComponentSize.small;
+    final nonPlayCount = (hasTenSec ? 2 : 0) + 2 + (showModeToggles ? 2 : 0);
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final needed = playFootprint + unit * (showModeToggles ? 6 : 4);
+        final needed = playFootprint + unit * nonPlayCount;
         final scale = constraints.maxWidth < needed
             ? constraints.maxWidth / needed
             : 1.0;
@@ -88,23 +103,25 @@ class PlayerControls extends StatelessWidget {
                   : colorScheme.onSurface.withValues(alpha: 0.2),
               onTap: _canPrevious ? onPrevious : null,
             ),
-            _TenSecButton(
-              width: baseUnit,
-              icon: Icons.replay_10_rounded,
-              onTap: onRewind10,
-              color: colorScheme.onSurface,
-            ),
+            if (hasTenSec)
+              _TenSecButton(
+                width: baseUnit,
+                icon: Icons.replay_10_rounded,
+                onTap: onRewind10,
+                color: colorScheme.onSurface,
+              ),
             _PlayButton(
               diameter: basePlay,
               isPlaying: snapshot.isPlaying,
               onTap: onTogglePlay,
             ),
-            _TenSecButton(
-              width: baseUnit,
-              icon: Icons.forward_10_rounded,
-              onTap: onForward10,
-              color: colorScheme.onSurface,
-            ),
+            if (hasTenSec)
+              _TenSecButton(
+                width: baseUnit,
+                icon: Icons.forward_10_rounded,
+                onTap: onForward10,
+                color: colorScheme.onSurface,
+              ),
             _ControlButton(
               width: baseUnit,
               icon: Icons.skip_next_rounded,

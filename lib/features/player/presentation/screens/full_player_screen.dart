@@ -1,37 +1,43 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart' hide 
-RepeatMode;
+import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/player/player_controller.dart';
-import '../../../../app/theme/app_theme.dart';
+import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/top_toast.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../services/analytics_service.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
-import '../../../library/presentation/providers/library_view_providers.dart';
+import '../../../../features/customization/presentation/providers/layout_providers.dart';
+import '../../../../features/customization/presentation/screens/customize_player_screen.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
-import '../../../player/presentation/widgets/compact_lyrics_panel.dart';
-import '../../../player/presentation/widgets/rotating_artwork.dart';
 import '../providers/player_providers.dart';
 import '../providers/sleep_timer_provider.dart';
+import '../widgets/compact_lyrics_panel.dart';
+import '../widgets/equalizer_sheet.dart';
 import '../widgets/player_controls.dart';
+import '../widgets/player_palette_surface.dart';
 import '../widgets/player_progress.dart';
+import '../widgets/player_quick_actions.dart';
+import '../widgets/player_track_info.dart';
 import '../widgets/player_transport_row.dart';
 import '../widgets/queue_sheet.dart';
+import '../widgets/rotating_artwork.dart';
 import '../widgets/sleep_timer_sheet.dart';
+import '../widgets/speed_sheet.dart';
+import '../widgets/volume_booster_sheet.dart';
 
 /// Full-screen immersive music player.
 ///
-/// Performance architecture:
-/// - Watches [playbackStateProvider] for coarse state (track, modes, queue info).
-/// - Only [PlayerProgress] watches [playbackPositionProvider].
-/// - Artwork uses [AnimatedSwitcher] to cross-fade on song changes.
-/// - Favorite state resolves via [currentSongIsFavoriteProvider].
-/// - Lyrics panel toggles via a button in the top bar.
+/// The player is driven by the [playerScreenLayoutProvider] customization
+/// profile: the artwork + song info form a dismissable top zone while the
+/// progress bar and control rows form a fixed bottom zone. The whole surface
+/// is wrapped in [PlayerPaletteSurface] so colors and the backdrop derive
+/// from the current artwork's palette.
 class FullPlayerScreen extends ConsumerStatefulWidget {
   const FullPlayerScreen({super.key});
 
@@ -46,15 +52,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   bool _showLyrics = false;
   bool _lyricsExpanded = true;
 
-  /// Controls-region height: drags that start inside the playback controls
-  /// (bottom strip) are treated as button taps, not dismiss attempts.
-  static const double _controlsRegionHeight = 140;
   static const double _dismissThreshold = 100;
   static const double _maxDrag = 260;
 
   late final AnimationController _dismissAnim;
   double _dragOffset = 0;
   bool _dragActive = false;
+
+  /// The fixed bottom zone (progress + control rows). Swipe-down dismisses
+  /// only begin above its top edge so the controls themselves act as buttons.
+  final GlobalKey _bottomZoneKey = GlobalKey();
 
   @override
   void initState() {
@@ -78,13 +85,17 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     super.dispose();
   }
 
-  bool _startsOnControls(DragStartDetails details) {
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    return details.globalPosition.dy >= screenHeight - _controlsRegionHeight;
+  bool _isInBottomZone(DragStartDetails details) {
+    final box = _bottomZoneKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) {
+      return false;
+    }
+    final top = box.localToGlobal(Offset.zero).dy;
+    return details.globalPosition.dy >= top;
   }
 
   void _onVerticalDragStart(DragStartDetails details) {
-    _dragActive = !_startsOnControls(details);
+    _dragActive = !_isInBottomZone(details);
     if (!_dragActive) {
       return;
     }
@@ -126,10 +137,12 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final colorScheme = theme.colorScheme;
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final isDark = theme.brightness == Brightness.dark;
-    // Very short viewports (landscape phones, tiny windows) hide the compact
-    // transport row so the artwork / lyrics card claims the full content
-    // region; everywhere else the unified row is always present.
-    final compactViewport = MediaQuery.sizeOf(context).height < 560;
+    final screen = MediaQuery.sizeOf(context);
+    final isLandscape = screen.width > screen.height;
+    final variant = layoutVariantForSize(screen);
+    final layout = ref.watch(playerScreenLayoutProvider(variant));
+    final artworkComp = layout.component('player.artwork');
+    final immersive = artworkComp?.styleId == 'immersive';
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
@@ -140,75 +153,66 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             ? Brightness.light
             : Brightness.dark,
       ),
-      child: Scaffold(
-        backgroundColor: colorScheme.surface,
-        extendBodyBehindAppBar: true,
-        body: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onVerticalDragStart: _onVerticalDragStart,
-          onVerticalDragUpdate: _onVerticalDragUpdate,
-          onVerticalDragEnd: _onVerticalDragEnd,
-          child: Transform.translate(
-            offset: Offset(0, _dragOffset * 0.65),
-            child: Transform.scale(
-              scale: 1.0 - _dragOffset / _maxDrag * 0.06,
-              child: Opacity(
-                opacity: (1.0 - _dragOffset / _maxDrag * 0.55).clamp(0.35, 1.0),
-                child: Stack(
-                  children: [
-                    // Immersive purple-atmosphere background. No Hero here: the
-                    // artwork Hero tag belongs to exactly one widget per route.
-                    const _ImmersiveBackground(),
-                    // Main content
-                    SafeArea(
-                      bottom: false,
-                      child: Column(
-                        children: [
-                          // Top bar
-                          _TopBar(
-                            identityKey: current.identityKey,
-                            onQueueTap: () => QueueSheet.show(context),
-                            onPlaylistTap: () =>
-                                _openPlaylistPicker(current.identityKey),
-                            onLyricsTap: () {
-    setState(() => _showLyrics = !_showLyrics);
-    if (_showLyrics) AnalyticsService.instance.lyricsOpened();
-  },
-                            onSleepTimerTap: () => showSleepTimerSheet(context),
-                            showLyricsActive: _showLyrics,
-                            isDark: isDark,
-                          ),
-                          // Player content (middle region swaps; the playback
-                          // controls below it stay in a fixed visual position).
-                          Expanded(
-                            child: _showLyrics
-                                ? _buildLyricsMode(context, current, snapshot)
-                                : _buildPlayerMode(context, current, snapshot),
-                          ),
-                          // Fixed playback control region — present identically in
-                          // both modes so toggling lyrics never moves the controls.
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTokens.s6,
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Shuffle / repeat / equalizer / speed / boost
-                                // share one compact icon row above the wave on
-                                // anything but very short viewports.
-                                _TransportLeading(enabled: !compactViewport),
-                                _PositionConsumer(),
-                                const SizedBox(height: AppTokens.s3),
-                                const _ControlsConsumer(),
-                              ],
-                            ),
-                          ),
-                          SizedBox(height: bottomPadding + AppTokens.s5),
-                        ],
-                      ),
+      child: PlayerPaletteSurface(
+        intensity: immersive ? 1.0 : 0.0,
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: true,
+          body: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragStart: _onVerticalDragStart,
+            onVerticalDragUpdate: _onVerticalDragUpdate,
+            onVerticalDragEnd: _onVerticalDragEnd,
+            child: Transform.translate(
+              offset: Offset(0, _dragOffset * 0.65),
+              child: Transform.scale(
+                scale: 1.0 - _dragOffset / _maxDrag * 0.06,
+                child: Opacity(
+                  opacity: (1.0 - _dragOffset / _maxDrag * 0.55).clamp(
+                    0.35,
+                    1.0,
+                  ),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Column(
+                      children: [
+                        _TopBar(
+                          identityKey: current.identityKey,
+                          onPlaylistTap: () =>
+                              _openPlaylistPicker(current.identityKey),
+                          onLyricsTap: () {
+                            setState(() => _showLyrics = !_showLyrics);
+                            if (_showLyrics) {
+                              AnalyticsService.instance.lyricsOpened();
+                            }
+                          },
+                          onSleepTimerTap: () => showSleepTimerSheet(context),
+                          onCustomizeTap: () {
+                            Navigator.of(context, rootNavigator: true).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const CustomizePlayerScreen(),
+                              ),
+                            );
+                          },
+                          showLyricsActive: _showLyrics,
+                          isDark: isDark,
+                        ),
+                        Expanded(
+                          child: _showLyrics
+                              ? _buildLyricsMode(context, current)
+                              : _buildPlayerMode(
+                                  context,
+                                  current,
+                                  snapshot,
+                                  isLandscape,
+                                  layout,
+                                ),
+                        ),
+                        _buildBottomZone(context, snapshot, current, layout),
+                        SizedBox(height: bottomPadding + AppTokens.s5),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -229,60 +233,77 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     }
   }
 
+  // ── Player mode ──────────────────────────────────────────────────────────
+
   Widget _buildPlayerMode(
     BuildContext context,
     SongRef current,
     PlayerSnapshot snapshot,
+    bool isLandscape,
+    ScreenLayout layout,
+  ) {
+    return isLandscape
+        ? _buildLandscapeMode(context, current, layout)
+        : _buildPortraitMode(context, current, layout);
+  }
+
+  Widget _buildPortraitMode(
+    BuildContext context,
+    SongRef current,
+    ScreenLayout layout,
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final topGap = (constraints.maxHeight * 0.06).clamp(16.0, 60.0);
-        final bottomGap = (constraints.maxHeight * 0.05).clamp(16.0, 48.0);
-        // Reserve vertical room for the single-line metadata block (title /
-        // artist / album) plus its trailing gap so the artwork can be sized to
-        // FIT the region. On small phones the artwork and titles shrink instead
-        // of making the area scrollable.
-        const metadataReserve = 112.0;
-        final heightFit =
-            constraints.maxHeight - topGap - bottomGap - metadataReserve;
-        final widthCap = constraints.maxWidth * 0.75;
-        final hardCap = math.max(
-          140.0,
-          math.min(widthCap, AppTokens.artworkHeroMax),
-        );
-        final artSize = heightFit.clamp(140.0, hardCap).toDouble();
+        final topGap = (constraints.maxHeight * 0.05).clamp(8.0, 32.0);
+        final bottomGap = (constraints.maxHeight * 0.04).clamp(8.0, 28.0);
+        final art = layout.component('player.artwork');
+        final artSize = art == null
+            ? 140.0
+            : _responsiveArtwork(
+                maxW: constraints.maxWidth,
+                maxH: constraints.maxHeight,
+                size: art.size,
+              );
+        // The content never overflows: the artwork is sized to fit the region
+        // so the dismiss swipe always starts on a reachable surface.
+        final estimatedContent = topGap + artSize + bottomGap + 112;
+        final physics = estimatedContent <= constraints.maxHeight + 1
+            ? const NeverScrollableScrollPhysics()
+            : const BouncingScrollPhysics();
 
-        // Progress and controls live in the fixed bottom region of the parent
-        // Column; this area only contains the artwork and metadata. The content
-        // is sized to fit, so it never needs to scroll — the whole body stays
-        // reachable by the swipe-down dismiss gesture. Only a region too short
-        // to hold even the floor-sized artwork falls back to a bouncing scroll.
-        final fitsWithFloor =
-            topGap + bottomGap + metadataReserve + 140 <= constraints.maxHeight;
-        return SingleChildScrollView(
-          physics: fitsWithFloor
-              ? const NeverScrollableScrollPhysics()
-              : const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(height: topGap),
-              // Rotating Artwork with Hero transition
+        final blocks = <Widget>[];
+        for (final c in layout.components) {
+          if (!c.visible) continue;
+          if (c.id == 'player.artwork') {
+            blocks.add(
               RotatingArtwork(
                 path: current.artPath,
                 heroTag: FullPlayerScreen._heroTag,
                 size: artSize,
               ),
-              SizedBox(height: bottomGap),
-              // Metadata — fonts step down a size on narrow phones so titles
-              // stay proportionate to the smaller artwork.
-              _SongMetadata(
+            );
+          } else if (c.id == 'player.trackInfo') {
+            blocks.add(
+              PlayerTrackInfo(
                 title: current.title,
                 artist: current.artist,
                 album: current.album,
+                size: c.size,
                 compact: constraints.maxWidth < 380,
               ),
+            );
+          }
+        }
+
+        return SingleChildScrollView(
+          physics: physics,
+          padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(height: topGap),
+              ...blocks,
+              SizedBox(height: bottomGap),
               const SizedBox(height: AppTokens.s2),
             ],
           ),
@@ -291,17 +312,83 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     );
   }
 
-  Widget _buildLyricsMode(
+  /// Landscape two-pane layout: artwork pane on the left (another dismissable
+  /// surface), song info and the fixed controls on the right.
+  Widget _buildLandscapeMode(
     BuildContext context,
     SongRef current,
-    PlayerSnapshot snapshot,
+    ScreenLayout layout,
   ) {
+    final remaining = [
+      for (final c in layout.components)
+        if (c.id != 'player.artwork') c,
+    ];
     return LayoutBuilder(
       builder: (context, constraints) {
-        // LANDSCAPE: dedicated full-bleed lyrics layout. The lyrics card
-        // occupies the ENTIRE player content region — no artwork beside or
-        // beneath it, no lyric text outside the card. The playback controls
-        // below this region stay in their fixed position.
+        return Row(
+          children: [
+            Expanded(
+              flex: 1,
+              child: Center(
+                child: LayoutBuilder(
+                  builder: (context, pane) {
+                    final art = layout.component('player.artwork');
+                    final artSize = art == null
+                        ? 180.0
+                        : _responsiveArtwork(
+                            maxW: pane.maxWidth,
+                            maxH: pane.maxHeight,
+                            size: art.size,
+                          );
+                    return RotatingArtwork(
+                      path: current.artPath,
+                      heroTag: FullPlayerScreen._heroTag,
+                      size: artSize,
+                    );
+                  },
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppTokens.s6,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (final c in remaining)
+                            if (c.id == 'player.trackInfo')
+                              PlayerTrackInfo(
+                                title: current.title,
+                                artist: current.artist,
+                                album: current.album,
+                                size: c.size,
+                              ),
+                          const SizedBox(height: AppTokens.s3),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ── Lyrics mode ──────────────────────────────────────────────────────────
+
+  Widget _buildLyricsMode(BuildContext context, SongRef current) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
         if (constraints.maxWidth > constraints.maxHeight) {
           return CompactLyricsPanel(
             height: constraints.maxHeight,
@@ -311,14 +398,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             },
           );
         }
-        // PORTRAIT: existing layout — lyrics card with the collapsible
-        // artwork reveal beneath it when the card is collapsed.
         final compact = constraints.maxHeight < 200;
-        // Desired card height follows the available region instead of a fixed
-        // constant: most of the region in portrait, tightened on short
-        // (landscape) viewports. The panel itself clamps to its incoming
-        // constraints as a second line of defence, so this can never overflow
-        // the flex even if the estimate is generous.
         final panelHeight = (constraints.maxHeight * 0.62).clamp(180.0, 300.0);
         return Column(
           children: [
@@ -333,15 +413,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             ),
             SizedBox(height: compact ? AppTokens.s1 : AppTokens.s4),
             if (!_lyricsExpanded)
-              // The revealed artwork when the lyrics card is collapsed.
-              // In portrait (the normal case here) it is deliberately NOT
-              // scrollable: it is sized to fit the available region so it can
-              // never be scrolled or clipped, and the reserved bottom gap
-              // keeps the metadata below clear of the artwork's paint
-              // overflow (drop shadow + playing glow extend ~20px beyond the
-              // box). On short <200px viewports only (unreachable in normal
-              // landscape, which returns earlier via fillRegion) the small
-              // artwork plus a live lyric line still scroll for safety.
               Flexible(
                 child: LayoutBuilder(
                   builder: (context, artConstraints) {
@@ -350,16 +421,16 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (compact) const _CurrentLyricLine(),
-                            if (compact) const SizedBox(height: AppTokens.s2),
+                            const _CurrentLyricLine(),
+                            const SizedBox(height: AppTokens.s2),
                             Padding(
                               padding: const EdgeInsets.only(bottom: 24),
                               child: RotatingArtwork(
                                 path: current.artPath,
                                 heroTag: null,
                                 size: _collapsedArtworkSize(
-                                  constraints,
-                                  compact,
+                                  artConstraints,
+                                  true,
                                 ),
                               ),
                             ),
@@ -368,9 +439,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                       );
                     }
                     return Padding(
-                      // Reserve room beneath the artwork for the paint
-                      // overflow plus a clear gap so the metadata never
-                      // overlaps or looks like it cuts the artwork.
                       padding: const EdgeInsets.only(bottom: AppTokens.s4),
                       child: Center(
                         child: RotatingArtwork(
@@ -384,7 +452,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                 ),
               ),
             if (!_lyricsExpanded) const SizedBox(height: AppTokens.s4),
-            _SongMetadata(
+            PlayerTrackInfo(
               title: current.title,
               artist: compact ? null : current.artist,
               album: compact ? null : current.album,
@@ -396,9 +464,6 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     );
   }
 
-  /// Size of the artwork revealed when the lyrics card is collapsed on a short
-  /// (<200px) viewport. Stays small so the collapsed card, current lyric line,
-  /// artwork and metadata never overflow the region.
   double _collapsedArtworkSize(BoxConstraints constraints, bool compact) {
     if (compact) {
       return 120.0;
@@ -409,30 +474,76 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     return target.clamp(240.0, AppTokens.artworkHeroMax);
   }
 
-  /// Size of the artwork revealed when the lyrics card is collapsed in
-  /// portrait, sized to FIT the available [c] region.
-  ///
-  /// Grows to fill the space the lyrics list vacated (capped at the hero-size
-  /// ceiling) so the album art becomes the visual focus again, but never
-  /// exceeds the height actually available in the flex region. Reserving a
-  /// bottom margin for the artwork's ~20px paint overflow plus the gap means
-  /// the reveal is never scrollable and never clipped by the metadata below.
   double _fitArtworkSize(BoxConstraints c) {
     final byWidth = c.maxWidth * 0.62;
-    // Reserve bottom room for the drawing overflow and the clear gap so the
-    // artwork is never cut by (or touches) the metadata beneath it.
     final availableHeight = c.maxHeight - AppTokens.s6;
     final byHeight = availableHeight < 0 ? 0.0 : availableHeight;
     final target = byWidth < byHeight ? byWidth : byHeight;
     return target.clamp(120.0, AppTokens.artworkHeroMax);
   }
+
+  // ── Fixed bottom zone ────────────────────────────────────────────────────
+
+  Widget _buildBottomZone(
+    BuildContext context,
+    PlayerSnapshot snapshot,
+    SongRef current,
+    ScreenLayout layout,
+  ) {
+    final shortViewport = MediaQuery.sizeOf(context).height < 560;
+    final progress = layout.component('player.progress');
+    final secondary = layout.component('player.secondaryControls');
+    final primary = layout.component('player.primaryControls');
+    final quick = layout.component('player.quickActions');
+
+    final showSecondary = !shortViewport && secondary?.visible != false;
+    final showQuick = !shortViewport && quick?.visible != false;
+
+    return Padding(
+      key: _bottomZoneKey,
+      padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showSecondary) ...[
+            _SecondaryHost(snapshot: snapshot),
+            const SizedBox(height: AppTokens.s1),
+          ],
+          _ProgressHost(progress: progress),
+          const SizedBox(height: AppTokens.s1),
+          _ControlsHost(snapshot: snapshot, primary: primary),
+          if (showQuick) ...[
+            const SizedBox(height: AppTokens.s2),
+            _QuickHost(identityKey: current.identityKey, quick: quick),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Size of the artwork inside the top zone, sized to FIT the available
+  /// region (never overflowing it) while honoring the component's [size].
+  double _responsiveArtwork({
+    required double maxW,
+    required double maxH,
+    required ComponentSize size,
+  }) {
+    final topGap = (maxH * 0.05).clamp(8.0, 32.0);
+    final bottomGap = (maxH * 0.04).clamp(8.0, 28.0);
+    final reserve = size == ComponentSize.small ? 92.0 : 112.0;
+    final heightFit = math.max(0.0, maxH - topGap - bottomGap - reserve);
+    final widthCap = math.min(maxW * 0.78, AppTokens.artworkHeroMax);
+    final base = math.min(heightFit, widthCap);
+    return switch (size) {
+      ComponentSize.small => base.clamp(120.0, 200.0),
+      ComponentSize.medium => base.clamp(140.0, AppTokens.artworkHeroMax),
+      ComponentSize.large => base.clamp(180.0, AppTokens.artworkHeroMax),
+    };
+  }
 }
 
-/// A single, currently-playing synced lyric line.
-///
-/// Shown above the artwork when the full player's lyrics card is collapsed on a
-/// tight (landscape) viewport, so the live lyric stays on screen without the
-/// full list. Renders nothing when there are no synced lyrics available.
+/// A single, currently-playing synced lyric line shown above the artwork when
+/// the lyrics card is collapsed on a tight viewport.
 class _CurrentLyricLine extends ConsumerWidget {
   const _CurrentLyricLine();
 
@@ -467,614 +578,14 @@ class _CurrentLyricLine extends ConsumerWidget {
   }
 }
 
-/// Immersive dark atmospheric background behind the rotating artwork.
-///
-/// Uses a violet-tinted radial glow over a near-black base instead of a blurred
-/// copy of the album art, keeping the artwork the visual hero while avoiding
-/// expensive full-screen blur / decode. This widget holds no [Hero] (the
-/// artwork Hero tag belongs to exactly one widget per route).
-///
-/// Stateful so the subtle ring-pulse animation controller is created once and
-/// survives play/pause toggles. A stateless implementation would add/remove the
-/// pulse widget from the tree on every toggle, disposing and recreating its
-/// controller each time — which caused a visible flicker on each play/pause.
-class _ImmersiveBackground extends ConsumerStatefulWidget {
-  const _ImmersiveBackground();
+/// The fixed transport zone's shuffle/repeat/effects row.
+class _SecondaryHost extends ConsumerWidget {
+  const _SecondaryHost({required this.snapshot});
 
-  @override
-  ConsumerState<_ImmersiveBackground> createState() =>
-      _ImmersiveBackgroundState();
-}
-
-class _ImmersiveBackgroundState extends ConsumerState<_ImmersiveBackground>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulseController;
-  bool _wasPlaying = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      duration: const Duration(seconds: 4),
-      vsync: this,
-    );
-  }
-
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  void _syncPulse(bool isPlaying) {
-    if (!_BackgroundPulse.enabled) return;
-    if (isPlaying && !_pulseController.isAnimating) {
-      _pulseController.repeat(reverse: true);
-    } else if (!isPlaying && _pulseController.isAnimating) {
-      _pulseController.stop();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Listen only to isPlaying so the background rebuilds minimally and the
-    // pulse animation is toggled without rebuilding the whole stack.
-    final isPlaying = ref.watch(playbackIsPlayingProvider);
-    if (isPlaying != _wasPlaying) {
-      _wasPlaying = isPlaying;
-      // Schedule the sync for after the frame so we don't setState during build.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _syncPulse(isPlaying);
-      });
-    }
-
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
-    // The background is intentionally a dark atmospheric canvas with a subtle
-    // purple glow — NOT a blurred copy of the artwork. The artwork itself stays
-    // the hero inside the rotating player, keeping the screen premium and cheap
-    // to render (no expensive full-screen blur / decode per frame).
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Base void gradient
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: isDark
-                  ? [
-                      context.surfaces.surface,
-                      context.surfaces.card,
-                      context.surfaces.cardElevated,
-                    ]
-                  : [
-                      context.surfaces.surface,
-                      context.surfaces.surfaceLow,
-                      context.surfaces.cardElevated,
-                    ],
-            ),
-          ),
-        ),
-        // Subtle purple atmosphere — radial glow near the top, gentle wash.
-        Container(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: const Alignment(0, -0.25),
-              radius: 1.3,
-              colors: [
-                colorScheme.primary.withValues(alpha: isDark ? 0.14 : 0.10),
-                colorScheme.primary.withValues(alpha: isDark ? 0.05 : 0.04),
-                Colors.transparent,
-              ],
-              stops: const [0.0, 0.55, 1.0],
-            ),
-          ),
-        ),
-        // Vignette for depth
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                colorScheme.surface.withValues(alpha: 0.55),
-              ],
-              stops: const [0.45, 1.0],
-            ),
-          ),
-        ),
-        // Subtle animated ring pulse when playing — kept in the tree always and
-        // only started/stopped, so play/pause never recreates the controller.
-        if (_BackgroundPulse.enabled)
-          Center(
-            child: AnimatedBuilder(
-              animation: _pulseController,
-              builder: (context, child) {
-                final scale = 0.85 + (_pulseController.value * 0.15);
-                final opacity = 0.02 + (_pulseController.value * 0.03);
-
-                return Visibility(
-                  visible: isPlaying,
-                  maintainAnimation: true,
-                  maintainState: true,
-                  maintainSize: true,
-                  child: Transform.scale(
-                    scale: scale,
-                    child: Opacity(
-                      opacity: opacity,
-                      child: Container(
-                        width: MediaQuery.sizeOf(context).width * 1.2,
-                        height: MediaQuery.sizeOf(context).width * 1.2,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: colorScheme.primary,
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _BackgroundPulse extends StatefulWidget {
-  const _BackgroundPulse({required this.size, required this.color});
-
-  final double size;
-  final Color color;
-
-  /// Can be disabled in tests to prevent infinite animation.
-  static bool enabled = true;
-
-  @override
-  State<_BackgroundPulse> createState() => _BackgroundPulseState();
-}
-
-/// Public function to disable background pulse for testing.
-void disableBackgroundPulseForTesting() {
-  _BackgroundPulse.enabled = false;
-}
-
-class _BackgroundPulseState extends State<_BackgroundPulse>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(seconds: 4),
-      vsync: this,
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final scale = 0.85 + (_controller.value * 0.15);
-        final opacity = 0.02 + (_controller.value * 0.03);
-
-        return Transform.scale(
-          scale: scale,
-          child: Opacity(
-            opacity: opacity,
-            child: Container(
-              width: widget.size,
-              height: widget.size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: widget.color, width: 1),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _TopBar extends ConsumerWidget {
-  const _TopBar({
-    required this.identityKey,
-    required this.onQueueTap,
-    required this.onPlaylistTap,
-    required this.onLyricsTap,
-    required this.onSleepTimerTap,
-    required this.showLyricsActive,
-    required this.isDark,
-  });
-
-  final String identityKey;
-  final VoidCallback onQueueTap;
-  final VoidCallback onPlaylistTap;
-  final VoidCallback onLyricsTap;
-  final VoidCallback onSleepTimerTap;
-  final bool showLyricsActive;
-  final bool isDark;
+  final PlayerSnapshot snapshot;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final colorScheme = Theme.of(context).colorScheme;
-    final timerActive = ref.watch(sleepTimerIsActiveProvider);
-    final timerRemaining = ref.watch(sleepTimerRemainingProvider);
-    // The live countdown only appears in the last five minutes. Before that
-    // the pill just shows the (tinted) bedtime icon so the user can see a
-    // timer is armed without a permanently ticking number.
-    final showCountdown =
-        timerActive && timerRemaining <= const Duration(minutes: 5);
-    final timerPillHighlighted = timerActive;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppTokens.s3,
-        vertical: AppTokens.s2,
-      ),
-      child: Row(
-        children: [
-          // Close button with premium styling
-          PressableScale(
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: AppTokens.borderHairline,
-                ),
-              ),
-              child: Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 28,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const Spacer(),
-          // Favorite button (kept beside Lyrics per design)
-          _FavoriteButton(identityKey: identityKey),
-          const SizedBox(width: AppTokens.s2),
-          // Sleep Timer button — a compact pill that reveals the live
-          // countdown while a timer is running.
-          PressableScale(
-            onTap: onSleepTimerTap,
-            child: Container(
-              height: 48,
-              padding: EdgeInsets.symmetric(
-                horizontal: timerPillHighlighted ? AppTokens.s4 : 0,
-              ),
-              decoration: BoxDecoration(
-                color: timerPillHighlighted
-                    ? colorScheme.primary.withValues(alpha: 0.16)
-                    : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                shape: timerPillHighlighted
-                    ? BoxShape.rectangle
-                    : BoxShape.circle,
-                borderRadius: timerPillHighlighted
-                    ? const BorderRadius.all(Radius.circular(AppTokens.rFull))
-                    : null,
-                border: Border.all(
-                  color: timerPillHighlighted
-                      ? colorScheme.primary.withValues(alpha: 0.3)
-                      : colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: AppTokens.borderHairline,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // When inactive the pill is a plain 48px circular button
-                  // centred on the icon; when a timer is armed it becomes a
-                  // tinted pill showing the icon — plus the live countdown
-                  // only in the final five minutes.
-                  SizedBox(
-                    width: timerPillHighlighted ? null : 48,
-                    child: timerPillHighlighted
-                        ? Icon(
-                            Icons.bedtime_rounded,
-                            size: 22,
-                            color: colorScheme.primary,
-                          )
-                        : Center(
-                            child: Icon(
-                              Icons.bedtime_rounded,
-                              size: 22,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                  ),
-                  if (showCountdown) ...[
-                    const SizedBox(width: AppTokens.s2),
-                    Text(
-                      formatSleepTimer(timerRemaining),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: AppTokens.s1),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: AppTokens.s2),
-          // Lyrics button
-          PressableScale(
-            onTap: onLyricsTap,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: showLyricsActive
-                    ? colorScheme.primary.withValues(alpha: 0.16)
-                    : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: showLyricsActive
-                      ? colorScheme.primary.withValues(alpha: 0.3)
-                      : colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: AppTokens.borderHairline,
-                ),
-              ),
-              child: Icon(
-                Icons.lyrics_rounded,
-                size: 22,
-                color: showLyricsActive
-                    ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppTokens.s2),
-          // Playlist button
-          PressableScale(
-            onTap: onPlaylistTap,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: AppTokens.borderHairline,
-                ),
-              ),
-              child: Icon(
-                Icons.playlist_add_rounded,
-                size: 22,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          const SizedBox(width: AppTokens.s2),
-          // Queue button
-          PressableScale(
-            onTap: onQueueTap,
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: AppTokens.borderHairline,
-                ),
-              ),
-              child: Icon(
-                Icons.queue_music_rounded,
-                size: 22,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SongMetadata extends StatelessWidget {
-  const _SongMetadata({
-    required this.title,
-    required this.artist,
-    this.album,
-    this.compact = false,
-  });
-
-  final String title;
-  final String? artist;
-  final String? album;
-
-  /// True on narrow phones: title / artist / album step down one size so the
-  /// metadata block stays proportionate to the smaller responsive artwork.
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      children: [
-        // Title with premium typography
-        Text(
-          title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: (compact
-                  ? theme.textTheme.titleLarge
-                  : theme.textTheme.headlineSmall)
-              ?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-                height: 1.2,
-              ),
-        ),
-        if (artist != null) ...[
-          const SizedBox(height: AppTokens.s1),
-          Text(
-            artist!,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: (compact
-                    ? theme.textTheme.bodyMedium
-                    : theme.textTheme.bodyLarge)
-                ?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.2,
-                ),
-          ),
-        ],
-        if (album != null) ...[
-          const SizedBox(height: AppTokens.s1),
-          Text(
-            album!,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-        ],
-        const SizedBox(height: AppTokens.s4),
-      ],
-    );
-  }
-}
-
-class _FavoriteButton extends ConsumerWidget {
-  const _FavoriteButton({required this.identityKey});
-
-  final String identityKey;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isFavorite = ref.watch(currentSongIsFavoriteProvider);
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return PressableScale(
-      onTap: () {
-        final rowIdAsync = ref.read(songRowIdProvider(identityKey));
-        rowIdAsync.whenOrNull(
-          data: (rowId) {
-            if (rowId != null) {
-              ref.read(favoriteIdsProvider.notifier).toggle(rowId);
-            }
-          },
-        );
-      },
-      child: AnimatedContainer(
-        duration: AppTokens.fast,
-        curve: AppTokens.press,
-        padding: const EdgeInsets.all(AppTokens.s2),
-        decoration: BoxDecoration(
-          color: isFavorite
-              ? colorScheme.primary.withValues(alpha: 0.12)
-              : colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: isFavorite
-                ? colorScheme.primary.withValues(alpha: 0.3)
-                : colorScheme.outlineVariant.withValues(alpha: 0.3),
-            width: AppTokens.borderHairline,
-          ),
-        ),
-        child: AnimatedSwitcher(
-          duration: AppTokens.fast,
-          transitionBuilder: (child, animation) {
-            return ScaleTransition(scale: animation, child: child);
-          },
-          child: Icon(
-            isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            key: ValueKey(isFavorite),
-            size: 22,
-            color: isFavorite
-                ? colorScheme.primary
-                : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PositionConsumer extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final snapshot = ref.watch(playbackStateProvider);
-
-    return ref
-        .watch(playbackPositionProvider)
-        .when(
-          data: (position) {
-            return PlayerProgress(
-              snapshot: snapshot,
-              position: position,
-              onSeek: (pos) => ref.read(playerProvider).seek(pos),
-            );
-          },
-          loading: () => PlayerProgress(
-            snapshot: snapshot,
-            position: Duration.zero,
-            onSeek: (pos) => ref.read(playerProvider).seek(pos),
-          ),
-          error: (_, __) => PlayerProgress(
-            snapshot: snapshot,
-            position: Duration.zero,
-            onSeek: (pos) => ref.read(playerProvider).seek(pos),
-          ),
-        );
-  }
-}
-
-/// The transport header above the progress timeline.
-///
-/// One compact icon row holding shuffle, repeat, equalizer, speed and boost,
-/// all sized like the shuffle/repeat toggles. Landscape keeps this slot empty
-/// so the artwork / lyrics card claims the full content region; the effects
-/// stay reachable from the Settings.
-class _TransportLeading extends ConsumerWidget {
-  const _TransportLeading({required this.enabled});
-
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (!enabled) {
-      return const SizedBox.shrink();
-    }
-    final snapshot = ref.watch(playbackStateProvider);
     return PlayerTransportRow(
       snapshot: snapshot,
       onToggleShuffle: () {
@@ -1109,13 +620,51 @@ class _TransportLeading extends ConsumerWidget {
   }
 }
 
-class _ControlsConsumer extends ConsumerWidget {
-  const _ControlsConsumer();
+/// The progress block: watches [playbackPositionProvider] so only it rebuilds
+/// on position ticks.
+class _ProgressHost extends ConsumerWidget {
+  const _ProgressHost({required this.progress});
+
+  final ComponentLayout? progress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final snapshot = ref.watch(playbackStateProvider);
+    final size = progress?.size ?? ComponentSize.medium;
+    return ref
+        .watch(playbackPositionProvider)
+        .when(
+          data: (position) => PlayerProgress(
+            snapshot: snapshot,
+            position: position,
+            onSeek: (pos) => ref.read(playerProvider).seek(pos),
+            size: size,
+          ),
+          loading: () => PlayerProgress(
+            snapshot: snapshot,
+            position: Duration.zero,
+            onSeek: (pos) => ref.read(playerProvider).seek(pos),
+            size: size,
+          ),
+          error: (_, _) => PlayerProgress(
+            snapshot: snapshot,
+            position: Duration.zero,
+            onSeek: (pos) => ref.read(playerProvider).seek(pos),
+            size: size,
+          ),
+        );
+  }
+}
 
+/// The primary transport row.
+class _ControlsHost extends ConsumerWidget {
+  const _ControlsHost({required this.snapshot, required this.primary});
+
+  final PlayerSnapshot snapshot;
+  final ComponentLayout? primary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     return PlayerControls(
       snapshot: snapshot,
       onToggleShuffle: () {
@@ -1153,6 +702,258 @@ class _ControlsConsumer extends ConsumerWidget {
           ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
       onForward10: () =>
           ref.read(playerProvider).seekBy(const Duration(seconds: 10)),
+      size: primary?.size ?? ComponentSize.medium,
+    );
+  }
+}
+
+/// The quick actions block: favorite and the queue.
+class _QuickHost extends ConsumerWidget {
+  const _QuickHost({required this.identityKey, required this.quick});
+
+  final String identityKey;
+  final ComponentLayout? quick;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PlayerQuickActionsRow(
+      identityKey: identityKey,
+      onQueueTap: () => QueueSheet.show(context),
+      size: quick?.size ?? ComponentSize.medium,
+    );
+  }
+}
+
+/// Slim top bar: close, sleep timer pill, lyrics and the overflow menu
+/// (effects, playlist, customization).
+class _TopBar extends ConsumerWidget {
+  const _TopBar({
+    required this.identityKey,
+    required this.onPlaylistTap,
+    required this.onLyricsTap,
+    required this.onSleepTimerTap,
+    required this.onCustomizeTap,
+    required this.showLyricsActive,
+    required this.isDark,
+  });
+
+  final String identityKey;
+  final VoidCallback onPlaylistTap;
+  final VoidCallback onLyricsTap;
+  final VoidCallback onSleepTimerTap;
+  final VoidCallback onCustomizeTap;
+  final bool showLyricsActive;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    final timerActive = ref.watch(sleepTimerIsActiveProvider);
+    final timerRemaining = ref.watch(sleepTimerRemainingProvider);
+    final showCountdown =
+        timerActive && timerRemaining <= const Duration(minutes: 5);
+    final timerPillHighlighted = timerActive;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppTokens.s3,
+        vertical: AppTokens.s2,
+      ),
+      child: Row(
+        children: [
+          _TopBarButton(
+            icon: Icons.keyboard_arrow_down_rounded,
+            onTap: () => Navigator.of(context).maybePop(),
+          ),
+          const Spacer(),
+          PressableScale(
+            onTap: onSleepTimerTap,
+            child: Container(
+              height: 48,
+              padding: EdgeInsets.symmetric(
+                horizontal: timerPillHighlighted ? AppTokens.s4 : 0,
+              ),
+              decoration: BoxDecoration(
+                color: timerPillHighlighted
+                    ? colorScheme.primary.withValues(alpha: 0.16)
+                    : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                shape: timerPillHighlighted
+                    ? BoxShape.rectangle
+                    : BoxShape.circle,
+                borderRadius: timerPillHighlighted
+                    ? const BorderRadius.all(Radius.circular(AppTokens.rFull))
+                    : null,
+                border: Border.all(
+                  color: timerPillHighlighted
+                      ? colorScheme.primary.withValues(alpha: 0.3)
+                      : colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  width: AppTokens.borderHairline,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: timerPillHighlighted ? null : 48,
+                    child: timerPillHighlighted
+                        ? Icon(
+                            Icons.bedtime_rounded,
+                            size: 22,
+                            color: colorScheme.primary,
+                          )
+                        : Center(
+                            child: Icon(
+                              Icons.bedtime_rounded,
+                              size: 22,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                  ),
+                  if (showCountdown) ...[
+                    const SizedBox(width: AppTokens.s2),
+                    Text(
+                      formatSleepTimer(timerRemaining),
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(width: AppTokens.s1),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: AppTokens.s2),
+          _TopBarButton(
+            icon: Icons.lyrics_rounded,
+            active: showLyricsActive,
+            onTap: onLyricsTap,
+          ),
+          const SizedBox(width: AppTokens.s2),
+          PopupMenuButton<VoidCallback>(
+            tooltip: 'More',
+            position: PopupMenuPosition.under,
+            onSelected: (action) => action(),
+            itemBuilder: (BuildContext context) => [
+              PopupMenuItem<VoidCallback>(
+                value: () => showEqualizerSheet(context),
+                child: const _MenuItem(
+                  icon: Icons.equalizer_rounded,
+                  label: 'Equalizer',
+                ),
+              ),
+              PopupMenuItem<VoidCallback>(
+                value: () => showSpeedSheet(context),
+                child: const _MenuItem(
+                  icon: Icons.speed_rounded,
+                  label: 'Playback speed',
+                ),
+              ),
+              PopupMenuItem<VoidCallback>(
+                value: () => showVolumeBoosterSheet(context),
+                child: const _MenuItem(
+                  icon: Icons.volume_up_rounded,
+                  label: 'Volume boost',
+                ),
+              ),
+              PopupMenuItem<VoidCallback>(
+                value: onPlaylistTap,
+                child: const _MenuItem(
+                  icon: Icons.playlist_add_rounded,
+                  label: 'Add to playlist',
+                ),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem<VoidCallback>(
+                value: onCustomizeTap,
+                child: const _MenuItem(
+                  icon: Icons.tune_rounded,
+                  label: 'Customize player',
+                ),
+              ),
+            ],
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  width: AppTokens.borderHairline,
+                ),
+              ),
+              child: Icon(
+                Icons.more_vert_rounded,
+                size: 22,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopBarButton extends StatelessWidget {
+  const _TopBarButton({
+    required this.icon,
+    required this.onTap,
+    this.active = false,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return PressableScale(
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: active
+              ? colorScheme.primary.withValues(alpha: 0.16)
+              : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: active
+                ? colorScheme.primary.withValues(alpha: 0.3)
+                : colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: AppTokens.borderHairline,
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 22,
+          color: active ? colorScheme.primary : colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuItem extends StatelessWidget {
+  const _MenuItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: colorScheme.onSurfaceVariant),
+        const SizedBox(width: AppTokens.s3),
+        Text(label),
+      ],
     );
   }
 }
@@ -1244,4 +1045,9 @@ class _EmptyPlayer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Public function to disable the background pulse animation for testing.
+void disableBackgroundPulseForTesting() {
+  PlayerPaletteSurface.setPulseEnabled(false);
 }

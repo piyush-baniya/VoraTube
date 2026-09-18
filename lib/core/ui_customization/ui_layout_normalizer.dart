@@ -64,13 +64,15 @@ LayoutProfile defaultLayoutProfile(
   LayoutPreset preset = LayoutPreset.standard,
   List<String> screens = const [kHomeScreenId],
   List<LayoutVariant> variants = LayoutVariant.values,
+  Map<String, UiComponentRegistry> registries = const {},
 }) {
   final layouts = <LayoutKey, ScreenLayout>{};
   for (final screen in screens) {
+    final screenRegistry = registries[screen] ?? registry;
     for (final variant in variants) {
       layouts[LayoutKey(screen, variant)] = defaultScreenLayout(
         screen,
-        registry,
+        screenRegistry,
       );
     }
   }
@@ -80,28 +82,47 @@ LayoutProfile defaultLayoutProfile(
 /// Validates and completes a decoded profile. A profile written by a different
 /// schema version is discarded wholesale; a malformed screen is repaired rather
 /// than thrown away with the whole profile.
+///
+/// [extraRegistries] maps additional screen ids to their registries so a
+/// stored player or mini player layout is validated the same way. Missing
+/// screens are left absent from the result: callers fall back to defaults.
 LayoutProfile normalizeLayoutProfile(
   LayoutProfile profile,
-  UiComponentRegistry registry,
-) {
+  UiComponentRegistry registry, {
+  Map<String, UiComponentRegistry> extraRegistries = const {},
+}) {
+  final allRegistries = <String, UiComponentRegistry>{
+    kHomeScreenId: registry,
+    ...extraRegistries,
+  };
   if (profile.schemaVersion != kUiLayoutSchemaVersion) {
-    return defaultLayoutProfile(registry);
+    return defaultLayoutProfile(
+      registry,
+      registries: allRegistries,
+      screens: allRegistries.keys.toList(),
+    );
   }
   final layouts = <LayoutKey, ScreenLayout>{};
+  final presentScreens = <String>{};
   for (final entry in profile.layouts.entries) {
-    if (entry.key.screenId != kHomeScreenId) continue;
+    final screenRegistry = allRegistries[entry.key.screenId];
+    if (screenRegistry == null) continue;
     if (entry.value.screenId != entry.key.screenId) continue;
-    layouts[entry.key] = normalizeScreenLayout(entry.value, registry);
+    presentScreens.add(entry.key.screenId);
+    layouts[entry.key] = normalizeScreenLayout(entry.value, screenRegistry);
   }
   if (layouts.isEmpty) {
     return defaultLayoutProfile(registry, preset: profile.preset);
   }
   // Ensure a missing variant never fails to render: fall back to its default.
-  for (final variant in LayoutVariant.values) {
-    layouts.putIfAbsent(
-      LayoutKey(kHomeScreenId, variant),
-      () => defaultScreenLayout(kHomeScreenId, registry),
-    );
+  for (final screen in presentScreens) {
+    final screenRegistry = allRegistries[screen]!;
+    for (final variant in LayoutVariant.values) {
+      layouts.putIfAbsent(
+        LayoutKey(screen, variant),
+        () => defaultScreenLayout(screen, screenRegistry),
+      );
+    }
   }
   return LayoutProfile(
     schemaVersion: kUiLayoutSchemaVersion,
@@ -134,19 +155,48 @@ ScreenLayout applyLayoutPreset(
     case LayoutPreset.standard:
       break;
     case LayoutPreset.minimal:
-      hide('home.listeningInsights');
-      hide('home.playlists');
-      size('home.continueListening', ComponentSize.small);
+      if (screenId == kHomeScreenId) {
+        hide('home.listeningInsights');
+        hide('home.playlists');
+        size('home.continueListening', ComponentSize.small);
+      } else if (screenId == kPlayerScreenId) {
+        hide('player.secondaryControls');
+        hide('player.quickActions');
+        size('player.artwork', ComponentSize.small);
+      } else if (screenId == kMiniScreenId) {
+        hide('mini.secondaryControls');
+        size('mini.artwork', ComponentSize.small);
+      }
       break;
     case LayoutPreset.compact:
-      for (final id in registry.ids) {
-        size(id, ComponentSize.small);
+      if (screenId == kHomeScreenId) {
+        for (final id in registry.ids) {
+          size(id, ComponentSize.small);
+        }
+      } else if (screenId == kPlayerScreenId) {
+        // Controls focus: a tight, transport-centric player.
+        hide('player.trackInfo');
+        size('player.artwork', ComponentSize.small);
+        size('player.primaryControls', ComponentSize.large);
+      } else if (screenId == kMiniScreenId) {
+        for (final id in registry.ids) {
+          size(id, ComponentSize.small);
+        }
       }
       break;
     case LayoutPreset.immersive:
-      size('home.continueListening', ComponentSize.large);
-      size('home.listeningInsights', ComponentSize.large);
-      size('home.playlists', ComponentSize.large);
+      if (screenId == kHomeScreenId) {
+        size('home.continueListening', ComponentSize.large);
+        size('home.listeningInsights', ComponentSize.large);
+        size('home.playlists', ComponentSize.large);
+      } else if (screenId == kPlayerScreenId) {
+        style('player.artwork', 'immersive');
+        size('player.artwork', ComponentSize.large);
+        size('player.primaryControls', ComponentSize.large);
+        hide('player.quickActions');
+      } else if (screenId == kMiniScreenId) {
+        size('mini.artwork', ComponentSize.large);
+      }
       break;
     case LayoutPreset.discovery:
       if (screenId == kHomeScreenId) {
@@ -160,6 +210,15 @@ ScreenLayout applyLayoutPreset(
         style('home.playlists', 'grid');
         style('home.continueListening', 'compact');
         size('home.continueListening', ComponentSize.small);
+      } else if (screenId == kPlayerScreenId) {
+        // Artwork focus: let the cover dominate the screen.
+        size('player.artwork', ComponentSize.large);
+        hide('player.trackInfo');
+        hide('player.secondaryControls');
+        hide('player.quickActions');
+      } else if (screenId == kMiniScreenId) {
+        size('mini.artwork', ComponentSize.large);
+        size('mini.trackInfo', ComponentSize.small);
       }
       break;
   }
