@@ -18,6 +18,7 @@ import '../../../ads/banner_ad_widget.dart';
 import '../../../ads/premium_models.dart';
 import '../../../ads/premium_providers.dart';
 import '../../../ads/premium_sheets.dart';
+import '../../../customization/presentation/screens/customize_interface_screen.dart';
 import '../../../donation/presentation/screens/donation_screen.dart';
 import 'faq_screen.dart';
 import 'hidden_songs_screen.dart';
@@ -139,8 +140,7 @@ class _PlaybackSection extends ConsumerWidget {
         ),
         SettingsSelectTile<PlaybackTransitionMode>(
           title: 'Playback Transition',
-          subtitle:
-              'Crossfade blends tracks; Gapless and Off switch instantly',
+          subtitle: 'Crossfade blends tracks; Gapless and Off switch instantly',
           value: audio.transitionMode,
           onChanged: (mode) =>
               ref.read(audioSettingsProvider.notifier).setTransitionMode(mode),
@@ -382,19 +382,11 @@ class _LibrarySection extends ConsumerWidget {
         final removed = await controller.reconcileMissingFiles();
         if (!context.mounted) return;
         final result = missingFileCleanupResult(removed);
-        VoraSnackbar.success(
-          context,
-          result.message,
-          title: result.title,
-        );
+        VoraSnackbar.success(context, result.message, title: result.title);
       } catch (_) {
         if (!context.mounted) return;
         final result = missingFileCleanupResult(null);
-        VoraSnackbar.error(
-          context,
-          result.message,
-          title: result.title,
-        );
+        VoraSnackbar.error(context, result.message, title: result.title);
       }
     }
   }
@@ -461,6 +453,19 @@ class _AppearanceSection extends ConsumerWidget {
             ),
           ),
           menuMaxHeight: _kColorThemeMenuMaxHeight,
+        ),
+        SettingsTile(
+          title: 'Customize Interface',
+          subtitle: 'Reorder, hide and resize screen sections',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const CustomizeInterfaceScreen()),
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSurfaceVariant
+                .withValues(alpha: 0.4),
+          ),
           isLastInSection: true,
         ),
       ],

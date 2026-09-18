@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
+import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
@@ -18,7 +19,18 @@ import 'playlist_context_menu.dart';
 /// [PlaylistDetailScreen]; the Create action uses the shared
 /// [promptCreatePlaylist] flow.
 class HomePlaylistStrip extends ConsumerWidget {
-  const HomePlaylistStrip({super.key});
+  const HomePlaylistStrip({
+    super.key,
+    this.size = ComponentSize.medium,
+    this.styleId,
+  });
+
+  /// Layout size preset chosen in the Home customizer.
+  final ComponentSize size;
+
+  /// `carousel` (default) scrolls horizontally; `grid` lays cards out two
+  /// across.
+  final String? styleId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -112,6 +124,13 @@ class HomePlaylistStrip extends ConsumerWidget {
           );
         }
 
+        final (cardWidth, stripHeight, collageSize) = switch (size) {
+          ComponentSize.small => (124.0, 156.0, 84.0),
+          ComponentSize.medium => (148.0, 176.0, 104.0),
+          ComponentSize.large => (168.0, 196.0, 124.0),
+        };
+        final isGrid = styleId == 'grid';
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -119,17 +138,42 @@ class HomePlaylistStrip extends ConsumerWidget {
               title: 'Playlists',
               trailing: _buildCreateButton(context, ref),
             ),
-            SizedBox(
-              height: 176,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
+            if (isGrid)
+              Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
-                itemCount: playlists.length,
-                separatorBuilder: (_, _) => const SizedBox(width: AppTokens.s3),
-                itemBuilder: (context, index) =>
-                    _HomePlaylistCard(playlist: playlists[index]),
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: playlists.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: AppTokens.s3,
+                    mainAxisSpacing: AppTokens.s3,
+                    childAspectRatio: 0.82,
+                  ),
+                  itemBuilder: (context, index) => _HomePlaylistCard(
+                    playlist: playlists[index],
+                    width: double.infinity,
+                    collageSize: collageSize,
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                height: stripHeight,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: AppTokens.s4),
+                  itemCount: playlists.length,
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(width: AppTokens.s3),
+                  itemBuilder: (context, index) => _HomePlaylistCard(
+                    playlist: playlists[index],
+                    width: cardWidth,
+                    collageSize: collageSize,
+                  ),
+                ),
               ),
-            ),
           ],
         );
       },
@@ -160,9 +204,18 @@ class HomePlaylistStrip extends ConsumerWidget {
 }
 
 class _HomePlaylistCard extends ConsumerWidget {
-  const _HomePlaylistCard({required this.playlist});
+  const _HomePlaylistCard({
+    required this.playlist,
+    this.width = 148,
+    this.collageSize = 104,
+  });
 
   final PlaylistSummary playlist;
+
+  /// Fixed width in the horizontal carousel; `double.infinity` fills a grid
+  /// cell instead.
+  final double width;
+  final double collageSize;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -180,7 +233,7 @@ class _HomePlaylistCard extends ConsumerWidget {
       // Long-press shows the same context menu as the Playlists tab cards.
       onLongPress: () => showPlaylistContextMenu(context, ref, playlist),
       child: Container(
-        width: 148,
+        width: width,
         padding: const EdgeInsets.all(AppTokens.s3),
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerLow,
@@ -206,7 +259,7 @@ class _HomePlaylistCard extends ConsumerWidget {
           children: [
             PlaylistCollage(
               summary: playlist,
-              size: 104,
+              size: collageSize,
               radius: AppTokens.rMd,
             ),
             const SizedBox(height: AppTokens.s2),

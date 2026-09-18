@@ -335,7 +335,7 @@ so a mid-extraction container teardown can never publish to a disposed state.
 - `artwork_palette_factory_test.dart` — all 9 presets × dark/light fallback
   determinism, accent identity, OLED rules, `resolveForTheme` behavior.
 
-Full suite: **874+ tests pass** (107+ palette + 767 pre-existing).
+Full suite: **939 tests pass** (107+ palette + customization + pre-existing).
 
 ## 5. Android release signing (V2)
 
@@ -460,3 +460,112 @@ flutter build appbundle --release    # production (requires upload keystore)
 Palette analysis is carried out **on-device only**: image bytes are decoded and
 analyzed locally; nothing (artwork, extracted data, or cache contents) leaves
 the device; no analytics or network calls are added.
+
+## 9. Deep UI customization engine (V2)
+
+A constrained customization system: users reorder, hide, resize and restyle a
+screen's sections through curated presets and simple controls. There is no
+free-form canvas and no arbitrary x/y placement — a component only ever changes
+order, visibility, size preset and style, all validated against a registry.
+
+### 9.1 Data model - `lib/core/ui_customization/ui_layout.dart`
+
+- `kUiLayoutSchemaVersion = 1`; `kLargeScreenMinSide = 900`.
+- `LayoutVariant { portrait, landscape, largeScreen }` and
+  `layoutVariantForSize(Size)` (large screen wins when the shortest side is
+  ≥ 900, so a landscape phone is never mistaken for a tablet).
+- `LayoutPreset { standard, minimal, compact, immersive, discovery }` and
+  `ComponentSize { small, medium, large }` — size vocabulary, never pixels.
+- `ComponentLayout { id, visible, size, styleId }`,
+  `ScreenLayout { screenId, components }`, and `LayoutProfile { schemaVersion,
+  preset, layouts: Map<LayoutKey, ScreenLayout> }` with deep value equality.
+- `LayoutProfile.encode()` / `tryDecode(String)`: JSON with the schema version;
+  decode returns `null` (never throws) for malformed, truncated or mis-typed
+  data so corruption always falls back to the default layout.
+
+### 9.2 Registry - `ui_component_registry.dart`
+
+`UiComponentDefinition` is pure data: stable id, label, description, default
+size, allowed sizes, allowed style ids, default style, and `canHide` /
+`canReorder` / `canResize` flags. `homeComponentRegistry` declares the Home
+sections in their pre-customization order (`continueListening`,
+`listeningInsights`, `playlists`, `allSongs`), with `allSongs` marked
+non-hideable. New screens add a registry without touching the model.
+
+### 9.3 Normalization - `ui_layout_normalizer.dart`
+
+`normalizeScreenLayout` drops unknown and duplicate ids, appends components
+added by a newer version, clamps size/style to the definition, and forces
+non-hideable components visible; it is idempotent.
+`normalizeLayoutProfile` discards a wholesale profile written by a different
+schema version and backfills any missing variant.
+`applyLayoutPreset(preset, screenId, registry)` builds a curated arrangement —
+the only way a preset can move content.
+
+### 9.4 Edit session - `layout_edit_session.dart`
+
+`LayoutEditSession` wraps an in-progress `LayoutProfile` with a bounded 50-step
+undo/redo buffer and dirty tracking (`apply` / `undo` / `redo` / `markSaved`).
+The editor mutates the session, so Cancel is a plain discard and Save commits.
+
+### 9.5 Persistence - `lib/features/customization/data/layout_repository.dart`
+
+`LayoutRepository` abstracts the store; `KvLayoutRepository` persists to the
+existing settings KV table under `settings.uiLayout.v1` through the injectable
+`LayoutKeyValueStore`. The version is in the key, so a future incompatible
+schema can move keys without a Drift migration. `load()` maps missing, empty or
+corrupt blobs to `null` (→ default layout).
+
+### 9.6 Providers - `lib/features/customization/presentation/providers/layout_providers.dart`
+
+- `layoutProfileProvider` (`AsyncNotifier<LayoutProfile>`) loads, normalizes and
+  saves; `save` / `applyPreset` / `reset` commit through the repository.
+- `homeScreenLayoutProvider(LayoutVariant)` resolves a screen layout and never
+  shows a hole while the profile loads.
+- `homePreviewLimitFor(ComponentSize)` (6 / 10 / 20) and the auto-dispose
+  `homeSongsPreviewProvider(limit)` render the size-aware All Songs preview;
+  `homeSongsProvider` stays pinned to `homeSongsLimit` so the default medium
+  size reproduces existing behavior exactly.
+
+### 9.7 Home integration & editor
+
+- Home (`home_screen.dart`) renders sections by iterating the resolved layout;
+  `HomePlaylistStrip` and `ListeningInsightsStrip` accept `size` / `styleId`
+  (default `ComponentSize.medium` / `null`, so existing const usages are
+  unchanged).
+- Entry points: the Home header tune button and **Settings → Appearance →
+  Customize Interface** (`customize_interface_screen.dart`), which offers the
+  global preset, the Home editor, a global reset, and disabled placeholders for
+  Player / Equalizer / Lyrics / Statistics.
+- `customize_home_screen.dart` shows a live preview plus a drag-to-reorder list
+  (Flutter `ReorderableListView`), per-section visibility switches and
+  size/style `SegmentedButton`s, with Undo / Redo / Reset / Save and a
+  discard-confirmation on back.
+
+### 9.8 Files added (customization)
+
+| Path | Purpose |
+| --- | --- |
+| `lib/core/ui_customization/ui_layout.dart` | versioned model, enums, encode/decode, variant selection |
+| `lib/core/ui_customization/ui_component_registry.dart` | component definitions + Home registry |
+| `lib/core/ui_customization/ui_layout_normalizer.dart` | normalize + default profile + presets |
+| `lib/core/ui_customization/layout_edit_session.dart` | bounded undo/redo + dirty state |
+| `lib/features/customization/data/layout_repository.dart` | KV persistence behind an interface |
+| `lib/features/customization/presentation/providers/layout_providers.dart` | Riverpod wiring + Home layout/preview providers |
+| `lib/features/customization/presentation/screens/customize_interface_screen.dart` | customization hub |
+| `lib/features/customization/presentation/screens/customize_home_screen.dart` | Home editor |
+| `test/ui_layout_model_test.dart`, `test/layout_edit_session_test.dart`, `test/customize_home_screen_test.dart` | 39 tests |
+
+### 9.9 Invariants
+
+1. **No pixel coordinates** — the model has no x/y; presets only pick order,
+   visibility, size and style.
+2. **Stable ids** — persisted data references registry ids, never widget types.
+3. **Corruption-safe** — any decode/store failure yields the default layout;
+   Home always renders.
+4. **Versioned** — schema version gates the whole profile; the KV key is
+   versioned so migration needs no Drift change.
+5. **Orientation-aware** — portrait, landscape and large-screen layouts are
+   stored and normalized independently.
+6. **Additive** — default profile reproduces the existing UI; new components
+   are auto-appended on normalize.
