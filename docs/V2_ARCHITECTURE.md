@@ -82,7 +82,7 @@ fall back to the exact pre-V2 look.
                                                             ^
                                             resolve(ArtworkDescriptor)
                 +-------------------------------------------+-------+
-                | ArtworkPaletteCache (memory LRU 96 + disk JSON)    |
+                | ArtworkPaletteCache (memory LRU 96 + bounded disk)  |
                 +------------------------------------------+--------+
                 ^
                 | extract (64x64 downscale, cache key sha256)
@@ -93,7 +93,7 @@ fall back to the exact pre-V2 look.
                 v
         theme bridging
         ArtworkPaletteTheme.resolveForTheme / buildThemeFallback
-        ArtworkContrast (WCAG 2.x relative luminance, min 3.0)
+        ArtworkContrast (WCAG 2.x relative luminance, AA 4.5 / graphs 3.0)
 ```
 
 ### 2.1 Data model — `lib/core/artwork_palette/artwork_palette.dart`
@@ -123,6 +123,22 @@ cache and self-describing for future algorithm bumps.
 - `ArtworkPaletteExtractor` is a plain const class (testable with a file path
   or, in tests, `tiny_png.dart` hand-encoded PNGs).
 
+**Where the work actually runs (audit result).** Image *decode* is async and is
+performed by the Flutter engine on its own raster/decode worker threads — it is
+never pure Dart on the app isolate. The *pixel analysis* (`analyzeRgba`) is pure
+Dart CPU that runs on the app (root) isolate after `toByteData` resolves. It is
+deliberately tiny: `maxAnalysisPixels = 64 * 128 = 8192` with
+`minSolidPixels = 48`, so the synchronous pass is microseconds and bounded even
+for full-resolution covers. This is accurate but nuanced: "async" ≠ "background
+isolate". No `Isolate.spawn`/`compute` worker is used (copying an up-to-8k-pixel
+buffer across an isolate would cost more than the analysis itself); the engine-side
+decode already moves the heavy work off the Dart thread.
+
+**Resource disposal.** Every exit path of `extractFromBytes` disposes both the
+`ui.Codec` and the decoded `ui.Image` in a `finally` (image is released even when
+`toByteData` throws or geometry checks reject the frame), so repeated extraction
+never leaks native image handles.
+
 ### 2.3 Contrast / accessibility — `artwork_contrast.dart`
 
 Static utilities implementing WCAG 2.x relative luminance and contrast ratio:
@@ -130,11 +146,23 @@ Static utilities implementing WCAG 2.x relative luminance and contrast ratio:
 - `relativeLuminance`, `contrastRatio` (4:4:4 sRGB with the standard channel
   curves), `foregroundFor`, `ensureContrast(foreground, background, minRatio)`
   (monotonic darken/lighten to the target ratio), plus `desaturate`,
-  `brightness`, `blend`, `darken`, `lighten`.
+  `lightness`, `hue`, `saturation`, `blend`, `darken`, `lighten`.
 
-Both `onSurface` and `onAccent` in extracted palettes are computed with
-`_readableForeground`, guaranteeing **≥ 3:1 contrast** against their
-background — text on dynamic colors stays legible.
+Semantic contrast goals (`ArtworkContrast.readableForeground`) use a two-tier
+model so the palette never guesses:
+
+- `normalTextMinRatio = 4.5` — WCAG AA normal-text bar; `onSurface` is always
+  resolved against this with no relaxation.
+- `largeTextAndUiMinRatio = 3.0` — WCAG AA large-text / graphical-object bar;
+  `onAccent` targets 4.5 as a *preferred* ratio and relaxes to 3.0 only when the
+  accent color cast physically cannot reach 4.5 (a mid-luminance saturated hue
+  where even pure black/white cannot clear 4.5).
+
+`readableForeground` always rescues toward black/white (the maximum-contrast hue
+family) and never returns a mid-luminance compromise that fails both goals. The
+theme fallback (`buildThemeFallback`) uses the same helper for `onAccent`, so
+production themes and OLED surfaces share the guarantee. The factory fallback's
+`onSurface` is `ramp.textPrimary`, which theme curation keeps ≥ 4.5:1.
 
 ### 2.4 Cache — `artwork_palette_cache.dart`
 
@@ -142,12 +170,37 @@ Two layers, applied in order (in-memory prevents disk entirely on the hot path):
 
 - **Memory**: fixed-capacity LRU (`memoryCap = 96`). `getSync` is sync so the
   common repeated-track case never awaits disk.
-- **Disk**: JSON files under `<support>/palettes/`, named
-  `palette_{paletteAlgorithmVersion}_{key}.json`.
+- **Disk**: versioned JSON files under `<support>/palettes/`, named
+  `palette_{paletteAlgorithmVersion}_{key}.json`. The disk layer is **bounded**:
+  after every `diskSweepInterval` (32) disk writes it lazily enforces a
+  `diskCap` (384 files) by deleting the oldest files first — side-effect-batched
+  during normal writes, never a full-directory scan on every startup.
 
-Cache key = SHA-256 (from `package:crypto`, already a repo dependency) of
-`path|size|mtimeMillis`, truncated to 24 hex chars. Corruption/version change →
-re-extract; partial/bad JSON is dropped rather than thrown.
+**Why the cache key is sufficient (audit result).** The key is SHA-256 of
+`path|size|mtimeMillis` (truncated 24 hex). All artwork actually reaches this
+engine through content-addressed or write-once paths, so `path|size|mtime` is a
+faithful content identity:
+
+- Imported/embedded/custom artwork goes through `LocalArtworkStore`, which stores
+  files *keyed by the SHA-256 of their bytes* (`sha256(bytes)[:24]`), unique per
+  content. Two different covers always have different paths; identical covers
+  reuse one palette entry.
+- Android MediaStore artwork is materialized by the native bridge under
+  `<filesDir>/art/` as `$safeKey$<SMALL|LARGE>_SUFFIX.webp`; `resolveSingleArtwork`
+  short-circuits when those files already exist, so a path never silently holds
+  different content over time — a changed cover produces a new key/path.
+
+A same-size, same-path in-place cover rewrite that also preserves mtime is not an
+organic production scenario given both writers above; the key keeps
+`path` so a genuine file replacement with a bumped mtime still invalidates.
+Song/album names are deliberately excluded (they can collide and are not what
+the artwork *is*).
+
+Corruption/version change → re-extract; partial/bad JSON (truncated, non-map,
+wrong slot types) is dropped rather than thrown, and only the offending file is
+removed — a neighbour entry is never invalidated. A bump of
+`paletteAlgorithmVersion` makes every old file a miss; `pruneStaleVersions()`
+reclaims the space.
 
 ### 2.5 Service — `artwork_palette_service.dart`
 
@@ -163,8 +216,9 @@ re-extract; partial/bad JSON is dropped rather than thrown.
    means the palette is dropped.
 
 `cancelPending()` bumps the generation so in-flight work can never publish
-after the track was cleared or replaced. Extraction is fully asynchronous and
-never touches playback.
+after the track was cleared or replaced. Extraction is fully asynchronous: it
+never blocks the widget tree or playback; the bounded analysis pass is detailed
+above in section 2.2.
 
 ### 2.6 Theme bridging — `artwork_palette_factory.dart`
 
@@ -177,8 +231,8 @@ Base Theme + Optional Dynamic Artwork Palette = Effective player styling
 - `extracted == null` → `buildThemeFallback(palette, ...)`: a complete,
   deterministic `ArtworkPalette` derived from the theme ramp (accent =
   `primary` in dark, `lightDeep` in light; OLED uses `surfaceLow` for
-  `surfaceVariant`). `onAccent` = white when its contrast vs `accent` ≥ 3.0,
-  otherwise `ensureContrast(foregroundFor(accent), accent, 3.0)`.
+  `surfaceVariant`). `onAccent` prefers white ≥ 4.5; when that is unreachable
+  it uses `readableForeground(accent, min: 3.0, preferred: 4.5)`.
 - `oled` + extracted palette → `extracted.withTrueBlackSurfaces()`: surfaces /
   background become pure black while artwork accents are kept. Dynamic colors
   never trample the OLED true-black canvas.
@@ -206,6 +260,18 @@ Riverpod integration under `lib/features/player/presentation/providers/`.
 - Fallbacks are never painted as "loading": no artwork / extraction failure →
   immediate `buildThemeFallback`.
 
+**Lifecycle (audit result).** `currentArtworkPaletteProvider` is a non-autoDispose
+`StateNotifierProvider`: the controller (and the cache-backed service) lives for
+the whole `ProviderContainer`/app lifetime, so shared Full Player, Mini Player
+and queue consumers all see one consistent palette and a track change never
+recreates the engine. `currentArtworkDescriptorProvider` is a narrow derived
+provider (SongRef → `ArtworkDescriptor`) so it reacts to the artwork identity
+only — never play/pause/position. `_extract` fires only when the descriptor
+actually changes (`ref.listen` equality), so a theme switch does not re-extract.
+Late writes after any `await` are double-guarded by `_service.isCurrent(token)`
+(stale track) and `mounted` (provider disposed while the future was in flight),
+so a mid-extraction container teardown can never publish to a disposed state.
+
 ### 2.8 Files added (V2)
 
 | Path | Purpose |
@@ -213,7 +279,7 @@ Riverpod integration under `lib/features/player/presentation/providers/`.
 | `lib/core/artwork_palette/artwork_palette.dart` | DTO + JSON + `withTrueBlackSurfaces` |
 | `lib/core/artwork_palette/artwork_contrast.dart` | WCAG contrast utilities |
 | `lib/core/artwork_palette/artwork_palette_extractor.dart` | 64x64 downscale + ramp analysis |
-| `lib/core/artwork_palette/artwork_palette_cache.dart` | memory LRU + disk JSON |
+| `lib/core/artwork_palette/artwork_palette_cache.dart` | memory LRU + bounded disk JSON |
 | `lib/core/artwork_palette/artwork_palette_service.dart` | orchestration + race guard |
 | `lib/core/artwork_palette/artwork_palette_factory.dart` | theme / OLED fallback bridge |
 | `lib/features/player/presentation/providers/artwork_palette_provider.dart` | Riverpod wiring |
@@ -225,27 +291,40 @@ Riverpod integration under `lib/features/player/presentation/providers/`.
 
 1. **Cache-first**: a repeated track costs one sync map lookup. Disk is only
    reached on memory miss; extraction only on cold cache.
-2. **64x64 analysis** (`paletteAnalysisWidth = 64`): extraction is bounded and
-   cheap even for full-res artwork; already-decoded artwork is upscaled
-   down, never up.
+2. **Bounded 64x64 analysis** (`paletteAnalysisWidth = 64`, hard
+   `maxAnalysisPixels = 8192`): extraction is bounded and cheap even for
+   full-res artwork; artwork is downscaled, never upscaled. Decode happens on
+   the engine's decode workers; the pure-Dart analysis pass is a few
+   microseconds on the app isolate.
 3. **Race-safe**: generation tokens make late song-A results inert after a
    skip to song B. Null results carry no token and can only fall back once.
-4. **Never touches playback**: extraction runs on the isolate/async path, off
-   the audio loop and off the UI frame.
-5. **No new external dependencies**: uses `crypto` (already present), `dart:ui`,
+4. **Lifecycle-safe**: `_extract` post-await writes are guarded by both the
+   service generation token and a `mounted` check, so a disposed container can
+   never receive a state write.
+5. **Never touches playback**: extraction never blocks the widget tree or the
+   audio loop (see 2.2 for the accurate worker picture).
+6. **No new external dependencies**: uses `crypto` (already present), `dart:ui`,
    and `path_provider` (already present).
+7. **Bounded disk cache**: at most `diskCap` (384) palette files, swept
+   oldest-first on a lazy schedule during writes — the cache cannot grow without
+   bound over months of playback.
 
 ## 4. Test coverage summary (V2)
 
-- `artwork_contrast_test.dart` — luminance, ratio, ensureContrast monotonicity
-  and min-3.0 guarantees, blend/darken/lighten.
+- `artwork_contrast_test.dart` — luminance, ratio, ensureContrast monotonicity,
+  semantic-ratio constants, two-tier `readableForeground` (AA 4.5 map on
+  `onSurface`, 4.5-preferred / 3.0-min on `onAccent`), blend/darken/lighten.
 - `artwork_palette_model_test.dart` — JSON round-trip, version pinning
   (`paletteAlgorithmVersion == 1`), `withTrueBlackSurfaces` true-black for OLED.
 - `artwork_palette_cache_test.dart` — key stability/change on content vs size,
-  memory-hit avoids disk, disk round-trip, corrupt JSON dropped, LRU eviction.
+  memory-hit avoids disk, disk round-trip, corrupt/truncated/non-map/wrong-typed
+  JSON dropped without affecting neighbours, LRU eviction, disk-cap sweeps
+  (oldest-first, lazy while-writing, no-op under cap).
 - `artwork_palette_extractor_test.dart` — real 64x64 decoding from
-  hand-encoded `tiny_png` fixtures, deterministic slots, onAccent/onSurface
-  ≥ 3:1.
+  hand-encoded `tiny_png` fixtures, deterministic slots, onSurface ≥ 4.5,
+  onAccent ≥ 3.0 (4.5-preferred), and color-quality edge cases: near-black,
+  near-white, white/black canvas with a tiny saturated object, saturated red,
+  neon green, pale pastel, transparent-with-tiny-opaque rejection, single-color.
 - `artwork_palette_service_test.dart` — cache fast-paths, extraction path with
   `sourceArtworkKey`, no-artwork → null, generation bump on `cancelPending`.
 - `artwork_palette_provider_test.dart` — scripted-service races (stale Song A
@@ -256,18 +335,52 @@ Riverpod integration under `lib/features/player/presentation/providers/`.
 - `artwork_palette_factory_test.dart` — all 9 presets × dark/light fallback
   determinism, accent identity, OLED rules, `resolveForTheme` behavior.
 
-Full suite: **874 tests pass** (107 palette + 767 pre-existing).
+Full suite: **874+ tests pass** (107+ palette + 767 pre-existing).
 
-## 5. Validation (V2)
+## 5. Android release signing (V2)
+
+The V2 branch keeps the production signing posture of `main` and adds a hard
+failure guard:
+
+- **Debug / dev builds** never require the upload keystore: no
+  `key.properties`, no `upload-keystore.jks` → `signingConfigs.release` is not
+  created at all, `buildTypes.release` has no `signingConfig`, and debug builds
+  build normally.
+- **Production release** uses the real VoraTube upload keystore exactly as before.
+- **Missing-config release offset**: a `gradle.taskGraph.whenReady` guard fails
+  the build with a clear message ("Release signing configuration is missing.
+  Configure key.properties and the upload keystore before building a production
+  release.") whenever any release packaging task (`bundleRelease`,
+  `assembleRelease`, `packageRelease*`, `bundleRelease*`) is scheduled without a
+  valid `hasReleaseKeystore`. A release can never silently fall back to the
+  debug key.
+- `key.properties` and `*.jks` stay gitignored; credentials never enter the repo.
+
+**Validating release from a second worktree.** The V2 worktree deliberately has
+no signing credentials checked out. To do a production-signing validation build
+there, copy the gitignored files from a checkout that holds them (they are not
+committed anywhere):
+
+```
+copy android\key.properties        <v2-worktree>\android\
+copy android\upload-keystore.jks   <v2-worktree>\android\
+```
+
+then run `flutter build appbundle --release`. Both files are gitignored in the
+worktree, so the validation never pollutes the diff. Remove them afterwards if
+desired.
+
+## 6. Validation (V2)
 
 - `flutter analyze`: **0 errors, 0 warnings** in new code. Remaining issues are
   pre-existing info-level lints (repo-wide style) and one pre-existing
   `unused_import` in `smart_mixes_screen.dart`.
-- `flutter test`: all green (874).
+- `flutter test`: all green.
 - `flutter build apk --debug` succeeds (no new dependencies surfaced at build
   time).
+- Release: builds only with the upload keystore present; fails fast otherwise.
 
-## 6. Privacy
+## 7. Privacy
 
 Palette analysis is carried out **on-device only**: image bytes are decoded and
 analyzed locally; nothing (artwork, extracted data, or cache contents) leaves

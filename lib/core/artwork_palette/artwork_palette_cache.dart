@@ -50,7 +50,8 @@ abstract final class ArtworkCacheKey {
   }
 }
 
-/// Bounded in-memory + versioned disk cache of extracted [ArtworkPalette]s.
+/// Bounded in-memory + bounded, versioned disk cache of extracted
+/// [ArtworkPalette]s.
 ///
 /// * In-memory LRU gives effectively immediate repeated lookups.
 /// * Disk backing (one small JSON file per artwork key) survives app restarts
@@ -58,11 +59,20 @@ abstract final class ArtworkCacheKey {
 /// * Both layers carry the current [paletteAlgorithmVersion]; a bumped version
 ///   makes every stale mirror a miss and [pruneStaleVersions] sweeps the old
 ///   files.
+/// * The disk layer is capped at [diskCap] files. The cap is enforced lazily
+///   — every [diskSweepInterval] disk writes sweep the oldest files over the
+///   cap. Sweeping is side-effect-batched during normal writes rather than
+///   scanning the whole directory on every startup, and a sweep that finds the
+///   cache under cap touches nothing.
 ///
 /// Instances created without a directory operate memory-only (used by tests
 /// and as a safe fallback when the storage directory cannot be resolved).
 class ArtworkPaletteCache {
-  ArtworkPaletteCache({Future<Directory> Function()? directory}) {
+  ArtworkPaletteCache({
+    Future<Directory> Function()? directory,
+    this.diskCap = defaultDiskCap,
+    this.diskSweepInterval = defaultDiskSweepInterval,
+  }) {
     _dirFuture = _resolveDirectory(directory);
   }
 
@@ -71,8 +81,22 @@ class ArtworkPaletteCache {
   /// Memory LRU capacity.
   static const int memoryCap = 96;
 
+  /// Default maximum number of palette files kept on disk.
+  static const int defaultDiskCap = 384;
+
+  /// How often (in disk writes) a cap sweep runs while the cache is in use.
+  static const int defaultDiskSweepInterval = 32;
+
+  /// Maximum palette files on disk; entries past this are swept oldest-first.
+  final int diskCap;
+
+  /// Disk writes between lazy cap sweeps.
+  final int diskSweepInterval;
+
   final Map<String, ArtworkPalette> _memory = {};
   final LinkedHashSet<String> _memoryKeys = LinkedHashSet();
+
+  int _writesSinceSweep = 0;
 
   Future<Directory?> _resolveDirectory(
     Future<Directory> Function()? directory,
@@ -134,6 +158,9 @@ class ArtworkPaletteCache {
   }
 
   /// Stores [palette] under [key], memory (bounded) and disk (best effort).
+  ///
+  /// Every [diskSweepInterval]th disk write also enforces the [diskCap] so the
+  /// directory cannot grow without bound while the app is actively used.
   Future<void> put(String key, ArtworkPalette palette) async {
     _remember(key, palette);
     final dir = await _dirFuture;
@@ -144,6 +171,11 @@ class ArtworkPaletteCache {
         '${dir.path}${Platform.pathSeparator}$_filePrefix$key.json',
       );
       await file.writeAsString(jsonEncode(palette.encodeCachePayload()));
+      _writesSinceSweep++;
+      if (_writesSinceSweep >= diskSweepInterval) {
+        _writesSinceSweep = 0;
+        await sweepDisk();
+      }
     } catch (_) {
       // A failed disk write must never fail extraction.
     }
@@ -188,6 +220,51 @@ class ArtworkPaletteCache {
       }
     } catch (_) {
       // best effort
+    }
+  }
+
+  /// Enforces [diskCap]: lists versioned palette files and deletes the oldest
+  /// (by last-modified time) until the count is within cap. Returns how many
+  /// files were removed. Safe to call any time; does nothing under the cap.
+  @visibleForTesting
+  Future<int> sweepDisk() async {
+    if (diskCap <= 0) return 0;
+    final dir = await _dirFuture;
+    if (dir == null || !await dir.exists()) return 0;
+    final files = <File>[];
+    try {
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is File && entity.path.contains(_filePrefix)) {
+          files.add(entity);
+        }
+      }
+    } catch (_) {
+      return 0;
+    }
+    if (files.length <= diskCap) return 0;
+    files.sort((a, b) {
+      final am = _modifiedSafe(a);
+      final bm = _modifiedSafe(b);
+      return am.compareTo(bm);
+    });
+    final toRemove = files.length - diskCap;
+    var removed = 0;
+    for (var i = 0; i < toRemove; i++) {
+      try {
+        await files[i].delete();
+        removed++;
+      } on FileSystemException {
+        // best effort
+      }
+    }
+    return removed;
+  }
+
+  static int _modifiedSafe(File file) {
+    try {
+      return file.statSync().modified.millisecondsSinceEpoch;
+    } catch (_) {
+      return 0;
     }
   }
 

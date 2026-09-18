@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart' show Color;
@@ -175,6 +176,117 @@ void main() {
       await cache.clear();
       expect(cache.memoryCount, 0);
       expect(await diskBacked().get('a'), isNull);
+    });
+
+    test('disk sweep does nothing while under the cap', () async {
+      final cache = ArtworkPaletteCache(
+        directory: () async => tempDir,
+        diskCap: 4,
+        diskSweepInterval: 1,
+      );
+      await cache.put('a', sample());
+      expect(await cache.sweepDisk(), 0);
+      expect(await cache.get('a'), isNotNull);
+    });
+
+    test('disk sweep evicts oldest files beyond the cap', () async {
+      final cache = ArtworkPaletteCache(
+        directory: () async => tempDir,
+        diskCap: 3,
+        diskSweepInterval: 100, // no lazy sweep during these puts
+      );
+      // Force distinct mtimes: rewrite each file with an explicit timestamp.
+      for (var i = 0; i < 6; i++) {
+        await cache.put('k$i', sample());
+        await File(
+          '${tempDir.path}${Platform.pathSeparator}'
+          'palette_${paletteAlgorithmVersion}_k$i.json',
+        ).setLastModified(
+          DateTime.fromMillisecondsSinceEpoch(1000 + i),
+        );
+      }
+      var before = 0;
+      await for (final e in tempDir.list(followLinks: false)) {
+        if (e is File) before++;
+      }
+      expect(before, 6);
+      expect(await cache.sweepDisk(), 3);
+      final remaining = <String>[];
+      await for (final e in tempDir.list(followLinks: false)) {
+        if (e is File && e.path.contains('palette_${paletteAlgorithmVersion}_')) {
+          remaining.add(e.path);
+        }
+      }
+      expect(remaining.length, 3);
+      // The three newest keys survive, oldest three are gone.
+      expect(await diskBacked().get('k3'), isNotNull);
+      expect(await diskBacked().get('k4'), isNotNull);
+      expect(await diskBacked().get('k5'), isNotNull);
+      expect(await diskBacked().get('k0'), isNull);
+    });
+
+    test('disk cap is enforced lazily during puts', () async {
+      final cache = ArtworkPaletteCache(
+        directory: () async => tempDir,
+        diskCap: 3,
+        diskSweepInterval: 3,
+      );
+      for (var i = 0; i < 6; i++) {
+        await cache.put('k$i', sample());
+        await File(
+          '${tempDir.path}${Platform.pathSeparator}'
+          'palette_${paletteAlgorithmVersion}_k$i.json',
+        ).setLastModified(
+          DateTime.fromMillisecondsSinceEpoch(1000 + i),
+        );
+      }
+      var files = 0;
+      await for (final e in tempDir.list(followLinks: false)) {
+        if (e is File) files++;
+      }
+      expect(files, lessThanOrEqualTo(3));
+    });
+
+    test('truncated and non-map JSON payloads are rejected and removed',
+        () async {
+      final cache = diskBacked();
+      await cache.put('intact', sample());
+      final truncated = File(
+        '${tempDir.path}${Platform.pathSeparator}'
+        'palette_${paletteAlgorithmVersion}_trunc.json',
+      );
+      // Cut off mid-payload: valid prefix, missing trailing fields.
+      await truncated.writeAsString(
+        jsonEncode(sample().encodeCachePayload()).substring(0, 40),
+      );
+      final array = File(
+        '${tempDir.path}${Platform.pathSeparator}'
+        'palette_${paletteAlgorithmVersion}_arr.json',
+      );
+      await array.writeAsString('[1,2,3]');
+
+      expect(await cache.get('trunc'), isNull);
+      expect(await cache.get('arr'), isNull);
+      expect(await truncated.exists(), isFalse);
+      expect(await array.exists(), isFalse);
+      // A neighbour is unaffected.
+      expect(await cache.get('intact'), isNotNull);
+    });
+
+    test('non-int color slots in a payload are rejected', () async {
+      final cache = diskBacked();
+      final encoded = jsonDecode(
+        jsonEncode(sample().encodeCachePayload()),
+      ) as Map<String, Object?>;
+      encoded['surface'] = 'oops';
+      final badType = File(
+        '${tempDir.path}${Platform.pathSeparator}'
+        'palette_${paletteAlgorithmVersion}_badtype.json',
+      );
+      await badType.writeAsString(jsonEncode(encoded));
+
+      expect(await cache.get('badtype'), isNull);
+      expect(await badType.exists(), isFalse);
     });
 
     test('directory resolution failures degrade to memory-only', () async {

@@ -76,10 +76,36 @@ void main() {
         expect(ArtworkContrast.saturation(p.accent), lessThan(0.35));
         expect(
           ArtworkContrast.contrastRatio(p.onSurface, p.surface),
-          greaterThanOrEqualTo(3.0),
+          greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+          reason: 'surface text must meet WCAG AA normal-text contrast',
         );
       },
     );
+
+    test('surface text meets 4.5:1 WCAG AA on every extract', () {
+      for (final rbg in [
+        (8, 12, 24),
+        (96, 96, 96),
+        (244, 246, 250),
+        (180, 60, 40),
+        (60, 180, 160),
+      ]) {
+        final rgba = solidRgba(
+          width: 32,
+          height: 32,
+          r: rbg.$1,
+          g: rbg.$2,
+          b: rbg.$3,
+        );
+        final palette = extractor.analyzeRgba(rgba, width: 32, height: 32);
+        expect(palette, isNotNull, reason: '$rbg');
+        expect(
+          ArtworkContrast.contrastRatio(palette!.onSurface, palette.surface),
+          greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+          reason: 'onSurface for $rbg must stay WCAG AA readable',
+        );
+      }
+    });
 
     test('accent foreground keeps minimum WCAG contrast', () {
       final rgba = regionsRgba(
@@ -90,9 +116,39 @@ void main() {
       final palette = extractor.analyzeRgba(rgba, width: 32, height: 32)!;
       expect(
         ArtworkContrast.contrastRatio(palette.onAccent, palette.accent),
-        greaterThanOrEqualTo(3.0),
+        greaterThanOrEqualTo(ArtworkContrast.largeTextAndUiMinRatio),
       );
     });
+
+    test(
+      'accent foreground prefers normal-text contrast when color allows',
+      () {
+        final rgba = regionsRgba(
+          width: 32,
+          height: 32,
+          regions: [(0, 0, 32, 32, 12, 12, 12, 255)],
+        );
+        final palette = extractor.analyzeRgba(rgba, width: 32, height: 32)!;
+        if (ArtworkContrast.contrastRatio(
+              palette.onAccent,
+              palette.accent,
+            ) <
+            ArtworkContrast.normalTextMinRatio) {
+          // 4.5 may be unreachable for the cast accent; it must at least
+          // be the best the hue family can offer (black/white rescue).
+          final best = ArtworkContrast.foregroundFor(palette.accent);
+          expect(
+            ArtworkContrast.contrastRatio(
+              palette.onAccent,
+              palette.accent,
+            ),
+            greaterThanOrEqualTo(
+              ArtworkContrast.contrastRatio(best, palette.accent) - 0.01,
+            ),
+          );
+        }
+      },
+    );
 
     test('transparent artwork is rejected', () {
       final rgba = solidRgba(width: 32, height: 32, r: 0, g: 0, b: 0, a: 127);
@@ -102,6 +158,127 @@ void main() {
     test('too few solid pixels is rejected', () {
       final rgba = solidRgba(width: 4, height: 4, r: 255, g: 0, b: 0);
       expect(extractor.analyzeRgba(rgba, width: 4, height: 4), isNull);
+    });
+
+    test('near-black artwork still produces a usable dark palette', () {
+      final rgba = solidRgba(width: 32, height: 32, r: 3, g: 5, b: 9);
+      final palette = extractor.analyzeRgba(rgba, width: 32, height: 32);
+      expect(palette, isNotNull);
+      expect(ArtworkContrast.lightness(palette!.surface), lessThan(0.25));
+      expect(
+        ArtworkContrast.contrastRatio(palette.onSurface, palette.surface),
+        greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+      );
+    });
+
+    test('near-white artwork keeps a readable dark text surface', () {
+      final rgba = solidRgba(width: 32, height: 32, r: 248, g: 249, b: 251);
+      final palette = extractor.analyzeRgba(rgba, width: 32, height: 32);
+      expect(palette, isNotNull);
+      final p = palette!;
+      expect(ArtworkContrast.lightness(p.surface), lessThan(0.85));
+      expect(
+        ArtworkContrast.contrastRatio(p.onSurface, p.surface),
+        greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+      );
+    });
+
+    test('white canvas with a tiny color object still yields a colored accent',
+        () {
+      final rgba = regionsRgba(
+        width: 64,
+        height: 64,
+        regions: [
+          (58, 58, 6, 6, 200, 40, 180, 255), // tiny magenta-region object
+          (0, 0, 64, 64, 255, 255, 255, 255),
+        ],
+      );
+      final palette = extractor.analyzeRgba(rgba, width: 64, height: 64);
+      expect(palette, isNotNull);
+      final p = palette!;
+      // The extraction must not silently discard the object; a colored accent
+      // (post-clamp) is expected even though white dominates the area.
+      expect(ArtworkContrast.saturation(p.accent), greaterThan(0.05));
+      expect(
+        ArtworkContrast.contrastRatio(p.onSurface, p.surface),
+        greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+      );
+    });
+
+    test('black canvas with a tiny color object still yields a colored accent',
+        () {
+      final rgba = regionsRgba(
+        width: 64,
+        height: 64,
+        regions: [
+          (58, 58, 6, 6, 60, 200, 120, 255), // tiny green flash
+          (0, 0, 64, 64, 0, 0, 0, 255),
+        ],
+      );
+      final palette = extractor.analyzeRgba(rgba, width: 64, height: 64);
+      expect(palette, isNotNull);
+      final p = palette!;
+      expect(ArtworkContrast.lightness(p.surface), lessThan(0.35));
+      expect(
+        ArtworkContrast.contrastRatio(p.onSurface, p.surface),
+        greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+      );
+    });
+
+    test('saturated red single-color artwork yields a red-leaning accent', () {
+      final rgba = solidRgba(width: 32, height: 32, r: 220, g: 20, b: 24);
+      final palette = extractor.analyzeRgba(rgba, width: 32, height: 32)!;
+      expect(ArtworkContrast.saturation(palette.accent), greaterThan(0.4));
+      expect(
+        ArtworkContrast.contrastRatio(palette.onAccent, palette.accent),
+        greaterThanOrEqualTo(ArtworkContrast.largeTextAndUiMinRatio),
+      );
+    });
+
+    test('neon green artwork keeps a readable, non-harsh palette', () {
+      final rgba = solidRgba(width: 32, height: 32, r: 40, g: 255, b: 90);
+      final palette = extractor.analyzeRgba(rgba, width: 32, height: 32)!;
+      // Neon extremes are clamped into a tasteful band, never left raw.
+      expect(ArtworkContrast.lightness(palette.accent), lessThanOrEqualTo(0.62));
+      expect(
+        ArtworkContrast.contrastRatio(palette.onAccent, palette.accent),
+        greaterThanOrEqualTo(ArtworkContrast.largeTextAndUiMinRatio),
+      );
+    });
+
+    test('pale pastel artwork yields a muted, readable palette', () {
+      final rgba = solidRgba(width: 32, height: 32, r: 232, g: 210, b: 236);
+      final palette = extractor.analyzeRgba(rgba, width: 32, height: 32)!;
+      // Pastel lightness ~0.87 must be clamped into the usable band, not left
+      // a near-white wash.
+      expect(ArtworkContrast.lightness(palette.accent), lessThanOrEqualTo(0.62));
+      expect(
+        ArtworkContrast.contrastRatio(palette.onSurface, palette.surface),
+        greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+      );
+    });
+
+    test('transparent canvas with a tiny opaque object is rejected early', () {
+      final rgba = regionsRgba(
+        width: 64,
+        height: 64,
+        regions: [
+          (0, 0, 64, 64, 0, 0, 0, 0),
+          (62, 62, 2, 2, 255, 0, 0, 255),
+        ],
+      );
+      expect(extractor.analyzeRgba(rgba, width: 64, height: 64), isNull,
+          reason: 'fewer than 48 solid pixels cannot describe a palette');
+    });
+
+    test('single near-black color keeps on-surface text readable', () {
+      final rgba = solidRgba(width: 32, height: 32, r: 10, g: 10, b: 12);
+      final palette = extractor.analyzeRgba(rgba, width: 32, height: 32)!;
+      expect(ArtworkContrast.lightness(palette.surface), lessThan(0.3));
+      expect(
+        ArtworkContrast.contrastRatio(palette.onSurface, palette.surface),
+        greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+      );
     });
 
     test('invalid buffer layout is rejected defensively', () {

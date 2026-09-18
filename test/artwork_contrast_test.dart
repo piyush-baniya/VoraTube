@@ -102,6 +102,105 @@ void main() {
     });
   });
 
+  group('semantic ratios', () {
+    test('constants pin the WCAG bars', () {
+      expect(ArtworkContrast.normalTextMinRatio, 4.5);
+      expect(ArtworkContrast.largeTextAndUiMinRatio, 3.0);
+      expect(
+        ArtworkContrast.largeTextAndUiMinRatio,
+        lessThan(ArtworkContrast.normalTextMinRatio),
+      );
+    });
+  });
+
+  group('readableForeground', () {
+    test('black/white bands in are decisive', () {
+      expect(
+        ArtworkContrast.readableForeground(
+          Colors.black,
+          minRatio: ArtworkContrast.normalTextMinRatio,
+        ),
+        Colors.white,
+      );
+      expect(
+        ArtworkContrast.readableForeground(
+          Colors.white,
+          minRatio: ArtworkContrast.normalTextMinRatio,
+        ),
+        Colors.black,
+      );
+    });
+
+    test('meets the hard minimum ratio', () {
+      const background = Color(0xFF7C3AED);
+      final fg = ArtworkContrast.readableForeground(
+        background,
+        minRatio: ArtworkContrast.largeTextAndUiMinRatio,
+      );
+      expect(
+        ArtworkContrast.contrastRatio(fg, background),
+        greaterThanOrEqualTo(ArtworkContrast.largeTextAndUiMinRatio),
+      );
+    });
+
+    test('prefers the tighter ratio whenever achievable', () {
+      // Black on a mid-luminance accent strongly exceeds every goal, so the
+      // result must match the plain foregroundFor pick (no rescue distortion).
+      const background = Color(0xFF3B82C4);
+      final plain = ArtworkContrast.foregroundFor(background);
+      final fg = ArtworkContrast.readableForeground(
+        background,
+        minRatio: ArtworkContrast.largeTextAndUiMinRatio,
+        preferredRatio: ArtworkContrast.normalTextMinRatio,
+      );
+      expect(fg, plain);
+      expect(
+        ArtworkContrast.contrastRatio(fg, background),
+        greaterThanOrEqualTo(ArtworkContrast.normalTextMinRatio),
+      );
+    });
+
+    test('relaxes to the minimum only when the tighter goal is unreachable',
+        () {
+      // A vivid saturated violet sits near the black/white breakover band
+      // where neither black nor white exceeds 4.5, but one always still
+      // clears 3.0. readableForeground must land on the best rescue, not guess.
+      // #7C3AED was picked because black/white both dip below 4.5 on it.
+      const background = Color(0xFF7C3AED);
+      final fg = ArtworkContrast.readableForeground(
+        background,
+        minRatio: ArtworkContrast.largeTextAndUiMinRatio,
+        preferredRatio: ArtworkContrast.normalTextMinRatio,
+      );
+      final ratio = ArtworkContrast.contrastRatio(fg, background);
+      expect(ratio, greaterThanOrEqualTo(2.9));
+      // Never silently returns a mid-luminance compromise: white or black.
+      expect(
+        fg == const Color(0xFFFFFFFF) || fg == const Color(0xFF000000),
+        isTrue,
+        reason: 'foreground $fg should resolve to black or white',
+      );
+    });
+
+    test('asserts sane parameter ordering', () {
+      expect(
+        () => ArtworkContrast.readableForeground(
+          Colors.grey,
+          minRatio: 1.0,
+        ),
+        throwsAssertionError,
+      );
+      expect(
+        () => ArtworkContrast.readableForeground(
+          Colors.grey,
+          minRatio: 3.0,
+          preferredRatio: 2.0,
+        ),
+        throwsAssertionError,
+      );
+    });
+  });
+
   group('HSL math', () {
     test('hue/lightness/saturation agree on a pure color', () {
       const teal = Color(0xFF00B4B4);

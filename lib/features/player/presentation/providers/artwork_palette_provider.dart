@@ -227,6 +227,7 @@ class ArtworkPaletteController extends StateNotifier<ArtworkPaletteState> {
       // serialization) must fall back to the theme, never crash or stall in
       // "extracting" — but only if this request is still the current one.
       if (!_service.isCurrent(token)) return;
+      if (!mounted) return; // provider disposed while awaiting
       state = _readyFallback(descriptor.songIdentityKey);
       return;
     }
@@ -236,6 +237,7 @@ class ArtworkPaletteController extends StateNotifier<ArtworkPaletteState> {
     // cancelPending) begins. A null result carries no token, so the guard uses
     // the pre-await token captured above.
     if (!_service.isCurrent(token)) return;
+    if (!mounted) return; // provider disposed while awaiting
     if (result == null) {
       state = _readyFallback(songKey);
       return;

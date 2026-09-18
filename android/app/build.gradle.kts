@@ -8,12 +8,17 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// A release build must be signed with the real upload/release credentials. When
+// they are missing we fail the release build loudly instead of silently falling
+// back to debug signing. Debug builds never touch this config.
+val releaseStoreFile = keystoreProperties["storeFile"]?.let { file(it) }
 val hasReleaseKeystore =
     keystorePropertiesFile.exists() &&
         keystoreProperties["keyAlias"] != null &&
         keystoreProperties["keyPassword"] != null &&
-        keystoreProperties["storeFile"] != null &&
-        keystoreProperties["storePassword"] != null
+        keystoreProperties["storePassword"] != null &&
+        releaseStoreFile != null &&
+        releaseStoreFile.isFile
 
 
 plugins {
@@ -31,11 +36,14 @@ android {
 
 
     signingConfigs {
+        // Only define the release signing config when real credentials exist.
+        // This is read during configuration; skipping it keeps debug builds
+        // working without key.properties/upload-keystore.jks.
         if (hasReleaseKeystore) {
             create("release") {
                 keyAlias = keystoreProperties["keyAlias"] as String
                 keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
+                storeFile = releaseStoreFile
                 storePassword = keystoreProperties["storePassword"] as String
             }
         }
@@ -75,10 +83,10 @@ android {
             // this app-level ID resolves to the production AdMob app.)
             manifestPlaceholders["admobAppId"] =
                 "ca-app-pub-5203454754912425~2417374767"
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            // When key.properties is absent (CI/worktrees) this is omitted and
-            // the release APK falls back to debug signing.
+            // Release builds are signed with the real upload/release key from
+            // key.properties. When that configuration is absent the build must
+            // fail loudly (see the taskGraph guard below) — never silently fall
+            // back to debug credentials.
             if (hasReleaseKeystore) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -94,6 +102,29 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+}
+
+// A production release requires real signing credentials. If they are missing,
+// stop the build at planning time with a clear message instead of allowing the
+// artifact to be produced unsigned / debug-signed. Debug builds never reach a
+// Release task and are unaffected.
+gradle.taskGraph.whenReady {
+    val releaseSigningRequired = allTasks.any { task ->
+        when {
+            task.name == "bundleRelease" -> true
+            task.name == "assembleRelease" -> true
+            task.name.startsWith("packageRelease") -> true
+            task.name.startsWith("bundleRelease") -> true
+            else -> false
+        }
+    }
+    if (releaseSigningRequired && !hasReleaseKeystore) {
+        throw GradleException(
+            "Release signing configuration is missing.\n" +
+                "Configure key.properties and the upload keystore " +
+                "before building a production release."
+        )
     }
 }
 

@@ -56,17 +56,16 @@ class ArtworkPaletteExtractor {
     } catch (_) {
       return null;
     }
+    ui.Image? image;
     try {
       final frame = await codec.getNextFrame();
-      final image = frame.image;
+      image = frame.image;
       final width = image.width;
       final height = image.height;
       if (width <= 0 || height <= 0 || width * height > maxAnalysisPixels) {
-        image.dispose();
         return null;
       }
       final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-      image.dispose();
       if (data == null) return null;
       return analyzeRgba(
         data.buffer.asUint8List(),
@@ -76,7 +75,10 @@ class ArtworkPaletteExtractor {
     } catch (_) {
       return null;
     } finally {
+      // Dispose both native resources on every exit path. Decode failures
+      // leave [image] null; anything we actually decoded must be released.
       codec.dispose();
+      image?.dispose();
     }
   }
 
@@ -333,8 +335,18 @@ ArtworkPalette _derivePalette(_PixelStats s) {
   );
 
   // Readable foregrounds decided with real WCAG math, never hardcoded names.
-  final onSurface = _readableForeground(surface);
-  final onAccent = _readableForeground(accent);
+  // Surface text targets normal-text AA (4.5) with no relax threshold; accent
+  // text/icons live on graphical surfaces, so they aim for 4.5 where the color
+  // family allows but never drop below the 3.0 graphical-object bar.
+  final onSurface = ArtworkContrast.readableForeground(
+    surface,
+    minRatio: ArtworkContrast.normalTextMinRatio,
+  );
+  final onAccent = ArtworkContrast.readableForeground(
+    accent,
+    minRatio: ArtworkContrast.largeTextAndUiMinRatio,
+    preferredRatio: ArtworkContrast.normalTextMinRatio,
+  );
 
   return ArtworkPalette(
     dominant: dominant,
@@ -356,15 +368,4 @@ ArtworkPalette _derivePalette(_PixelStats s) {
     extractionVersion: paletteAlgorithmVersion,
     wasFallback: false,
   );
-}
-
-/// Foreground that keeps a minimum WCAG contrast against [background]:
-/// starts from the WCAG-best black/white and rescues it if the raw best choice
-/// would sit below [minRatio] (mid-luminance surfaces/accents).
-Color _readableForeground(Color background, {double minRatio = 3.0}) {
-  final choice = ArtworkContrast.foregroundFor(background);
-  if (ArtworkContrast.contrastRatio(choice, background) >= minRatio) {
-    return choice;
-  }
-  return ArtworkContrast.ensureContrast(choice, background, minRatio: minRatio);
 }

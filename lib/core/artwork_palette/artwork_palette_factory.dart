@@ -49,13 +49,15 @@ abstract final class ArtworkPaletteTheme {
     final surfaceVariant = oled ? ramp.surfaceLow : ramp.surfaceContainer;
 
     const white = Color(0xFFFFFFFF);
-    final onAccent = ArtworkContrast.contrastRatio(white, accent) >= 3.0
-        ? white
-        : ArtworkContrast.ensureContrast(
-            ArtworkContrast.foregroundFor(accent),
-            accent,
-            minRatio: 3.0,
-          );
+    final onAccent =
+        ArtworkContrast.contrastRatio(white, accent) >=
+                ArtworkContrast.normalTextMinRatio
+            ? white
+            : ArtworkContrast.readableForeground(
+                accent,
+                minRatio: ArtworkContrast.largeTextAndUiMinRatio,
+                preferredRatio: ArtworkContrast.normalTextMinRatio,
+              );
     final onSurface = ramp.textPrimary;
 
     return ArtworkPalette(

@@ -15,6 +15,20 @@ import 'package:flutter/material.dart' show Color;
 /// time a contrast decision is made, and pretending otherwise produces
 /// contrast numbers that do not exist on a real screen.
 abstract final class ArtworkContrast {
+  /// WCAG AA minimum contrast ratio for normal-size text.
+  ///
+  /// The palette engine guarantees surface text against extracted surfaces,
+  /// production themes, OLED surfaces and light-mode fallbacks all sit above
+  /// this. Pinned to the WCAG 2.x AA normal-text bar (4.5:1).
+  static const double normalTextMinRatio = 4.5;
+
+  /// WCAG AA minimum contrast ratio for large text (>=24px/>=18.66px bold)
+  /// and graphical objects (controls, icons, progress fill).
+  ///
+  /// Used for accent-bound foregrounds where pure-black/white is still a
+  /// deliberate design choice; 3:1 is the AA graphical-object bar.
+  static const double largeTextAndUiMinRatio = 3.0;
+
   /// WCAG relative luminance of an opaque color, `0.0` (black) to `1.0` (white).
   static double relativeLuminance(Color color) {
     double channel(double v) {
@@ -52,6 +66,39 @@ abstract final class ArtworkContrast {
     return onBlack > onWhite
         ? const Color(0xFF000000)
         : const Color(0xFFFFFFFF);
+  }
+
+  /// Resolves a readable foreground for [background] with two, increasingly
+  /// relaxed WCAG goals:
+  ///
+  /// 1. Black/white candidate that already beats [preferredRatio] (e.g.
+  ///    [normalTextMinRatio]); when present the caller benefits without any
+  ///    rescue.
+  /// 2. Otherwise a rescue that still guarantees at least [minRatio] (e.g.
+  ///    [largeTextAndUiMinRatio]) toward black/white — the most contrast
+  ///    available from a single hue family.
+  ///
+  /// The two-tier design lets callers ask for normal-text contrast "where
+  /// practical" and only relax to the graphical-object bar when the color cast
+  /// physically cannot reach the tighter target, instead of silently picking a
+  /// mid-luminance compromise that fails both goals.
+  static Color readableForeground(
+    Color background, {
+    required double minRatio,
+    double? preferredRatio,
+  }) {
+    assert(minRatio > 1.0);
+    assert(preferredRatio == null || preferredRatio >= minRatio);
+    final best = foregroundFor(background);
+    final target = preferredRatio ?? minRatio;
+    if (contrastRatio(best, background) >= target) {
+      return best;
+    }
+    final rescued = ensureContrast(best, background, minRatio: target);
+    if (contrastRatio(rescued, background) >= minRatio) {
+      return rescued;
+    }
+    return ensureContrast(best, background, minRatio: minRatio);
   }
 
   /// Returns [foreground] when it already meets [minRatio] against
