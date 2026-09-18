@@ -166,6 +166,9 @@ ScreenLayout applyLayoutPreset(
       } else if (screenId == kMiniScreenId) {
         hide('mini.secondaryControls');
         size('mini.artwork', ComponentSize.small);
+      } else if (screenId == kEqualizerScreenId) {
+        hide('equalizer.quickControls');
+        hide('equalizer.presets');
       }
       break;
     case LayoutPreset.compact:
@@ -182,6 +185,8 @@ ScreenLayout applyLayoutPreset(
         for (final id in registry.ids) {
           size(id, ComponentSize.small);
         }
+      } else if (screenId == kEqualizerScreenId) {
+        hide('equalizer.bandControls');
       }
       break;
     case LayoutPreset.immersive:
@@ -196,6 +201,8 @@ ScreenLayout applyLayoutPreset(
         hide('player.quickActions');
       } else if (screenId == kMiniScreenId) {
         size('mini.artwork', ComponentSize.large);
+      } else if (screenId == kEqualizerScreenId) {
+        size('equalizer.curve', ComponentSize.large);
       }
       break;
     case LayoutPreset.discovery:
@@ -219,6 +226,16 @@ ScreenLayout applyLayoutPreset(
       } else if (screenId == kMiniScreenId) {
         size('mini.artwork', ComponentSize.large);
         size('mini.trackInfo', ComponentSize.small);
+      } else if (screenId == kEqualizerScreenId) {
+        hide('equalizer.bandControls');
+        hide('equalizer.processing');
+      }
+      break;
+    case LayoutPreset.studio:
+      if (screenId == kEqualizerScreenId) {
+        // Studio drops the macros and gives the graph and bands the room.
+        hide('equalizer.quickControls');
+        size('equalizer.curve', ComponentSize.large);
       }
       break;
   }

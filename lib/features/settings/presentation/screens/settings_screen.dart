@@ -11,7 +11,7 @@ import '../../../../core/privacy/privacy_config.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../features/player/presentation/providers/player_providers.dart';
 import '../../../../features/player/presentation/providers/sleep_timer_provider.dart';
-import '../../../../features/player/presentation/widgets/equalizer_sheet.dart';
+import '../../../../features/player/presentation/screens/equalizer_screen.dart';
 import '../../../../features/player/presentation/widgets/sleep_timer_sheet.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../ads/banner_ad_widget.dart';
@@ -249,7 +249,7 @@ class _AudioSection extends ConsumerWidget {
           subtitle: audioSettings.eqEnabled
               ? 'Active — ${audioSettings.eqPreset.label}'
               : 'Off — launch from the player to shape the sound',
-          onTap: () => showEqualizerSheet(context),
+          onTap: () => showEqualizer(context),
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 18,

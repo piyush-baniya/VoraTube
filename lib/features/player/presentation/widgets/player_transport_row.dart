@@ -5,7 +5,7 @@ import '../../../../app/theme/app_tokens.dart';
 import '../../../../core/audio/audio_effects.dart';
 import '../../../../core/player/player_controller.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
-import 'equalizer_sheet.dart';
+import '../screens/equalizer_screen.dart';
 import 'speed_sheet.dart';
 import 'volume_booster_sheet.dart';
 
@@ -71,7 +71,7 @@ class PlayerTransportRow extends ConsumerWidget {
           icon: Icons.equalizer_rounded,
           label: 'Equalizer',
           isActive: eqActive,
-          onTap: () => showEqualizerSheet(context),
+          onTap: () => showEqualizer(context),
         ),
         _TransportButton(
           icon: Icons.volume_up_rounded,
@@ -112,8 +112,7 @@ class _TransportButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final color =
-        isActive ? colorScheme.primary : colorScheme.onSurfaceVariant;
+    final color = isActive ? colorScheme.primary : colorScheme.onSurfaceVariant;
     return Tooltip(
       message: label,
       child: SizedBox(

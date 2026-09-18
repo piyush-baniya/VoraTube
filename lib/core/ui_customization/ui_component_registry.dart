@@ -89,11 +89,15 @@ const String kPlayerScreenId = 'player';
 /// Screen id for the compact Now Playing bar.
 const String kMiniScreenId = 'mini';
 
+/// Screen id for the flagship Equalizer screen.
+const String kEqualizerScreenId = 'equalizer';
+
 /// The ids of every customizable screen.
 const List<String> kLayoutScreenIds = [
   kHomeScreenId,
   kPlayerScreenId,
   kMiniScreenId,
+  kEqualizerScreenId,
 ];
 
 /// Home dashboard components, in the original pre-customization order so the
@@ -233,6 +237,60 @@ const UiComponentRegistry miniComponentRegistry = UiComponentRegistry([
     defaultSize: ComponentSize.medium,
     canReorder: false,
     canResize: false,
+  ),
+]);
+
+/// Equalizer components, in the default rendering order.
+///
+/// The interactive curve is the screen's anchor: it can never be hidden,
+/// reordered or resized, so however the rest of the screen is customised the
+/// graph always stays reachable and usable.
+const UiComponentRegistry equalizerComponentRegistry = UiComponentRegistry([
+  UiComponentDefinition(
+    id: 'equalizer.nowPlaying',
+    label: 'Now Playing',
+    description: 'The artwork and track the curve is shaping',
+    defaultSize: ComponentSize.medium,
+  ),
+  UiComponentDefinition(
+    id: 'equalizer.curve',
+    label: 'EQ Curve',
+    description: 'The interactive 10-band curve',
+    defaultSize: ComponentSize.medium,
+    allowedSizes: [ComponentSize.medium, ComponentSize.large],
+    canHide: false,
+    canReorder: false,
+    canResize: false,
+  ),
+  UiComponentDefinition(
+    id: 'equalizer.presets',
+    label: 'Presets',
+    description: 'Built-in and saved one-tap curves',
+    defaultSize: ComponentSize.medium,
+  ),
+  UiComponentDefinition(
+    id: 'equalizer.quickControls',
+    label: 'Quick Controls',
+    description: 'Sub Bass, Bass, Vocal Clarity and Treble macros',
+    defaultSize: ComponentSize.medium,
+  ),
+  UiComponentDefinition(
+    id: 'equalizer.bandControls',
+    label: 'Band Controls',
+    description: 'Fine-tune each of the ten bands',
+    defaultSize: ComponentSize.medium,
+  ),
+  UiComponentDefinition(
+    id: 'equalizer.preamp',
+    label: 'Preamp',
+    description: 'Output gain and clipping headroom',
+    defaultSize: ComponentSize.medium,
+  ),
+  UiComponentDefinition(
+    id: 'equalizer.processing',
+    label: 'Processing',
+    description: 'ReplayGain, speed and sound controls',
+    defaultSize: ComponentSize.medium,
   ),
 ]);
 

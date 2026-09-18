@@ -27,6 +27,19 @@ const List<double> kEqVirtualBandFrequencies = [
 const double kEqLevelMin = -12.0;
 const double kEqLevelMax = 12.0;
 
+/// Which equalizer interface the user is working in.
+///
+/// Both modes edit the exact same underlying curve and settings — switching
+/// modes never changes the sound, only how much control is exposed.
+enum EqMode {
+  simple('Simple'),
+  advanced('Advanced');
+
+  const EqMode(this.label);
+
+  final String label;
+}
+
 /// The selectable playback speeds, in the exact display order. Slower than
 /// real-time helps audio books and language learners; 2x is the usual ceiling.
 const List<double> kPlaybackSpeeds = [0.25, 0.5, 1.0, 1.5, 2.0];
@@ -136,9 +149,11 @@ List<double> mapVirtualCurveToBands({
   final frequencies = kEqVirtualBandFrequencies;
   return [
     for (final centerFrequency in centerFrequencies)
-      _readVirtualCurve(levels, frequencies, centerFrequency)
-          .clamp(minDb, maxDb)
-          .toDouble(),
+      _readVirtualCurve(
+        levels,
+        frequencies,
+        centerFrequency,
+      ).clamp(minDb, maxDb).toDouble(),
   ];
 }
 
@@ -166,3 +181,73 @@ double _readVirtualCurve(
   }
   return levels.last;
 }
+
+/// Simple-mode macro controls. Each one writes directly to a fixed group of
+/// real virtual bands, so a quick control and the advanced band editor stay a
+/// single source of truth (no double-processing, no hidden second curve).
+enum EqQuickControl {
+  subBass('Sub Bass', [0, 1]),
+  bass('Bass', [1, 2, 3]),
+  vocalClarity('Vocal Clarity', [5, 6, 7]),
+  treble('Treble', [7, 8, 9]);
+
+  const EqQuickControl(this.label, this.bandIndices);
+
+  final String label;
+
+  /// Indices into [kEqVirtualBandFrequencies] this control drives.
+  final List<int> bandIndices;
+}
+
+/// The current average gain of a quick control's band group, used to position
+/// its slider over a curve that may have been shaped in advanced mode.
+double eqQuickControlValue(List<double> levels, EqQuickControl control) {
+  final normalized = normalizeEqLevels(levels);
+  var sum = 0.0;
+  for (final index in control.bandIndices) {
+    sum += normalized[index];
+  }
+  return sum / control.bandIndices.length;
+}
+
+/// Applies a quick control's value to every band it owns, returning a new
+/// normalized curve. Other bands are left untouched.
+List<double> applyEqQuickControl(
+  List<double> levels,
+  EqQuickControl control,
+  double value,
+) {
+  final result = normalizeEqLevels(levels);
+  final clamped = clampEqLevel(value);
+  for (final index in control.bandIndices) {
+    result[index] = clamped;
+  }
+  return result;
+}
+
+/// The largest positive (boost) gain in [levels], or 0 when the curve only
+/// cuts. This is the headroom a flat preamp would overrun.
+double maxEqBoostDb(List<double> levels) {
+  var max = 0.0;
+  for (final level in normalizeEqLevels(levels)) {
+    if (level > max) max = level;
+  }
+  return max;
+}
+
+/// The preamp (dB, never positive) that would keep a boosted curve's loudest
+/// band at or below 0 dBFS. Returns 0.0 for cuts/flat curves.
+double suggestedPreampDb(List<double> levels) {
+  final boost = maxEqBoostDb(levels);
+  if (boost <= 0) return 0.0;
+  return clampEqLevel(-boost);
+}
+
+/// The curve that is actually heard for the current settings: a preset's fixed
+/// levels, or the persisted custom levels when [preset] is [EqPreset.custom].
+List<double> effectiveEqLevels({
+  required EqPreset preset,
+  required List<double> customLevels,
+}) => preset == EqPreset.custom
+    ? normalizeEqLevels(customLevels)
+    : List<double>.from(preset.levels);

@@ -43,7 +43,8 @@ enum LayoutPreset {
   minimal('Minimal'),
   compact('Compact'),
   immersive('Immersive'),
-  discovery('Discovery');
+  discovery('Discovery'),
+  studio('Studio');
 
   const LayoutPreset(this.label);
 

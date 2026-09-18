@@ -23,6 +23,7 @@ final screenRegistryProvider = Provider.family<UiComponentRegistry, String>((
   return switch (screenId) {
     kPlayerScreenId => playerComponentRegistry,
     kMiniScreenId => miniComponentRegistry,
+    kEqualizerScreenId => equalizerComponentRegistry,
     _ => homeComponentRegistry,
   };
 });
@@ -32,6 +33,7 @@ Map<String, UiComponentRegistry> get layoutSceneRegistries => const {
   kHomeScreenId: homeComponentRegistry,
   kPlayerScreenId: playerComponentRegistry,
   kMiniScreenId: miniComponentRegistry,
+  kEqualizerScreenId: equalizerComponentRegistry,
 };
 
 final layoutRepositoryProvider = Provider<LayoutRepository>((ref) {
@@ -148,6 +150,22 @@ final miniScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>((
   return profile.screenLayout(kMiniScreenId, variant) ??
       defaultScreenLayout(kMiniScreenId, miniComponentRegistry);
 });
+
+/// The resolved equalizer layout for one device variant. The curve is a
+/// protected component, so even a stored profile that tried to hide it is
+/// normalized back to visible by [layoutProfileProvider].
+final equalizerScreenLayoutProvider =
+    Provider.family<ScreenLayout, LayoutVariant>((ref, variant) {
+      final profile = ref.watch(layoutProfileProvider).valueOrNull;
+      if (profile == null) {
+        return defaultScreenLayout(
+          kEqualizerScreenId,
+          equalizerComponentRegistry,
+        );
+      }
+      return profile.screenLayout(kEqualizerScreenId, variant) ??
+          defaultScreenLayout(kEqualizerScreenId, equalizerComponentRegistry);
+    });
 
 /// Home "All Songs" preview size for a component size preset.
 int homePreviewLimitFor(ComponentSize size) => switch (size) {

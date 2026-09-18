@@ -7,6 +7,7 @@ import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../settings/presentation/widgets/settings_section.dart';
 import '../../../settings/presentation/widgets/settings_tile.dart';
 import '../providers/layout_providers.dart';
+import 'customize_equalizer_screen.dart';
 import 'customize_home_screen.dart';
 import 'customize_mini_player_screen.dart';
 import 'customize_player_screen.dart';
@@ -101,6 +102,17 @@ class CustomizeInterfaceScreen extends ConsumerWidget {
                     builder: (_) => const CustomizeMiniPlayerScreen(),
                   ),
                 ),
+              ),
+              SettingsTile(
+                title: 'Equalizer',
+                subtitle: 'Reorder the curve, presets and controls',
+                leading: _leading(context, Icons.graphic_eq_rounded),
+                trailing: _chevron(context),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CustomizeEqualizerScreen(),
+                  ),
+                ),
                 isLastInSection: true,
               ),
             ],
@@ -123,7 +135,6 @@ class CustomizeInterfaceScreen extends ConsumerWidget {
           SettingsSection(
             title: 'Coming soon',
             children: [
-              _comingSoon(context, 'Equalizer'),
               _comingSoon(context, 'Lyrics'),
               _comingSoon(context, 'Statistics', isLast: true),
             ],

@@ -18,7 +18,6 @@ import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../providers/player_providers.dart';
 import '../providers/sleep_timer_provider.dart';
 import '../widgets/compact_lyrics_panel.dart';
-import '../widgets/equalizer_sheet.dart';
 import '../widgets/player_controls.dart';
 import '../widgets/player_palette_surface.dart';
 import '../widgets/player_progress.dart';
@@ -30,6 +29,7 @@ import '../widgets/rotating_artwork.dart';
 import '../widgets/sleep_timer_sheet.dart';
 import '../widgets/speed_sheet.dart';
 import '../widgets/volume_booster_sheet.dart';
+import 'equalizer_screen.dart';
 
 /// Full-screen immersive music player.
 ///
@@ -838,7 +838,7 @@ class _TopBar extends ConsumerWidget {
             onSelected: (action) => action(),
             itemBuilder: (BuildContext context) => [
               PopupMenuItem<VoidCallback>(
-                value: () => showEqualizerSheet(context),
+                value: () => showEqualizer(context),
                 child: const _MenuItem(
                   icon: Icons.equalizer_rounded,
                   label: 'Equalizer',
