@@ -2,12 +2,15 @@ import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
+import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../features/customization/presentation/providers/layout_providers.dart';
+import '../../../../features/customization/presentation/widgets/editable_layout_frame.dart';
+import '../../../../features/customization/presentation/widgets/layout_edit_scope.dart';
 import '../../presentation/screens/full_player_screen.dart';
 import '../providers/player_providers.dart';
 
@@ -176,26 +179,32 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     _hasPrevious = canStep && snapshot.currentIndex >= 0;
     _hasNext = canStep && snapshot.currentIndex >= 0;
 
+    // During live customization the bar is inertial: every gesture hands
+    // control to the editor frames.
+    final editing = LayoutEditScope.isEditing(context);
+
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onTap: () => _openFullPlayer(context),
+      onTap: editing ? null : () => _openFullPlayer(context),
       // Swipe up expands into the full player; a deliberate quick swipe down
       // stops playback and dismisses the bar. Speed thresholds are generous so
       // a small accidental vertical wiggle never triggers a destructive stop.
-      onVerticalDragEnd: (details) {
-        final velocity = details.primaryVelocity ?? 0;
-        if (velocity < -1200) {
-          _openFullPlayer(context);
-        } else if (velocity > 1500) {
-          ref.read(playerProvider).clearSession();
-        }
-      },
+      onVerticalDragEnd: editing
+          ? null
+          : (details) {
+              final velocity = details.primaryVelocity ?? 0;
+              if (velocity < -1200) {
+                _openFullPlayer(context);
+              } else if (velocity > 1500) {
+                ref.read(playerProvider).clearSession();
+              }
+            },
       // Animated horizontal card swipe (see [_onHorizontalDragEnd]). The
       // recognizers live on the whole card — artwork, title, progress line and
       // transport controls included — so a swipe started anywhere skips.
-      onHorizontalDragStart: _onHorizontalDragStart,
-      onHorizontalDragUpdate: _onHorizontalDragUpdate,
-      onHorizontalDragEnd: _onHorizontalDragEnd,
+      onHorizontalDragStart: editing ? null : _onHorizontalDragStart,
+      onHorizontalDragUpdate: editing ? null : _onHorizontalDragUpdate,
+      onHorizontalDragEnd: editing ? null : _onHorizontalDragEnd,
       child: Transform.translate(
         offset: Offset(_dragDx, 0),
         child: Padding(
@@ -248,155 +257,359 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
               top: false,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 60),
-                child: Row(
-                  children: [
-                    const SizedBox(width: AppTokens.s2),
-                    // Artwork with Hero. Uses the shared CompactArtwork rather
-                    // than a local copy: the private duplicate it replaced had
-                    // no `errorBuilder`, so an undecodable file left Flutter's
-                    // red error box in the MiniPlayer for the whole session.
-                    CompactArtwork(
-                      path: current.artPath,
-                      size: artSize,
-                      heroTag: MiniPlayer._heroTag,
-                      borderRadius: AppTokens.rMd,
-                    ),
-                    const SizedBox(width: AppTokens.s2),
-                    // Metadata + progress
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                child: editing
+                    ? _editBlocks(
+                        context,
+                        layout,
+                        snapshot,
+                        current,
+                        theme,
+                        colorScheme,
+                        artSize,
+                        controlWidth,
+                      )
+                    : Row(
                         children: [
-                          if (trackInfo?.visible != false) ...[
-                            Text(
-                              current.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
+                          const SizedBox(width: AppTokens.s2),
+                          // Artwork with Hero. Uses the shared CompactArtwork rather
+                          // than a local copy: the private duplicate it replaced had
+                          // no `errorBuilder`, so an undecodable file left Flutter's
+                          // red error box in the MiniPlayer for the whole session.
+                          CompactArtwork(
+                            path: current.artPath,
+                            size: artSize,
+                            heroTag: MiniPlayer._heroTag,
+                            borderRadius: AppTokens.rMd,
+                          ),
+                          const SizedBox(width: AppTokens.s2),
+                          // Metadata + progress
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (trackInfo?.visible != false) ...[
+                                  Text(
+                                    current.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  if (current.artist != null)
+                                    Text(
+                                      current.artist!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  const SizedBox(height: 2),
+                                ],
+                                _MiniProgress(
+                                  snapshot: snapshot,
+                                  onSeek: (pos) =>
+                                      ref.read(playerProvider).seek(pos),
+                                  style: progress?.styleId ?? 'thin',
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (showShuffle) ...[
+                            const SizedBox(width: 2),
+                            Semantics(
+                              button: true,
+                              label: 'Shuffle',
+                              child: _TransportButton(
+                                icon: snapshot.shuffleEnabled
+                                    ? Icons.shuffle_on_rounded
+                                    : Icons.shuffle_rounded,
+                                enabled: true,
+                                active: snapshot.shuffleEnabled,
+                                onTap: () {
+                                  final enabling = !snapshot.shuffleEnabled;
+                                  ref.read(playerProvider).setShuffle(enabling);
+                                },
+                                colorScheme: colorScheme,
+                                width: controlWidth,
                               ),
                             ),
-                            if (current.artist != null)
-                              Text(
-                                current.artist!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
+                          ],
+                          const SizedBox(width: 2),
+                          Semantics(
+                            button: true,
+                            label: 'Previous',
+                            child: _TransportButton(
+                              icon: Icons.skip_previous_rounded,
+                              enabled: _hasPrevious,
+                              onTap: () {
+                                ref.read(playerProvider).previous();
+                              },
+                              colorScheme: colorScheme,
+                              width: controlWidth,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Semantics(
+                            button: true,
+                            label: snapshot.isPlaying ? 'Pause' : 'Play',
+                            child: PressableScale(
+                              onTap: () =>
+                                  ref.read(playerProvider).togglePlay(),
+                              child: SizedBox(
+                                width: controlWidth.toDouble(),
+                                height: AppTokens.touchTarget,
+                                child: Center(
+                                  child: Container(
+                                    width: _playCircle(controlWidth),
+                                    height: _playCircle(controlWidth),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          colorScheme.primary,
+                                          context.palette.highlight,
+                                        ],
+                                      ),
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: colorScheme.primary.withValues(
+                                            alpha: 0.35,
+                                          ),
+                                          blurRadius: 12,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      snapshot.isPlaying
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      size: _playIcon(controlWidth),
+                                      color: colorScheme.onPrimary,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            const SizedBox(height: 2),
-                          ],
-                          _MiniProgress(
-                            snapshot: snapshot,
-                            onSeek: (pos) => ref.read(playerProvider).seek(pos),
-                            style: progress?.styleId ?? 'thin',
+                            ),
                           ),
+                          const SizedBox(width: 2),
+                          Semantics(
+                            button: true,
+                            label: 'Next',
+                            child: _TransportButton(
+                              icon: Icons.skip_next_rounded,
+                              enabled: _hasNext,
+                              onTap: () {
+                                ref.read(playerProvider).next();
+                              },
+                              colorScheme: colorScheme,
+                              width: controlWidth,
+                            ),
+                          ),
+                          const SizedBox(width: AppTokens.s2),
                         ],
                       ),
-                    ),
-                    if (showShuffle) ...[
-                      const SizedBox(width: 2),
-                      Semantics(
-                        button: true,
-                        label: 'Shuffle',
-                        child: _TransportButton(
-                          icon: snapshot.shuffleEnabled
-                              ? Icons.shuffle_on_rounded
-                              : Icons.shuffle_rounded,
-                          enabled: true,
-                          active: snapshot.shuffleEnabled,
-                          onTap: () {
-                            final enabling = !snapshot.shuffleEnabled;
-                            ref.read(playerProvider).setShuffle(enabling);
-                          },
-                          colorScheme: colorScheme,
-                          width: controlWidth,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(width: 2),
-                    Semantics(
-                      button: true,
-                      label: 'Previous',
-                      child: _TransportButton(
-                        icon: Icons.skip_previous_rounded,
-                        enabled: _hasPrevious,
-                        onTap: () {
-                          ref.read(playerProvider).previous();
-                        },
-                        colorScheme: colorScheme,
-                        width: controlWidth,
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Semantics(
-                      button: true,
-                      label: snapshot.isPlaying ? 'Pause' : 'Play',
-                      child: PressableScale(
-                        onTap: () => ref.read(playerProvider).togglePlay(),
-                        child: SizedBox(
-                          width: controlWidth.toDouble(),
-                          height: AppTokens.touchTarget,
-                          child: Center(
-                            child: Container(
-                              width: _playCircle(controlWidth),
-                              height: _playCircle(controlWidth),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    colorScheme.primary,
-                                    context.palette.highlight,
-                                  ],
-                                ),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: colorScheme.primary.withValues(
-                                      alpha: 0.35,
-                                    ),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                snapshot.isPlaying
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                size: _playIcon(controlWidth),
-                                color: colorScheme.onPrimary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 2),
-                    Semantics(
-                      button: true,
-                      label: 'Next',
-                      child: _TransportButton(
-                        icon: Icons.skip_next_rounded,
-                        enabled: _hasNext,
-                        onTap: () {
-                          ref.read(playerProvider).next();
-                        },
-                        colorScheme: colorScheme,
-                        width: controlWidth,
-                      ),
-                    ),
-                    const SizedBox(width: AppTokens.s2),
-                  ],
-                ),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// Edit-mode representation: each mini bar block rendered in its natural
+  /// form, stacked and framed so it can be resized / restyled (the bar itself
+  /// never reorders — [miniComponentRegistry] blocks it).
+  Widget _editBlocks(
+    BuildContext context,
+    ScreenLayout layout,
+    PlayerSnapshot snapshot,
+    SongRef current,
+    ThemeData theme,
+    ColorScheme colorScheme,
+    double artSize,
+    int controlWidth,
+  ) {
+    Widget? content(ComponentLayout c) {
+      switch (c.id) {
+        case 'mini.artwork':
+          return Center(
+            child: CompactArtwork(
+              path: current.artPath,
+              size: artSize,
+              heroTag: null,
+              borderRadius: AppTokens.rMd,
+            ),
+          );
+        case 'mini.trackInfo':
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppTokens.s1),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  current.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (current.artist != null)
+                  Text(
+                    current.artist!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          );
+        case 'mini.progress':
+          return Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTokens.s4,
+              vertical: AppTokens.s2,
+            ),
+            child: _MiniProgress(
+              snapshot: snapshot,
+              onSeek: (pos) => ref.read(playerProvider).seek(pos),
+              style: c.styleId ?? 'thin',
+            ),
+          );
+        case 'mini.controls':
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Semantics(
+                button: true,
+                label: 'Previous',
+                child: _TransportButton(
+                  icon: Icons.skip_previous_rounded,
+                  enabled: _hasPrevious,
+                  onTap: () => ref.read(playerProvider).previous(),
+                  colorScheme: colorScheme,
+                  width: controlWidth,
+                ),
+              ),
+              const SizedBox(width: 2),
+              Semantics(
+                button: true,
+                label: snapshot.isPlaying ? 'Pause' : 'Play',
+                child: PressableScale(
+                  onTap: () => ref.read(playerProvider).togglePlay(),
+                  child: SizedBox(
+                    width: controlWidth.toDouble(),
+                    height: AppTokens.touchTarget,
+                    child: Center(
+                      child: Container(
+                        width: _playCircle(controlWidth),
+                        height: _playCircle(controlWidth),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              colorScheme.primary,
+                              context.palette.highlight,
+                            ],
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.primary.withValues(
+                                alpha: 0.35,
+                              ),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          snapshot.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          size: _playIcon(controlWidth),
+                          color: colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 2),
+              Semantics(
+                button: true,
+                label: 'Next',
+                child: _TransportButton(
+                  icon: Icons.skip_next_rounded,
+                  enabled: _hasNext,
+                  onTap: () => ref.read(playerProvider).next(),
+                  colorScheme: colorScheme,
+                  width: controlWidth,
+                ),
+              ),
+            ],
+          );
+        case 'mini.secondaryControls':
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Semantics(
+                button: true,
+                label: 'Shuffle',
+                child: _TransportButton(
+                  icon: snapshot.shuffleEnabled
+                      ? Icons.shuffle_on_rounded
+                      : Icons.shuffle_rounded,
+                  enabled: true,
+                  active: snapshot.shuffleEnabled,
+                  onTap: () {
+                    final enabling = !snapshot.shuffleEnabled;
+                    ref.read(playerProvider).setShuffle(enabling);
+                  },
+                  colorScheme: colorScheme,
+                  width: controlWidth,
+                ),
+              ),
+            ],
+          );
+        default:
+          return null;
+      }
+    }
+
+    final blocks = <Widget>[];
+    for (var i = 0; i < layout.components.length; i++) {
+      final component = layout.components[i];
+      if (!component.visible) continue;
+      final definition = miniComponentRegistry.definitionFor(component.id);
+      if (definition == null) continue;
+      final child = content(component);
+      if (child == null) continue;
+      blocks.add(
+        EditableLayoutFrame(
+          componentId: component.id,
+          index: i,
+          itemCount: layout.components.length,
+          definition: definition,
+          child: child,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTokens.s1),
+      child: Column(mainAxisSize: MainAxisSize.min, children: blocks),
     );
   }
 

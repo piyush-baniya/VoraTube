@@ -7,16 +7,20 @@ import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
 import '../providers/player_providers.dart';
 
-/// The favorite (heart) toggle used by the player's `quickActions` block.
+/// The favorite (heart) toggle used by the player's top action bar.
 class PlayerFavoriteButton extends ConsumerWidget {
   const PlayerFavoriteButton({
     super.key,
     required this.identityKey,
     this.size = ComponentSize.medium,
+    this.compact = false,
   });
 
   final String identityKey;
   final ComponentSize size;
+
+  /// A tighter 44dp footprint for the top action bar.
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -39,14 +43,14 @@ class PlayerFavoriteButton extends ConsumerWidget {
           },
         );
       },
-      child: AnimatedContainer(
-        duration: AppTokens.fast,
-        curve: AppTokens.press,
-        padding: const EdgeInsets.all(AppTokens.s2),
+      child: Container(
+        width: compact ? 44 : null,
+        height: 44,
+        padding: EdgeInsets.all(compact ? AppTokens.s1 : AppTokens.s2),
         decoration: BoxDecoration(
           color: isFavorite
               ? colorScheme.primary.withValues(alpha: 0.12)
-              : colorScheme.surfaceContainerHigh.withValues(alpha: 0.5),
+              : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
           shape: BoxShape.circle,
           border: Border.all(
             color: isFavorite
@@ -70,64 +74,6 @@ class PlayerFavoriteButton extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// The player's `quickActions` block: favorite and open the queue.
-class PlayerQuickActionsRow extends ConsumerWidget {
-  const PlayerQuickActionsRow({
-    super.key,
-    required this.identityKey,
-    required this.onQueueTap,
-    this.size = ComponentSize.medium,
-  });
-
-  final String identityKey;
-  final VoidCallback onQueueTap;
-  final ComponentSize size;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final gap = switch (size) {
-      ComponentSize.small => AppTokens.s3,
-      ComponentSize.medium => AppTokens.s4,
-      ComponentSize.large => AppTokens.s5,
-    };
-    final iconSize = switch (size) {
-      ComponentSize.small => 20.0,
-      ComponentSize.medium => 22.0,
-      ComponentSize.large => 24.0,
-    };
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        PlayerFavoriteButton(identityKey: identityKey, size: size),
-        SizedBox(width: gap),
-        PressableScale(
-          onTap: onQueueTap,
-          child: Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                width: AppTokens.borderHairline,
-              ),
-            ),
-            child: Icon(
-              Icons.queue_music_rounded,
-              size: iconSize,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

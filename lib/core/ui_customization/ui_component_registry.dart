@@ -184,12 +184,6 @@ const UiComponentRegistry playerComponentRegistry = UiComponentRegistry([
     // The transport controls always stay on screen.
     canHide: false,
   ),
-  UiComponentDefinition(
-    id: 'player.quickActions',
-    label: 'Quick Actions',
-    description: 'Favorite and open the queue',
-    defaultSize: ComponentSize.medium,
-  ),
 ]);
 
 /// Mini player components, in the default rendering order. The mini bar is a

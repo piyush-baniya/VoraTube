@@ -3,19 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
+import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../settings/presentation/widgets/settings_section.dart';
 import '../../../settings/presentation/widgets/settings_tile.dart';
 import '../providers/layout_providers.dart';
-import 'customize_equalizer_screen.dart';
-import 'customize_home_screen.dart';
-import 'customize_mini_player_screen.dart';
-import 'customize_player_screen.dart';
+import 'live_layout_editor.dart';
 
-/// Hub for interface customization: curated presets, per-screen editors and a
-/// global reset. Future screens (Equalizer, Lyrics, Statistics) are listed so
-/// the model is visibly ready for them, but stay disabled until their
-/// registries ship.
+/// Hub for interface customization. Each screen opens the live editor where the
+/// real screen is rendered and its sections can be reordered, resized, hidden,
+/// restored and restyled directly, with undo/redo and a Cancel-vs-Done flow.
 class CustomizeInterfaceScreen extends ConsumerWidget {
   const CustomizeInterfaceScreen({super.key});
 
@@ -37,8 +34,9 @@ class CustomizeInterfaceScreen extends ConsumerWidget {
               AppTokens.s2,
             ),
             child: Text(
-              'Choose a preset or fine-tune each screen. Your layout is stored '
-              'on this device and applies per orientation.',
+              'Pick an interface preset, or open a screen and rearrange its '
+              'sections directly. Layouts are stored on this device and apply '
+              'per orientation.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -75,44 +73,28 @@ class CustomizeInterfaceScreen extends ConsumerWidget {
                 subtitle: 'Reorder, hide and resize Home sections',
                 leading: _leading(context, Icons.home_rounded),
                 trailing: _chevron(context),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const CustomizeHomeScreen(),
-                  ),
-                ),
+                onTap: () => _open(context, kHomeScreenId, 'Home'),
               ),
               SettingsTile(
                 title: 'Player',
                 subtitle: 'Tune the full-screen Now Playing layout',
                 leading: _leading(context, Icons.disc_full_rounded),
                 trailing: _chevron(context),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const CustomizePlayerScreen(),
-                  ),
-                ),
+                onTap: () => _open(context, kPlayerScreenId, 'Player'),
               ),
               SettingsTile(
                 title: 'Mini Player',
                 subtitle: 'Tune the compact Now Playing bar',
                 leading: _leading(context, Icons.minimize_rounded),
                 trailing: _chevron(context),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const CustomizeMiniPlayerScreen(),
-                  ),
-                ),
+                onTap: () => _open(context, kMiniScreenId, 'Mini Player'),
               ),
               SettingsTile(
                 title: 'Equalizer',
                 subtitle: 'Reorder the curve, presets and controls',
                 leading: _leading(context, Icons.graphic_eq_rounded),
                 trailing: _chevron(context),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const CustomizeEqualizerScreen(),
-                  ),
-                ),
+                onTap: () => _open(context, kEqualizerScreenId, 'Equalizer'),
                 isLastInSection: true,
               ),
             ],
@@ -131,15 +113,15 @@ class CustomizeInterfaceScreen extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: AppTokens.s4),
-          SettingsSection(
-            title: 'Coming soon',
-            children: [
-              _comingSoon(context, 'Lyrics'),
-              _comingSoon(context, 'Statistics', isLast: true),
-            ],
-          ),
         ],
+      ),
+    );
+  }
+
+  void _open(BuildContext context, String screenId, String title) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LiveLayoutEditor(screenId: screenId, title: title),
       ),
     );
   }
@@ -163,19 +145,6 @@ class CustomizeInterfaceScreen extends ConsumerWidget {
     color: Theme.of(context).colorScheme.onSurfaceVariant
         .withValues(alpha: 0.4),
   );
-
-  Widget _comingSoon(
-    BuildContext context,
-    String title, {
-    bool isLast = false,
-  }) {
-    return SettingsTile(
-      title: title,
-      subtitle: 'Coming soon',
-      leading: _leading(context, Icons.lock_outline_rounded),
-      isLastInSection: isLast,
-    );
-  }
 
   Future<void> _confirmReset(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(

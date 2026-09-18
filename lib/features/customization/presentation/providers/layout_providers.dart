@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/ui_customization/layout_edit_session.dart';
 import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../core/ui_customization/ui_layout_normalizer.dart';
@@ -111,6 +112,239 @@ final layoutProfileProvider =
       LayoutProfileController.new,
     );
 
+/// The profile the UI renders: the live edit session while the customization
+/// editor is open, otherwise the persisted profile. This is what the per-screen
+/// layout providers read, so the real screens re-render every edit live.
+final resolvedLayoutProfileProvider = Provider<LayoutProfile?>((ref) {
+  final editing = ref.watch(layoutEditSessionProvider);
+  if (editing != null) return editing;
+  return ref.watch(layoutProfileProvider).valueOrNull;
+});
+
+/// The live customization session. While [state] is non-null the app renders
+/// the in-progress profile on the screen being edited; [save] commits it to
+/// the persisted profile and [cancel] discards it.
+class LayoutEditController extends Notifier<LayoutProfile?> {
+  LayoutEditSession? _session;
+
+  LayoutEditSession? get session => _session;
+  bool get isEditing => _session != null;
+  bool get isDirty => _session?.isDirty ?? false;
+  bool get canUndo => _session?.canUndo ?? false;
+  bool get canRedo => _session?.canRedo ?? false;
+
+  @override
+  LayoutProfile? build() => null;
+
+  void begin(String screenId, LayoutProfile baseline) {
+    _session = LayoutEditSession(baseline: baseline);
+    state = baseline;
+  }
+
+  void _apply(LayoutProfile next) {
+    _session?.apply(next);
+    state = _session?.current;
+  }
+
+  ScreenLayout? screenLayout(String screenId, LayoutVariant variant) =>
+      state?.screenLayout(screenId, variant);
+
+  void updateComponent(
+    String screenId,
+    LayoutVariant variant,
+    ComponentLayout updated,
+  ) {
+    final layout = state?.screenLayout(screenId, variant);
+    if (layout == null) return;
+    _apply(
+      state!.replaceScreen(screenId, variant, layout.replaceComponent(updated)),
+    );
+  }
+
+  void moveComponent(
+    String screenId,
+    LayoutVariant variant,
+    int oldIndex,
+    int newIndex,
+  ) {
+    final layout = state?.screenLayout(screenId, variant);
+    final registry = layoutSceneRegistries[screenId];
+    if (layout == null || registry == null) return;
+    final components = [...layout.components];
+    if (oldIndex < 0 || oldIndex >= components.length) return;
+    final moved = components.removeAt(oldIndex);
+    final definition = registry.definitionFor(moved.id);
+    if (definition == null || !definition.canReorder) return;
+    newIndex = newIndex.clamp(0, components.length);
+    components.insert(newIndex, moved);
+    final ordered = screenId == kPlayerScreenId
+        ? groupPlayerZones(components)
+        : components;
+    _apply(
+      state!.replaceScreen(
+        screenId,
+        variant,
+        ScreenLayout(screenId: screenId, components: ordered),
+      ),
+    );
+  }
+
+  void hide(String screenId, LayoutVariant variant, String componentId) {
+    final layout = state?.screenLayout(screenId, variant);
+    final registry = layoutSceneRegistries[screenId];
+    if (layout == null || registry == null) return;
+    final definition = registry.definitionFor(componentId);
+    final component = layout.component(componentId);
+    if (definition == null || component == null || !definition.canHide) return;
+    _apply(
+      state!.replaceScreen(
+        screenId,
+        variant,
+        layout.replaceComponent(component.copyWith(visible: false)),
+      ),
+    );
+  }
+
+  void restore(String screenId, LayoutVariant variant, String componentId) {
+    final layout = state?.screenLayout(screenId, variant);
+    if (layout == null) return;
+    final component = layout.component(componentId);
+    if (component == null) return;
+    _apply(
+      state!.replaceScreen(
+        screenId,
+        variant,
+        layout.replaceComponent(component.copyWith(visible: true)),
+      ),
+    );
+  }
+
+  void setSize(
+    String screenId,
+    LayoutVariant variant,
+    String componentId,
+    ComponentSize size,
+  ) {
+    final layout = state?.screenLayout(screenId, variant);
+    final registry = layoutSceneRegistries[screenId];
+    if (layout == null || registry == null) return;
+    final definition = registry.definitionFor(componentId);
+    final component = layout.component(componentId);
+    if (definition == null ||
+        component == null ||
+        !definition.canResize ||
+        !definition.supportsSize(size)) {
+      return;
+    }
+    _apply(
+      state!.replaceScreen(
+        screenId,
+        variant,
+        layout.replaceComponent(component.copyWith(size: size)),
+      ),
+    );
+  }
+
+  void setStyle(
+    String screenId,
+    LayoutVariant variant,
+    String componentId,
+    String? styleId,
+  ) {
+    final layout = state?.screenLayout(screenId, variant);
+    final registry = layoutSceneRegistries[screenId];
+    if (layout == null || registry == null) return;
+    final definition = registry.definitionFor(componentId);
+    final component = layout.component(componentId);
+    if (definition == null || component == null) return;
+    final nextStyle = definition.supportsStyle(styleId)
+        ? styleId
+        : definition.effectiveDefaultStyleId;
+    _apply(
+      state!.replaceScreen(
+        screenId,
+        variant,
+        layout.replaceComponent(component.copyWith(styleId: nextStyle)),
+      ),
+    );
+  }
+
+  void resetComponent(
+    String screenId,
+    LayoutVariant variant,
+    String componentId,
+  ) {
+    final layout = state?.screenLayout(screenId, variant);
+    final registry = layoutSceneRegistries[screenId];
+    if (layout == null || registry == null) return;
+    final definition = registry.definitionFor(componentId);
+    if (definition == null) return;
+    _apply(
+      state!.replaceScreen(
+        screenId,
+        variant,
+        layout.replaceComponent(definition.defaultLayout()),
+      ),
+    );
+  }
+
+  void applyPreset(LayoutPreset preset, String screenId) {
+    final registry = layoutSceneRegistries[screenId];
+    if (registry == null || state == null) return;
+    final layouts = <LayoutKey, ScreenLayout>{...state!.layouts};
+    for (final variant in LayoutVariant.values) {
+      layouts[LayoutKey(screenId, variant)] = applyLayoutPreset(
+        preset,
+        screenId,
+        registry,
+      );
+    }
+    _apply(state!.copyWith(preset: preset, layouts: layouts));
+  }
+
+  void reset(String screenId) {
+    final registry = layoutSceneRegistries[screenId];
+    if (registry == null || state == null) return;
+    final layouts = <LayoutKey, ScreenLayout>{...state!.layouts};
+    for (final variant in LayoutVariant.values) {
+      layouts[LayoutKey(screenId, variant)] = defaultScreenLayout(
+        screenId,
+        registry,
+      );
+    }
+    _apply(state!.copyWith(preset: LayoutPreset.standard, layouts: layouts));
+  }
+
+  void undo() {
+    if (_session?.undo() == true) state = _session!.current;
+  }
+
+  void redo() {
+    if (_session?.redo() == true) state = _session!.current;
+  }
+
+  /// Commits the session to the persisted profile and ends editing.
+  Future<void> save() async {
+    final session = _session;
+    if (session == null) return;
+    await ref.read(layoutProfileProvider.notifier).save(session.current);
+    session.markSaved();
+    _session = null;
+    state = null;
+  }
+
+  /// Discards any uncommitted edits and ends editing.
+  void cancel() {
+    _session = null;
+    state = null;
+  }
+}
+
+final layoutEditSessionProvider =
+    NotifierProvider<LayoutEditController, LayoutProfile?>(
+      LayoutEditController.new,
+    );
+
 /// The resolved Home layout for one device variant. Falls back to the default
 /// arrangement until the profile has loaded, so Home never shows a hole.
 final homeScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>((
@@ -118,7 +352,7 @@ final homeScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>((
   variant,
 ) {
   final registry = ref.watch(uiComponentRegistryProvider);
-  final profile = ref.watch(layoutProfileProvider).valueOrNull;
+  final profile = ref.watch(resolvedLayoutProfileProvider);
   if (profile == null) return defaultScreenLayout(kHomeScreenId, registry);
   return profile.screenLayout(kHomeScreenId, variant) ??
       defaultScreenLayout(kHomeScreenId, registry);
@@ -128,7 +362,7 @@ final homeScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>((
 /// loads (or the profile has no player entry) this yields the player default.
 final playerScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>(
   (ref, variant) {
-    final profile = ref.watch(layoutProfileProvider).valueOrNull;
+    final profile = ref.watch(resolvedLayoutProfileProvider);
     if (profile == null) {
       return defaultScreenLayout(kPlayerScreenId, playerComponentRegistry);
     }
@@ -143,7 +377,7 @@ final miniScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>((
   ref,
   variant,
 ) {
-  final profile = ref.watch(layoutProfileProvider).valueOrNull;
+  final profile = ref.watch(resolvedLayoutProfileProvider);
   if (profile == null) {
     return defaultScreenLayout(kMiniScreenId, miniComponentRegistry);
   }
@@ -156,7 +390,7 @@ final miniScreenLayoutProvider = Provider.family<ScreenLayout, LayoutVariant>((
 /// normalized back to visible by [layoutProfileProvider].
 final equalizerScreenLayoutProvider =
     Provider.family<ScreenLayout, LayoutVariant>((ref, variant) {
-      final profile = ref.watch(layoutProfileProvider).valueOrNull;
+      final profile = ref.watch(resolvedLayoutProfileProvider);
       if (profile == null) {
         return defaultScreenLayout(
           kEqualizerScreenId,

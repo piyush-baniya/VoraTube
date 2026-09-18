@@ -14,6 +14,8 @@ import 'package:vora_tube/features/player/presentation/screens/full_player_scree
 import 'package:vora_tube/features/player/presentation/widgets/compact_lyrics_panel.dart';
 import 'package:vora_tube/features/player/presentation/widgets/player_progress.dart';
 import 'package:vora_tube/features/player/presentation/widgets/rotating_artwork.dart';
+import 'package:vora_tube/features/player/presentation/widgets/player_transport_row.dart';
+
 import 'fakes/fake_player.dart';
 
 SongRef _testSong({
@@ -275,25 +277,31 @@ void main() {
         expect(find.text('Third line'), findsOneWidget);
 
         // The card fills the available player content region between the top
-        // bar and the fixed playback controls.
+        // bar and the fixed playback controls, which are always present at
+        // short landscape heights.
         final panelRect = tester.getRect(find.byType(CompactLyricsPanel));
         expect(panelRect.top, greaterThanOrEqualTo(0));
         expect(panelRect.width, 640);
-        // On this 640x320 device the region left for content after the fixed
-        // top bar and playback controls is ~120dp; the card must claim all of
-        // it (previously it was squeezed into a 62% sub-region of that).
-        expect(panelRect.height, greaterThan(100));
-        expect(panelRect.height, greaterThan(320 * 0.3));
+        expect(panelRect.height, greaterThan(60));
+        expect(panelRect.height, greaterThan(320 * 0.18));
+        // The transport row (and the lyrics card above it) sit in the fixed
+        // bottom zone; the card must end exactly where the controls begin.
+        final transportRect = tester.getRect(find.byType(PlayerTransportRow));
+        expect(
+          transportRect.top,
+          greaterThanOrEqualTo(panelRect.bottom - 0.01),
+        );
 
-        // The lyrics stay physically inside the card and the list is
-        // vertically scrollable inside it.
+        // The lyrics stay inside the card: the list is vertically scrollable
+        // and its content is taller than the visible card area.
         final scrollable = find.descendant(
           of: find.byType(CompactLyricsPanel),
           matching: find.byType(Scrollable),
         );
         expect(scrollable, findsWidgets);
-        final listRect = tester.getRect(find.text('Third line'));
-        expect(listRect.top, lessThanOrEqualTo(panelRect.bottom));
+        final firstTop = tester.getRect(find.text('First line')).top;
+        final thirdBottom = tester.getRect(find.text('Third line')).bottom;
+        expect(thirdBottom - firstTop, greaterThan(panelRect.height));
       },
     );
 

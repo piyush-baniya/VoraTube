@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
+import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/top_toast.dart';
@@ -12,7 +13,9 @@ import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../services/analytics_service.dart';
 import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../features/customization/presentation/providers/layout_providers.dart';
-import '../../../../features/customization/presentation/screens/customize_player_screen.dart';
+import '../../../../features/customization/presentation/widgets/editable_layout_frame.dart';
+import '../../../../features/customization/presentation/widgets/layout_edit_scope.dart';
+import '../../../library/presentation/providers/library_view_providers.dart';
 import '../../../lyrics/presentation/providers/lyrics_providers.dart';
 import '../../../playlists/presentation/widgets/add_to_playlist_sheet.dart';
 import '../providers/player_providers.dart';
@@ -137,6 +140,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     final colorScheme = theme.colorScheme;
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final isDark = theme.brightness == Brightness.dark;
+    final editing = LayoutEditScope.isEditing(context);
     final screen = MediaQuery.sizeOf(context);
     final isLandscape = screen.width > screen.height;
     final variant = layoutVariantForSize(screen);
@@ -160,9 +164,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
           extendBodyBehindAppBar: true,
           body: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onVerticalDragStart: _onVerticalDragStart,
-            onVerticalDragUpdate: _onVerticalDragUpdate,
-            onVerticalDragEnd: _onVerticalDragEnd,
+            onVerticalDragStart: editing ? null : _onVerticalDragStart,
+            onVerticalDragUpdate: editing ? null : _onVerticalDragUpdate,
+            onVerticalDragEnd: editing ? null : _onVerticalDragEnd,
             child: Transform.translate(
               offset: Offset(0, _dragOffset * 0.65),
               child: Transform.scale(
@@ -176,26 +180,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                     bottom: false,
                     child: Column(
                       children: [
-                        _TopBar(
-                          identityKey: current.identityKey,
-                          onPlaylistTap: () =>
-                              _openPlaylistPicker(current.identityKey),
-                          onLyricsTap: () {
-                            setState(() => _showLyrics = !_showLyrics);
-                            if (_showLyrics) {
-                              AnalyticsService.instance.lyricsOpened();
-                            }
-                          },
-                          onSleepTimerTap: () => showSleepTimerSheet(context),
-                          onCustomizeTap: () {
-                            Navigator.of(context, rootNavigator: true).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => const CustomizePlayerScreen(),
-                              ),
-                            );
-                          },
-                          showLyricsActive: _showLyrics,
-                          isDark: isDark,
+                        IgnorePointer(
+                          ignoring: editing,
+                          child: _TopBar(
+                            identityKey: current.identityKey,
+                            onPlaylistTap: () =>
+                                _openPlaylistPicker(current.identityKey),
+                            onLyricsTap: () {
+                              setState(() => _showLyrics = !_showLyrics);
+                              if (_showLyrics) {
+                                AnalyticsService.instance.lyricsOpened();
+                              }
+                            },
+                            onSleepTimerTap: () => showSleepTimerSheet(context),
+                            showLyricsActive: _showLyrics,
+                          ),
                         ),
                         Expanded(
                           child: _showLyrics
@@ -208,7 +207,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                                   layout,
                                 ),
                         ),
-                        _buildBottomZone(context, snapshot, current, layout),
+                        _buildBottomZone(context, snapshot, layout),
                         SizedBox(height: bottomPadding + AppTokens.s5),
                       ],
                     ),
@@ -272,27 +271,36 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
             : const BouncingScrollPhysics();
 
         final blocks = <Widget>[];
-        for (final c in layout.components) {
+        for (var i = 0; i < layout.components.length; i++) {
+          final c = layout.components[i];
           if (!c.visible) continue;
-          if (c.id == 'player.artwork') {
-            blocks.add(
-              RotatingArtwork(
-                path: current.artPath,
-                heroTag: FullPlayerScreen._heroTag,
-                size: artSize,
-              ),
-            );
-          } else if (c.id == 'player.trackInfo') {
-            blocks.add(
-              PlayerTrackInfo(
-                title: current.title,
-                artist: current.artist,
-                album: current.album,
-                size: c.size,
-                compact: constraints.maxWidth < 380,
-              ),
-            );
-          }
+          final definition = playerComponentRegistry.definitionFor(c.id);
+          if (definition == null) continue;
+          final Widget? child = switch (c.id) {
+            'player.artwork' => RotatingArtwork(
+              path: current.artPath,
+              heroTag: FullPlayerScreen._heroTag,
+              size: artSize,
+            ),
+            'player.trackInfo' => PlayerTrackInfo(
+              title: current.title,
+              artist: current.artist,
+              album: current.album,
+              size: c.size,
+              compact: constraints.maxWidth < 380,
+            ),
+            _ => null,
+          };
+          if (child == null) continue;
+          blocks.add(
+            EditableLayoutFrame(
+              componentId: c.id,
+              index: i,
+              itemCount: layout.components.length,
+              definition: definition,
+              child: child,
+            ),
+          );
         }
 
         return SingleChildScrollView(
@@ -319,12 +327,34 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
     SongRef current,
     ScreenLayout layout,
   ) {
-    final remaining = [
-      for (final c in layout.components)
-        if (c.id != 'player.artwork') c,
-    ];
     return LayoutBuilder(
       builder: (context, constraints) {
+        final rightBlocks = <Widget>[];
+        for (var i = 0; i < layout.components.length; i++) {
+          final c = layout.components[i];
+          if (!c.visible || !kPlayerTopZoneIds.contains(c.id)) continue;
+          final definition = playerComponentRegistry.definitionFor(c.id);
+          if (definition == null) continue;
+          final Widget? child = switch (c.id) {
+            'player.trackInfo' => PlayerTrackInfo(
+              title: current.title,
+              artist: current.artist,
+              album: current.album,
+              size: c.size,
+            ),
+            _ => null,
+          };
+          if (child == null) continue;
+          rightBlocks.add(
+            EditableLayoutFrame(
+              componentId: c.id,
+              index: i,
+              itemCount: layout.components.length,
+              definition: definition,
+              child: child,
+            ),
+          );
+        }
         return Row(
           children: [
             Expanded(
@@ -340,10 +370,21 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                             maxH: pane.maxHeight,
                             size: art.size,
                           );
-                    return RotatingArtwork(
-                      path: current.artPath,
-                      heroTag: FullPlayerScreen._heroTag,
-                      size: artSize,
+                    final artIndex = layout.components.indexWhere(
+                      (c) => c.id == 'player.artwork',
+                    );
+                    return EditableLayoutFrame(
+                      componentId: 'player.artwork',
+                      index: artIndex < 0 ? 0 : artIndex,
+                      itemCount: layout.components.length,
+                      definition: playerComponentRegistry.definitionFor(
+                        'player.artwork',
+                      )!,
+                      child: RotatingArtwork(
+                        path: current.artPath,
+                        heroTag: FullPlayerScreen._heroTag,
+                        size: artSize,
+                      ),
                     );
                   },
                 ),
@@ -362,14 +403,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          for (final c in remaining)
-                            if (c.id == 'player.trackInfo')
-                              PlayerTrackInfo(
-                                title: current.title,
-                                artist: current.artist,
-                                album: current.album,
-                                size: c.size,
-                              ),
+                          ...rightBlocks,
                           const SizedBox(height: AppTokens.s3),
                         ],
                       ),
@@ -487,37 +521,53 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen>
   Widget _buildBottomZone(
     BuildContext context,
     PlayerSnapshot snapshot,
-    SongRef current,
     ScreenLayout layout,
   ) {
-    final shortViewport = MediaQuery.sizeOf(context).height < 560;
+    // On short (landscape) viewports the transport is tightened so the fixed
+    // zone never crowds the artwork pane: tighter gaps and a small play button.
+    final compact = MediaQuery.sizeOf(context).height < 480;
     final progress = layout.component('player.progress');
-    final secondary = layout.component('player.secondaryControls');
     final primary = layout.component('player.primaryControls');
-    final quick = layout.component('player.quickActions');
+    final primarySize =
+        compact &&
+            (primary?.size ?? ComponentSize.medium) == ComponentSize.medium
+        ? ComponentSize.small
+        : primary?.size ?? ComponentSize.medium;
 
-    final showSecondary = !shortViewport && secondary?.visible != false;
-    final showQuick = !shortViewport && quick?.visible != false;
+    final rows = <Widget>[];
+    for (var i = 0; i < layout.components.length; i++) {
+      final c = layout.components[i];
+      if (!c.visible) continue;
+      final definition = playerComponentRegistry.definitionFor(c.id);
+      if (definition == null) continue;
+      final Widget? child = switch (c.id) {
+        'player.secondaryControls' => _SecondaryHost(snapshot: snapshot),
+        'player.progress' => _ProgressHost(progress: progress),
+        'player.primaryControls' => _ControlsHost(
+          snapshot: snapshot,
+          size: primarySize,
+        ),
+        _ => null,
+      };
+      if (child == null) continue;
+      if (rows.isNotEmpty) {
+        rows.add(const SizedBox(height: AppTokens.s1));
+      }
+      rows.add(
+        EditableLayoutFrame(
+          componentId: c.id,
+          index: i,
+          itemCount: layout.components.length,
+          definition: definition,
+          child: child,
+        ),
+      );
+    }
 
     return Padding(
       key: _bottomZoneKey,
       padding: const EdgeInsets.symmetric(horizontal: AppTokens.s6),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showSecondary) ...[
-            _SecondaryHost(snapshot: snapshot),
-            const SizedBox(height: AppTokens.s1),
-          ],
-          _ProgressHost(progress: progress),
-          const SizedBox(height: AppTokens.s1),
-          _ControlsHost(snapshot: snapshot, primary: primary),
-          if (showQuick) ...[
-            const SizedBox(height: AppTokens.s2),
-            _QuickHost(identityKey: current.identityKey, quick: quick),
-          ],
-        ],
-      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: rows),
     );
   }
 
@@ -658,10 +708,10 @@ class _ProgressHost extends ConsumerWidget {
 
 /// The primary transport row.
 class _ControlsHost extends ConsumerWidget {
-  const _ControlsHost({required this.snapshot, required this.primary});
+  const _ControlsHost({required this.snapshot, required this.size});
 
   final PlayerSnapshot snapshot;
-  final ComponentLayout? primary;
+  final ComponentSize size;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -702,48 +752,32 @@ class _ControlsHost extends ConsumerWidget {
           ref.read(playerProvider).seekBy(const Duration(seconds: -10)),
       onForward10: () =>
           ref.read(playerProvider).seekBy(const Duration(seconds: 10)),
-      size: primary?.size ?? ComponentSize.medium,
+      size: size,
     );
   }
 }
 
-/// The quick actions block: favorite and the queue.
-class _QuickHost extends ConsumerWidget {
-  const _QuickHost({required this.identityKey, required this.quick});
-
-  final String identityKey;
-  final ComponentLayout? quick;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return PlayerQuickActionsRow(
-      identityKey: identityKey,
-      onQueueTap: () => QueueSheet.show(context),
-      size: quick?.size ?? ComponentSize.medium,
-    );
-  }
-}
-
-/// Slim top bar: close, sleep timer pill, lyrics and the overflow menu
-/// (effects, playlist, customization).
+/// Slim top bar: close, then a responsive set of quick actions (favorite,
+/// queue, lyrics, sleep timer) and the overflow menu (effects, playlist and
+/// any quick action that does not fit the current width).
+///
+/// Favorite and Queue always take priority: as the bar narrows the sleep timer
+/// and lyrics move into the overflow menu first, and the direct actions never
+/// overflow or crowd the overlay.
 class _TopBar extends ConsumerWidget {
   const _TopBar({
     required this.identityKey,
     required this.onPlaylistTap,
     required this.onLyricsTap,
     required this.onSleepTimerTap,
-    required this.onCustomizeTap,
     required this.showLyricsActive,
-    required this.isDark,
   });
 
   final String identityKey;
   final VoidCallback onPlaylistTap;
   final VoidCallback onLyricsTap;
   final VoidCallback onSleepTimerTap;
-  final VoidCallback onCustomizeTap;
   final bool showLyricsActive;
-  final bool isDark;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -760,139 +794,216 @@ class _TopBar extends ConsumerWidget {
         horizontal: AppTokens.s3,
         vertical: AppTokens.s2,
       ),
-      child: Row(
-        children: [
-          _TopBarButton(
-            icon: Icons.keyboard_arrow_down_rounded,
-            onTap: () => Navigator.of(context).maybePop(),
-          ),
-          const Spacer(),
-          PressableScale(
-            onTap: onSleepTimerTap,
-            child: Container(
-              height: 48,
-              padding: EdgeInsets.symmetric(
-                horizontal: timerPillHighlighted ? AppTokens.s4 : 0,
-              ),
-              decoration: BoxDecoration(
-                color: timerPillHighlighted
-                    ? colorScheme.primary.withValues(alpha: 0.16)
-                    : colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                shape: timerPillHighlighted
-                    ? BoxShape.rectangle
-                    : BoxShape.circle,
-                borderRadius: timerPillHighlighted
-                    ? const BorderRadius.all(Radius.circular(AppTokens.rFull))
-                    : null,
-                border: Border.all(
-                  color: timerPillHighlighted
-                      ? colorScheme.primary.withValues(alpha: 0.3)
-                      : colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: AppTokens.borderHairline,
-                ),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: timerPillHighlighted ? null : 48,
-                    child: timerPillHighlighted
-                        ? Icon(
-                            Icons.bedtime_rounded,
-                            size: 22,
-                            color: colorScheme.primary,
-                          )
-                        : Center(
-                            child: Icon(
-                              Icons.bedtime_rounded,
-                              size: 22,
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                  ),
-                  if (showCountdown) ...[
-                    const SizedBox(width: AppTokens.s2),
-                    Text(
-                      formatSleepTimer(timerRemaining),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: AppTokens.s1),
-                  ],
-                ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Reserve the back button and overflow menu (96) plus one 8px gap
+          // per direct action: each direct action takes 48 (+8) = 56.
+          final slots = ((constraints.maxWidth - 96) / 56).floor().clamp(0, 4);
+          final showSleep = slots >= 4;
+          final showLyrics = slots >= 3;
+          final showQueue = slots >= 2;
+          final showFavorite = slots >= 1;
+
+          void toggleFavorite() {
+            ref
+                .read(songRowIdProvider(identityKey))
+                .whenOrNull(
+                  data: (rowId) {
+                    if (rowId != null) {
+                      ref.read(favoriteIdsProvider.notifier).toggle(rowId);
+                    }
+                  },
+                );
+          }
+
+          final menuItems = <PopupMenuEntry<VoidCallback>>[
+            PopupMenuItem<VoidCallback>(
+              value: () => showEqualizer(context),
+              child: const _MenuItem(
+                icon: Icons.equalizer_rounded,
+                label: 'Equalizer',
               ),
             ),
-          ),
-          const SizedBox(width: AppTokens.s2),
-          _TopBarButton(
-            icon: Icons.lyrics_rounded,
-            active: showLyricsActive,
-            onTap: onLyricsTap,
-          ),
-          const SizedBox(width: AppTokens.s2),
-          PopupMenuButton<VoidCallback>(
-            tooltip: 'More',
-            position: PopupMenuPosition.under,
-            onSelected: (action) => action(),
-            itemBuilder: (BuildContext context) => [
+            PopupMenuItem<VoidCallback>(
+              value: () => showSpeedSheet(context),
+              child: const _MenuItem(
+                icon: Icons.speed_rounded,
+                label: 'Playback speed',
+              ),
+            ),
+            PopupMenuItem<VoidCallback>(
+              value: () => showVolumeBoosterSheet(context),
+              child: const _MenuItem(
+                icon: Icons.volume_up_rounded,
+                label: 'Volume boost',
+              ),
+            ),
+            PopupMenuItem<VoidCallback>(
+              value: onPlaylistTap,
+              child: const _MenuItem(
+                icon: Icons.playlist_add_rounded,
+                label: 'Add to playlist',
+              ),
+            ),
+          ];
+          final fallbacks = <PopupMenuEntry<VoidCallback>>[
+            if (!showSleep)
               PopupMenuItem<VoidCallback>(
-                value: () => showEqualizer(context),
+                value: onSleepTimerTap,
                 child: const _MenuItem(
-                  icon: Icons.equalizer_rounded,
-                  label: 'Equalizer',
+                  icon: Icons.bedtime_rounded,
+                  label: 'Sleep timer',
                 ),
               ),
+            if (!showLyrics)
               PopupMenuItem<VoidCallback>(
-                value: () => showSpeedSheet(context),
+                value: onLyricsTap,
                 child: const _MenuItem(
-                  icon: Icons.speed_rounded,
-                  label: 'Playback speed',
+                  icon: Icons.lyrics_rounded,
+                  label: 'Lyrics',
                 ),
               ),
+            if (!showQueue)
               PopupMenuItem<VoidCallback>(
-                value: () => showVolumeBoosterSheet(context),
+                value: () => QueueSheet.show(context),
                 child: const _MenuItem(
-                  icon: Icons.volume_up_rounded,
-                  label: 'Volume boost',
+                  icon: Icons.queue_music_rounded,
+                  label: 'Queue',
                 ),
               ),
+            if (!showFavorite)
               PopupMenuItem<VoidCallback>(
-                value: onPlaylistTap,
+                value: toggleFavorite,
                 child: const _MenuItem(
-                  icon: Icons.playlist_add_rounded,
-                  label: 'Add to playlist',
+                  icon: Icons.favorite_border_rounded,
+                  label: 'Favorite',
                 ),
               ),
-              const PopupMenuDivider(),
-              PopupMenuItem<VoidCallback>(
-                value: onCustomizeTap,
-                child: const _MenuItem(
-                  icon: Icons.tune_rounded,
-                  label: 'Customize player',
+          ];
+          if (fallbacks.isNotEmpty) {
+            menuItems.add(const PopupMenuDivider());
+            menuItems.addAll(fallbacks);
+          }
+
+          return Row(
+            children: [
+              _TopBarButton(
+                icon: Icons.keyboard_arrow_down_rounded,
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
+              const Spacer(),
+              if (showSleep) ...[
+                PressableScale(
+                  onTap: onSleepTimerTap,
+                  child: Container(
+                    height: 48,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: timerPillHighlighted ? AppTokens.s4 : 0,
+                    ),
+                    decoration: BoxDecoration(
+                      color: timerPillHighlighted
+                          ? colorScheme.primary.withValues(alpha: 0.16)
+                          : colorScheme.surfaceContainerHigh.withValues(
+                              alpha: 0.8,
+                            ),
+                      shape: timerPillHighlighted
+                          ? BoxShape.rectangle
+                          : BoxShape.circle,
+                      borderRadius: timerPillHighlighted
+                          ? const BorderRadius.all(
+                              Radius.circular(AppTokens.rFull),
+                            )
+                          : null,
+                      border: Border.all(
+                        color: timerPillHighlighted
+                            ? colorScheme.primary.withValues(alpha: 0.3)
+                            : colorScheme.outlineVariant.withValues(alpha: 0.3),
+                        width: AppTokens.borderHairline,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: timerPillHighlighted ? null : 48,
+                          child: timerPillHighlighted
+                              ? Icon(
+                                  Icons.bedtime_rounded,
+                                  size: 22,
+                                  color: colorScheme.primary,
+                                )
+                              : Center(
+                                  child: Icon(
+                                    Icons.bedtime_rounded,
+                                    size: 22,
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                        ),
+                        if (showCountdown) ...[
+                          const SizedBox(width: AppTokens.s2),
+                          Text(
+                            formatSleepTimer(timerRemaining),
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: AppTokens.s1),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppTokens.s2),
+              ],
+              if (showLyrics) ...[
+                _TopBarButton(
+                  icon: Icons.lyrics_rounded,
+                  active: showLyricsActive,
+                  onTap: onLyricsTap,
+                ),
+                const SizedBox(width: AppTokens.s2),
+              ],
+              if (showQueue) ...[
+                _TopBarButton(
+                  icon: Icons.queue_music_rounded,
+                  onTap: () => QueueSheet.show(context),
+                ),
+                const SizedBox(width: AppTokens.s2),
+              ],
+              if (showFavorite) ...[
+                PlayerFavoriteButton(identityKey: identityKey, compact: true),
+                const SizedBox(width: AppTokens.s2),
+              ],
+              PopupMenuButton<VoidCallback>(
+                tooltip: 'More',
+                position: PopupMenuPosition.under,
+                onSelected: (action) => action(),
+                itemBuilder: (BuildContext context) => menuItems,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHigh.withValues(
+                      alpha: 0.8,
+                    ),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                      width: AppTokens.borderHairline,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.more_vert_rounded,
+                    size: 22,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.8),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                  width: AppTokens.borderHairline,
-                ),
-              ),
-              child: Icon(
-                Icons.more_vert_rounded,
-                size: 22,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -952,7 +1063,9 @@ class _MenuItem extends StatelessWidget {
       children: [
         Icon(icon, size: 20, color: colorScheme.onSurfaceVariant),
         const SizedBox(width: AppTokens.s3),
-        Text(label),
+        Flexible(
+          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
       ],
     );
   }

@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/audio/audio_effects.dart';
+import '../../../../core/ui_customization/ui_component_registry.dart';
 import '../../../../core/ui_customization/ui_layout.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../customization/presentation/providers/layout_providers.dart';
-import '../../../customization/presentation/screens/customize_equalizer_screen.dart';
+import '../../../customization/presentation/widgets/editable_layout_frame.dart';
+import '../../../customization/presentation/widgets/layout_edit_scope.dart';
 import '../../../settings/data/settings_models.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
 import '../../data/equalizer_settings.dart';
@@ -71,6 +73,28 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
   ComponentSize _sizeOf(String id) =>
       widget.layout.component(id)?.size ?? ComponentSize.medium;
 
+  /// Wraps a block in its editor frame (a no-op pass-through outside a
+  /// customization session).
+  Widget _frame(
+    BuildContext context,
+    String componentId, {
+    required Widget child,
+  }) {
+    final definition = equalizerComponentRegistry.definitionFor(componentId);
+    if (definition == null) return child;
+    final index = widget.layout.components.indexWhere(
+      (c) => c.id == componentId,
+    );
+    if (index < 0) return child;
+    return EditableLayoutFrame(
+      componentId: componentId,
+      index: index,
+      itemCount: widget.layout.components.length,
+      definition: definition,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final audio = ref.watch(audioSettingsProvider);
@@ -85,6 +109,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
     final preamp = _draftPreamp ?? audio.preampDb;
 
     final wide = widget.variant != LayoutVariant.portrait;
+    final editing = LayoutEditScope.isEditing(context);
     final curve = _curveBlock(context, audio.eqEnabled, levels);
     final controls = _controlsBlock(
       context,
@@ -96,19 +121,34 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
 
     return Column(
       children: [
-        _topBar(context, audio.eqEnabled),
+        IgnorePointer(
+          ignoring: editing,
+          child: _topBar(context, audio.eqEnabled),
+        ),
         if (_visible('equalizer.nowPlaying'))
-          _nowPlaying(context, song?.title, song?.artist, song?.artPath),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppTokens.s4,
-            AppTokens.s1,
-            AppTokens.s4,
-            AppTokens.s1,
+          _frame(
+            context,
+            'equalizer.nowPlaying',
+            child: _nowPlaying(
+              context,
+              song?.title,
+              song?.artist,
+              song?.artPath,
+            ),
           ),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: _modeBlock(context, ui.mode),
+        IgnorePointer(
+          ignoring: editing,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.s4,
+              AppTokens.s1,
+              AppTokens.s4,
+              AppTokens.s1,
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _modeBlock(context, ui.mode),
+            ),
           ),
         ),
         Expanded(
@@ -128,7 +168,11 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
                               AppTokens.s2,
                               AppTokens.s6,
                             ),
-                            child: curve,
+                            child: _frame(
+                              context,
+                              'equalizer.curve',
+                              child: curve,
+                            ),
                           ),
                         ),
                         const VerticalDivider(width: 1),
@@ -155,7 +199,10 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [curve, controls],
+                        children: [
+                          _frame(context, 'equalizer.curve', child: curve),
+                          controls,
+                        ],
                       ),
                     ),
             ),
@@ -169,7 +216,6 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
 
   Widget _topBar(BuildContext context, bool enabled) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppTokens.s2,
@@ -197,17 +243,6 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
             onChanged: (value) {
               ref.read(audioSettingsProvider.notifier).setEqEnabled(value);
             },
-          ),
-          const SizedBox(width: AppTokens.s1),
-          IconButton(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const CustomizeEqualizerScreen(),
-              ),
-            ),
-            icon: const Icon(Icons.tune_rounded),
-            color: colorScheme.onSurfaceVariant,
-            tooltip: 'Customize Equalizer',
           ),
         ],
       ),
@@ -309,19 +344,49 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
   }) {
     final blocks = <Widget>[];
     if (_visible('equalizer.presets')) {
-      blocks.add(_presetsBlock(context, audio, ui, levels));
+      blocks.add(
+        _frame(
+          context,
+          'equalizer.presets',
+          child: _presetsBlock(context, audio, ui, levels),
+        ),
+      );
     }
     if (ui.mode == EqMode.simple && _visible('equalizer.quickControls')) {
-      blocks.add(_quickControlsBlock(context, levels));
+      blocks.add(
+        _frame(
+          context,
+          'equalizer.quickControls',
+          child: _quickControlsBlock(context, levels),
+        ),
+      );
     }
     if (ui.mode == EqMode.advanced && _visible('equalizer.bandControls')) {
-      blocks.add(_bandControlsBlock(context, levels));
+      blocks.add(
+        _frame(
+          context,
+          'equalizer.bandControls',
+          child: _bandControlsBlock(context, levels),
+        ),
+      );
     }
     if (_visible('equalizer.preamp')) {
-      blocks.add(_preampBlock(context, audio, levels, preamp));
+      blocks.add(
+        _frame(
+          context,
+          'equalizer.preamp',
+          child: _preampBlock(context, audio, levels, preamp),
+        ),
+      );
     }
     if (_visible('equalizer.processing')) {
-      blocks.add(_processingBlock(context));
+      blocks.add(
+        _frame(
+          context,
+          'equalizer.processing',
+          child: _processingBlock(context),
+        ),
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

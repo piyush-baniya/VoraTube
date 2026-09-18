@@ -149,6 +149,13 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
+  void _usePortrait(WidgetTester tester, Size size) {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
   group('FullPlayerScreen V2 layout', () {
     testWidgets('wraps the player content in the artwork palette surface', (
       tester,
@@ -174,56 +181,95 @@ void main() {
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
       expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
       expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
-      // Quick actions (player.quickActions): favorite and queue, once each.
+      // Quick actions live only in the top bar: favorite and queue, once each.
       expect(find.byIcon(Icons.favorite_border_rounded), findsOneWidget);
       expect(find.byIcon(Icons.queue_music_rounded), findsOneWidget);
       // The lyrics toggle lives only in the top bar: exactly one instance.
       expect(find.byIcon(Icons.lyrics_rounded), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
-    testWidgets('short viewports hide the secondary and quick rows', (
+    testWidgets('short landscape keeps every control reachable, no overflow', (
       tester,
     ) async {
-      _useLandscape(tester, const Size(800, 360));
+      _useLandscape(tester, const Size(780, 350));
 
       await tester.pumpWidget(_wrap(child: const FullPlayerScreen()));
       await tester.pumpAndSettle();
 
-      // Secondary + quick are suppressed below a 560dp height…
-      expect(find.byIcon(Icons.shuffle_rounded), findsNothing);
-      expect(find.byIcon(Icons.repeat_rounded), findsNothing);
-      expect(find.byIcon(Icons.favorite_border_rounded), findsNothing);
-      expect(find.byIcon(Icons.queue_music_rounded), findsNothing);
-      // …while the seekable essentials stay available.
+      // No row is suppressed on short viewports: shuffle/repeat, the transport,
+      // the seek bar work, and the quick actions stay in the top bar.
+      expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.repeat_rounded), findsOneWidget);
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
       expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
       expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
       expect(find.byKey(const Key('player_progress_wave')), findsOneWidget);
       expect(find.byType(RotatingArtwork), findsOneWidget);
       expect(find.byType(PlayerTrackInfo), findsOneWidget);
+      expect(find.byIcon(Icons.favorite_border_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.queue_music_rounded), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
-    testWidgets('hides quick actions when the profile hides its block', (
+    testWidgets('normal landscape keeps every control reachable', (
       tester,
     ) async {
-      final profile = _profile(
-        player: (layout) {
-          final quick = layout.component('player.quickActions')!;
-          return layout.replaceComponent(quick.copyWith(visible: false));
-        },
-      );
+      _useLandscape(tester, const Size(1280, 720));
 
-      await tester.pumpWidget(
-        _wrap(child: const FullPlayerScreen(), profile: profile),
-      );
+      await tester.pumpWidget(_wrap(child: const FullPlayerScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(Icons.favorite_border_rounded), findsNothing);
-      expect(find.byIcon(Icons.queue_music_rounded), findsNothing);
-      // Everything else in the bottom zone survives.
       expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
       expect(find.byIcon(Icons.repeat_rounded), findsOneWidget);
       expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
+      expect(find.byKey(const Key('player_progress_wave')), findsOneWidget);
+      expect(find.byType(RotatingArtwork), findsOneWidget);
+      expect(find.byType(PlayerTrackInfo), findsOneWidget);
+      expect(find.byIcon(Icons.favorite_border_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.queue_music_rounded), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('wide landscape keeps every control reachable', (tester) async {
+      _useLandscape(tester, const Size(2000, 800));
+
+      await tester.pumpWidget(_wrap(child: const FullPlayerScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.shuffle_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.repeat_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
+      expect(find.byKey(const Key('player_progress_wave')), findsOneWidget);
+      expect(find.byType(RotatingArtwork), findsOneWidget);
+      expect(find.byType(PlayerTrackInfo), findsOneWidget);
+      expect(find.byIcon(Icons.favorite_border_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.queue_music_rounded), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a narrow bar keeps favorite/queue direct and defers the rest '
+        'to the overflow menu', (tester) async {
+      _usePortrait(tester, const Size(240, 520));
+
+      await tester.pumpWidget(_wrap(child: const FullPlayerScreen()));
+      await tester.pumpAndSettle();
+
+      // Two top-bar slots: favorite + queue stay one tap away…
+      expect(find.byIcon(Icons.favorite_border_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.queue_music_rounded), findsOneWidget);
+      // …while lyrics and the sleep timer fold into the overflow menu.
+      expect(find.byIcon(Icons.lyrics_rounded), findsNothing);
+      await tester.tap(find.byIcon(Icons.more_vert_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('Lyrics'), findsOneWidget);
+      expect(find.text('Sleep timer'), findsOneWidget);
+      expect(find.text('Queue'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('hides playback modes when the profile hides the block', (
@@ -381,12 +427,23 @@ void main() {
               'player.progress',
               'player.secondaryControls',
               'player.primaryControls',
-              'player.quickActions',
             ],
       );
       expect(grouped, hasLength(layout.components.length));
       // Every component survives the grouping exactly once.
       expect(ids.toSet(), layout.components.map((c) => c.id).toSet());
+    });
+  });
+
+  group('player quick actions', () {
+    test('player.quickActions was removed from the registry and defaults', () {
+      expect(playerComponentRegistry.contains('player.quickActions'), isFalse);
+      final layout = applyLayoutPreset(
+        LayoutPreset.standard,
+        kPlayerScreenId,
+        playerComponentRegistry,
+      );
+      expect(layout.component('player.quickActions'), isNull);
     });
   });
 }

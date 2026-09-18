@@ -161,7 +161,6 @@ ScreenLayout applyLayoutPreset(
         size('home.continueListening', ComponentSize.small);
       } else if (screenId == kPlayerScreenId) {
         hide('player.secondaryControls');
-        hide('player.quickActions');
         size('player.artwork', ComponentSize.small);
       } else if (screenId == kMiniScreenId) {
         hide('mini.secondaryControls');
@@ -198,7 +197,6 @@ ScreenLayout applyLayoutPreset(
         style('player.artwork', 'immersive');
         size('player.artwork', ComponentSize.large);
         size('player.primaryControls', ComponentSize.large);
-        hide('player.quickActions');
       } else if (screenId == kMiniScreenId) {
         size('mini.artwork', ComponentSize.large);
       } else if (screenId == kEqualizerScreenId) {
@@ -222,7 +220,6 @@ ScreenLayout applyLayoutPreset(
         size('player.artwork', ComponentSize.large);
         hide('player.trackInfo');
         hide('player.secondaryControls');
-        hide('player.quickActions');
       } else if (screenId == kMiniScreenId) {
         size('mini.artwork', ComponentSize.large);
         size('mini.trackInfo', ComponentSize.small);
