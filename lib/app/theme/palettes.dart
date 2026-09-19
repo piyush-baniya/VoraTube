@@ -92,6 +92,38 @@ class AppSurfaceRamp {
 
   /// Overlay/scrim.
   final Color overlay;
+
+  /// Interpolates every ramp color toward [other]. Null [other] (or a t at the
+  /// endpoints) yields this ramp unchanged, so a no-op band switch stays
+  /// stable. Used by [VoraTheme.lerp] so Chameleon theme transitions animate
+  /// the neutral surfaces smoothly instead of snapping.
+  AppSurfaceRamp lerp(AppSurfaceRamp? other, double t) {
+    if (other == null || t <= 0) return this;
+    if (t >= 1) return other;
+    Color c(Color a, Color b) => Color.lerp(a, b, t)!;
+    return AppSurfaceRamp(
+      surface: c(surface, other.surface),
+      surfaceLow: c(surfaceLow, other.surfaceLow),
+      surfaceContainer: c(surfaceContainer, other.surfaceContainer),
+      surfaceContainerHigh: c(surfaceContainerHigh, other.surfaceContainerHigh),
+      surfaceContainerHighest: c(
+        surfaceContainerHighest,
+        other.surfaceContainerHighest,
+      ),
+      outline: c(outline, other.outline),
+      outlineVariant: c(outlineVariant, other.outlineVariant),
+      divider: c(divider, other.divider),
+      textPrimary: c(textPrimary, other.textPrimary),
+      textSecondary: c(textSecondary, other.textSecondary),
+      textTertiary: c(textTertiary, other.textTertiary),
+      inverseSurface: c(inverseSurface, other.inverseSurface),
+      inverseOnSurface: c(inverseOnSurface, other.inverseOnSurface),
+      card: c(card, other.card),
+      cardElevated: c(cardElevated, other.cardElevated),
+      cardPress: c(cardPress, other.cardPress),
+      overlay: c(overlay, other.overlay),
+    );
+  }
 }
 
 /// The 9 [AppPalette] instances and the shared neutral ramps.
@@ -401,6 +433,40 @@ class AppPalette {
       preset,
       'preset',
       'No AppPalette registered for this preset.',
+    );
+  }
+
+  /// Interpolates the accent identity fields toward [other]. The preset tag and
+  /// surface ramps snap across the midpoint (like [VoraTheme.lerp]) while the
+  /// actual color fields crossfade, so Chameleon theme transitions stay smooth.
+  AppPalette lerp(AppPalette? other, double t) {
+    if (other == null || t <= 0) return this;
+    if (t >= 1) return other;
+    Color? c(Color a, Color b) => Color.lerp(a, b, t);
+    final gradient = accentGradient == null || other.accentGradient == null
+        ? null
+        : List<Color>.generate(
+            accentGradient!.length,
+            (i) => Color.lerp(
+              accentGradient![i],
+              other.accentGradient![i % other.accentGradient!.length],
+              t,
+            )!,
+          );
+    return AppPalette(
+      preset: t < 0.5 ? preset : other.preset,
+      primary: c(primary, other.primary)!,
+      highlight: c(highlight, other.highlight)!,
+      lightDeep: c(lightDeep, other.lightDeep)!,
+      accentGradient: gradient,
+      glowColor: glowColor == null || other.glowColor == null
+          ? null
+          : c(glow, other.glow),
+      glassTint: glassTint == null || other.glassTint == null
+          ? null
+          : c(tint, other.tint),
+      darkSurfaces: darkSurfaces?.lerp(other.darkSurfaces, t),
+      lightSurfaces: lightSurfaces?.lerp(other.lightSurfaces, t),
     );
   }
 }

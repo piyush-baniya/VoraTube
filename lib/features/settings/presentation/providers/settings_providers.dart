@@ -78,8 +78,7 @@ final appSettingsProvider = FutureProvider<AppSettings>((ref) async {
   final repository = ref.watch(libraryRepositoryProvider);
   final audioJson = await repository.kvGet(SettingsKeys.audio);
   final libraryJson = await repository.kvGet(SettingsKeys.library);
-  final appearanceJson =
-      await repository.kvGet(SettingsKeys.appearance);
+  final appearanceJson = await repository.kvGet(SettingsKeys.appearance);
   return AppSettings(
     audio: audioJson != null
         ? AudioSettingsJson.fromJson(audioJson)
@@ -241,8 +240,17 @@ final themeModeProvider = Provider<ThemeMode>((ref) {
   return switch (a.themeMode) {
     AppThemeMode.dark => ThemeMode.dark,
     AppThemeMode.light => ThemeMode.light,
-    AppThemeMode.system => ThemeMode.system,
+    // Chameleon derives brightness from the artwork; the ThemeMode-level value
+    // is only a fallback for consumers that cannot be artwork-aware (System
+    // keeps platform brightness for the neutral no-artwork fallback).
+    AppThemeMode.system || AppThemeMode.chameleon => ThemeMode.system,
   };
+});
+
+/// True when the appearance mode is Chameleon (artwork-driven theme).
+final isChameleonProvider = Provider<bool>((ref) {
+  return ref.watch(appearanceSettingsProvider).themeMode ==
+      AppThemeMode.chameleon;
 });
 
 final themePresetProvider = Provider<AppThemePreset>((ref) {

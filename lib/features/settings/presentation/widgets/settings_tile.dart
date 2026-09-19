@@ -237,6 +237,7 @@ class SettingsSelectTile<T> extends StatelessWidget {
     this.valueBuilder,
     this.menuMaxHeight,
     this.isLastInSection = false,
+    this.enabled = true,
   });
 
   final String title;
@@ -257,6 +258,11 @@ class SettingsSelectTile<T> extends StatelessWidget {
   final double? menuMaxHeight;
   final bool isLastInSection;
 
+  /// When false the tile is muted and not tappable, but still shows the locked
+  /// [value] (used by the Color theme selector under Chameleon, so the saved
+  /// preset stays visible while the artwork drives the colors).
+  final bool enabled;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -269,6 +275,7 @@ class SettingsSelectTile<T> extends StatelessWidget {
       leading: leading,
       trailing: PopupMenuButton<T>(
         initialValue: value,
+        enabled: enabled,
         onSelected: onChanged,
         constraints: menuMaxHeight == null
             ? null
@@ -286,7 +293,9 @@ class SettingsSelectTile<T> extends StatelessWidget {
               Text(
                 value.toString(),
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
+                  color: enabled
+                      ? colorScheme.onSurfaceVariant
+                      : colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
                 ),
               ),
         ),

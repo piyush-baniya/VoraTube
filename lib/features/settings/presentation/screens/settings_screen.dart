@@ -406,6 +406,7 @@ class _AppearanceSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final appearanceSettings = ref.watch(appearanceSettingsProvider);
+    final chameleon = ref.watch(isChameleonProvider);
 
     return SettingsSection(
       title: 'Appearance',
@@ -420,18 +421,22 @@ class _AppearanceSection extends ConsumerWidget {
             AppThemeMode.system,
             AppThemeMode.dark,
             AppThemeMode.light,
+            AppThemeMode.chameleon,
           ],
           itemBuilder: (context, mode) => Text(mode.name.capitalize()),
         ),
         SettingsSelectTile<AppThemePreset>(
           title: 'Color theme',
-          subtitle: 'Accent & surface preset',
+          subtitle: chameleon
+              ? 'Colors follow the current artwork'
+              : 'Accent & surface preset',
           value: appearanceSettings.themePreset,
           onChanged: (preset) => ref
               .read(appearanceSettingsProvider.notifier)
               .setThemePreset(preset),
           items: [for (final palette in AppPalettes.all) palette.preset],
           isLastInSection: true,
+          enabled: !chameleon,
           itemBuilder: (context, preset) {
             return Row(
               mainAxisSize: MainAxisSize.min,
@@ -514,7 +519,8 @@ class _BackupSection extends StatelessWidget {
       children: [
         SettingsTile(
           title: 'Backup & Restore',
-          subtitle: 'Save or restore your playlists, favorites, history and settings',
+          subtitle:
+              'Save or restore your playlists, favorites, history and settings',
           leading: Container(
             width: 44,
             height: 44,
@@ -533,9 +539,8 @@ class _BackupSection extends StatelessWidget {
             size: 18,
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const BackupScreen()),
-          ),
+          onTap: () => Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const BackupScreen())),
           isLastInSection: true,
         ),
       ],

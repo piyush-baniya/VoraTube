@@ -290,6 +290,7 @@ void main() {
             ),
             themePresetProvider.overrideWithValue(AppThemePreset.purple),
             themeModeProvider.overrideWithValue(ThemeMode.dark),
+            isChameleonProvider.overrideWithValue(false),
           ],
         );
         addTearDown(container.dispose);
@@ -310,6 +311,7 @@ void main() {
           currentArtworkDescriptorProvider.overrideWithValue(null),
           themePresetProvider.overrideWithValue(AppThemePreset.midnight),
           themeModeProvider.overrideWithValue(ThemeMode.light),
+          isChameleonProvider.overrideWithValue(false),
         ],
       );
       addTearDown(container.dispose);
@@ -348,6 +350,7 @@ void main() {
           ),
           themePresetProvider.overrideWithValue(AppThemePreset.purple),
           themeModeProvider.overrideWithValue(ThemeMode.dark),
+          isChameleonProvider.overrideWithValue(false),
         ],
       );
       addTearDown(container.dispose);
@@ -361,6 +364,7 @@ void main() {
         ),
         themePresetProvider.overrideWithValue(AppThemePreset.purple),
         themeModeProvider.overrideWithValue(ThemeMode.dark),
+        isChameleonProvider.overrideWithValue(false),
       ]);
       final state = await waitUntilReady(container);
       expect(state.isFallback, isFalse);

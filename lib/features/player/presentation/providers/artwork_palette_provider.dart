@@ -51,7 +51,11 @@ final currentArtworkPaletteProvider =
     StateNotifierProvider<ArtworkPaletteController, ArtworkPaletteState>((ref) {
       final controller = ArtworkPaletteController(
         service: ref.watch(artworkPaletteServiceProvider),
-        themePaletteOf: () => AppPalette.of(ref.read(themePresetProvider)),
+        themePaletteOf: () => ref.read(isChameleonProvider)
+            // Chameleon fallbacks and OLED rules must never depend on the
+            // preserved manual preset: use the fixed neutral VoraTube identity.
+            ? AppPalette.purple
+            : AppPalette.of(ref.read(themePresetProvider)),
         isDarkModeOf: () {
           final mode = ref.read(themeModeProvider);
           switch (mode) {
@@ -78,6 +82,10 @@ final currentArtworkPaletteProvider =
       );
       ref.listen<ThemeMode>(
         themeModeProvider,
+        (previous, next) => controller.refreshForThemeOrBrightness(),
+      );
+      ref.listen<bool>(
+        isChameleonProvider,
         (previous, next) => controller.refreshForThemeOrBrightness(),
       );
       controller.setCurrentArtwork(ref.read(currentArtworkDescriptorProvider));

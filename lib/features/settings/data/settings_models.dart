@@ -13,6 +13,11 @@ enum AppThemeMode {
 
   /// Always light.
   light,
+
+  /// Dynamic theme derived from the current song's artwork. Overrides the
+  /// preset accent/ramp while active; the saved preset is preserved so leaving
+  /// Chameleon restores the previous identity exactly.
+  chameleon,
 }
 
 /// User's ReplayGain normalization preference.

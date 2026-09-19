@@ -5,11 +5,7 @@ import 'app_tokens.dart';
 import 'palettes.dart';
 
 export 'palettes.dart'
-    show
-        AppPalette,
-        AppPalettes,
-        AppSurfaceRamp,
-        AppThemePreset;
+    show AppPalette, AppPalettes, AppSurfaceRamp, AppThemePreset;
 
 /// The theme extension resolved for the active [AppPalette] and brightness so
 /// individual widgets can reach the named neutral colors the presets override
@@ -42,9 +38,14 @@ class VoraTheme extends ThemeExtension<VoraTheme> {
   @override
   VoraTheme lerp(ThemeExtension<VoraTheme>? other, double t) {
     if (other is! VoraTheme) return this;
-    // Theme switches are instant (themeAnimationDuration is zero), so pick
-    // the nearest side instead of animating color fields.
-    return t < 0.5 ? this : other;
+    // Chameleon theme transitions crossfade every color field smoothly; preset
+    // switches stay instant because themeAnimationDuration is zero (t is always
+    // 0 or 1 there, so the neutral return below equals the nearest side).
+    return VoraTheme(
+      palette: palette.lerp(other.palette, t),
+      surfaces: surfaces.lerp(other.surfaces, t),
+      isDark: t < 0.5 ? isDark : other.isDark,
+    );
   }
 }
 
@@ -69,22 +70,45 @@ extension VoraThemeContext on BuildContext {
 abstract final class AppTheme {
   /// Memoized per-preset ThemeData pairs so MaterialApp rebuilds (theme
   /// switches, root provider churn) reuse identical ThemeData instances.
-  static final Map<AppThemePreset, ({ThemeData light, ThemeData dark})>
-  _cache = {};
+  static final Map<AppThemePreset, ({ThemeData light, ThemeData dark})> _cache =
+      {};
 
   /// Builds (or returns the cached) light + dark ThemeData pair for [preset].
   static ({ThemeData light, ThemeData dark}) of(AppThemePreset preset) {
     return _cache.putIfAbsent(preset, () {
       final palette = AppPalette.of(preset);
       return (
-        light: _build(palette, isDark: false),
-        dark: _build(palette, isDark: true),
+        light: buildThemeData(
+          _lightScheme(palette, palette.lightRamp),
+          palette.lightRamp,
+          isDark: false,
+          palette: palette,
+        ),
+        dark: buildThemeData(
+          _darkScheme(palette, palette.darkRamp),
+          palette.darkRamp,
+          isDark: true,
+          palette: palette,
+        ),
       );
     });
   }
 
   static ThemeData light(AppThemePreset preset) => of(preset).light;
   static ThemeData dark(AppThemePreset preset) => of(preset).dark;
+
+  /// Assembles the full VoraTube ThemeData chrome around an explicit
+  /// [ColorScheme] and neutral [AppSurfaceRamp] (which also feed the [VoraTheme]
+  /// extension). Shared by the preset themes and the artwork-driven Chameleon
+  /// theme so dynamic mode inherits the exact same component styling.
+  static ThemeData buildThemeData(
+    ColorScheme scheme,
+    AppSurfaceRamp ramp, {
+    required bool isDark,
+    required AppPalette palette,
+  }) {
+    return _build(scheme, ramp, isDark: isDark, palette: palette);
+  }
 
   static ColorScheme _darkScheme(AppPalette p, AppSurfaceRamp r) {
     return ColorScheme.dark(
@@ -157,20 +181,27 @@ abstract final class AppTheme {
     );
   }
 
-  static ThemeData _build(AppPalette palette, {required bool isDark}) {
-    final scheme =
-        isDark ? _darkScheme(palette, palette.darkRamp) : _lightScheme(
-          palette,
-          palette.lightRamp,
-        );
-    final ramp = isDark ? palette.darkRamp : palette.lightRamp;
-
-    final baseText = Typography.material2021(colorScheme: scheme).black.apply(
-      bodyColor: scheme.onSurface,
-      displayColor: scheme.onSurface,
+  static ThemeData _build(
+    ColorScheme scheme,
+    AppSurfaceRamp ramp, {
+    required bool isDark,
+    required AppPalette palette,
+  }) {
+    final textTheme = _textTheme(scheme);
+    return _buildChromeTheme(
+      scheme: scheme,
+      ramp: ramp,
+      isDark: isDark,
+      palette: palette,
+      textTheme: textTheme,
     );
+  }
 
-    final textTheme = baseText.copyWith(
+  static TextTheme _textTheme(ColorScheme scheme) {
+    final baseText = Typography.material2021(colorScheme: scheme).black
+        .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
+
+    return baseText.copyWith(
       displayLarge: baseText.displayLarge?.copyWith(
         fontWeight: FontWeight.w800,
         letterSpacing: -1.0,
@@ -244,7 +275,15 @@ abstract final class AppTheme {
         letterSpacing: 0.4,
       ),
     );
+  }
 
+  static ThemeData _buildChromeTheme({
+    required ColorScheme scheme,
+    required AppSurfaceRamp ramp,
+    required bool isDark,
+    required AppPalette palette,
+    required TextTheme textTheme,
+  }) {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
@@ -372,9 +411,7 @@ abstract final class AppTheme {
         constraints: const BoxConstraints(maxWidth: AppTokens.contentMaxWidth),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: isDark
-            ? ramp.surfaceContainerHigh
-            : ramp.surfaceLow,
+        backgroundColor: isDark ? ramp.surfaceContainerHigh : ramp.surfaceLow,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTokens.rXxl),
@@ -529,10 +566,7 @@ abstract final class AppTheme {
           return Colors.transparent;
         }),
         checkColor: WidgetStateProperty.all(scheme.onPrimary),
-        side: BorderSide(
-          color: ramp.outline,
-          width: AppTokens.borderThin,
-        ),
+        side: BorderSide(color: ramp.outline, width: AppTokens.borderThin),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppTokens.rSm),
         ),
@@ -592,9 +626,7 @@ abstract final class AppTheme {
             width: AppTokens.borderHairline,
           ),
         ),
-        textStyle: textTheme.labelSmall?.copyWith(
-          color: ramp.textSecondary,
-        ),
+        textStyle: textTheme.labelSmall?.copyWith(color: ramp.textSecondary),
         padding: const EdgeInsets.symmetric(
           horizontal: AppTokens.s3,
           vertical: AppTokens.s2,
