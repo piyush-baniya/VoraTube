@@ -183,10 +183,16 @@ class EqualizerUiSettings {
     this.selectedPresetId,
     this.parametricPresets = const [],
     this.selectedParametricPresetId,
+    this.spectrumEnabled = true,
   });
 
   final EqMode mode;
   final List<EqCustomPreset> presets;
+
+  /// Whether the live spectrum overlay is shown on the equalizer graphs.
+  /// Persisted; the native analyzer runs only while this is on and a graph
+  /// that shows it is actually visible.
+  final bool spectrumEnabled;
 
   /// Id of the saved preset currently selected, or null when a built-in preset
   /// or a free-edited curve is active.
@@ -220,6 +226,7 @@ class EqualizerUiSettings {
     List<ParametricEqSavedPreset>? parametricPresets,
     String? selectedParametricPresetId,
     bool clearSelectedParametricPreset = false,
+    bool? spectrumEnabled,
   }) {
     return EqualizerUiSettings(
       mode: mode ?? this.mode,
@@ -231,6 +238,7 @@ class EqualizerUiSettings {
       selectedParametricPresetId: clearSelectedParametricPreset
           ? null
           : (selectedParametricPresetId ?? this.selectedParametricPresetId),
+      spectrumEnabled: spectrumEnabled ?? this.spectrumEnabled,
     );
   }
 
@@ -243,6 +251,7 @@ class EqualizerUiSettings {
       for (final preset in parametricPresets) preset.toJson(),
     ],
     'selectedParametric': selectedParametricPresetId,
+    'spectrumEnabled': spectrumEnabled,
   });
 
   /// Never throws: a corrupt blob resolves to the neutral default. Unknown keys
@@ -290,6 +299,9 @@ class EqualizerUiSettings {
                 seenParametric.contains(selectedParametric)
             ? selectedParametric
             : null,
+        spectrumEnabled: decoded['spectrumEnabled'] is bool
+            ? decoded['spectrumEnabled'] as bool
+            : true,
       );
     } catch (_) {
       return const EqualizerUiSettings();
@@ -304,7 +316,8 @@ class EqualizerUiSettings {
           other.selectedPresetId == selectedPresetId &&
           listEquals(other.presets, presets) &&
           listEquals(other.parametricPresets, parametricPresets) &&
-          other.selectedParametricPresetId == selectedParametricPresetId;
+          other.selectedParametricPresetId == selectedParametricPresetId &&
+          other.spectrumEnabled == spectrumEnabled;
 
   @override
   int get hashCode => Object.hash(
@@ -313,5 +326,6 @@ class EqualizerUiSettings {
     Object.hashAll(presets),
     Object.hashAll(parametricPresets),
     selectedParametricPresetId,
+    spectrumEnabled,
   );
 }

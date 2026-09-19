@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../../core/audio/parametric_eq.dart';
+import 'spectrum_painter.dart';
 
 /// Display sample rate used for coefficient/curve maths when no popped decoded
 /// rate is known yet. The engine recomputes for the real rate automatically, so
@@ -47,6 +48,7 @@ class ParametricEqCurve extends StatefulWidget {
     this.onSelectBand,
     this.onBandChanged,
     this.onDragCommit,
+    this.showSpectrum = false,
   });
 
   final List<ParametricEqBand> bands;
@@ -57,6 +59,10 @@ class ParametricEqCurve extends StatefulWidget {
   final ValueChanged<String?>? onSelectBand;
   final ValueChanged<ParametricEqBand>? onBandChanged;
   final VoidCallback? onDragCommit;
+
+  /// Renders the real-time spectrum behind the response curve and runs the
+  /// native analyzer while this curve is on screen.
+  final bool showSpectrum;
 
   @override
   State<ParametricEqCurve> createState() => _ParametricEqCurveState();
@@ -70,9 +76,19 @@ class _ParametricEqCurveState extends State<ParametricEqCurve> {
   double _startGain = 0;
   double _startDx = 0;
   double _startDy = 0;
+  final SpectrumStreamBinder _spectrum = SpectrumStreamBinder();
+
+  @override
+  void dispose() {
+    _spectrum.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    _spectrum.sync(widget.showSpectrum, () {
+      if (mounted) setState(() {});
+    });
     return LayoutBuilder(
       builder: (context, constraints) {
         final ceiling = clampedFrequency(
@@ -91,15 +107,19 @@ class _ParametricEqCurveState extends State<ParametricEqCurve> {
                 _updateDrag(details.localPosition, constraints.maxWidth),
             onPanEnd: (_) => _endDrag(),
             onPanCancel: _endDrag,
-            child: CustomPaint(
-              painter: _ParametricCurvePainter(
-                bands: widget.bands,
-                enabled: widget.enabled,
-                logCeiling: _logCeiling,
-                width: constraints.maxWidth,
-                height: widget.height,
-                selectedBandId: widget.selectedBandId ?? _dragId,
-                colorScheme: Theme.of(context).colorScheme,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _ParametricCurvePainter(
+                  bands: widget.bands,
+                  enabled: widget.enabled,
+                  logCeiling: _logCeiling,
+                  width: constraints.maxWidth,
+                  height: widget.height,
+                  selectedBandId: widget.selectedBandId ?? _dragId,
+                  colorScheme: Theme.of(context).colorScheme,
+                  spectrum: _spectrum.values,
+                  spectrumEdges: _spectrum.edges,
+                ),
               ),
             ),
           ),
@@ -200,6 +220,8 @@ class _ParametricCurvePainter extends CustomPainter {
     required this.height,
     required this.selectedBandId,
     required this.colorScheme,
+    this.spectrum,
+    required this.spectrumEdges,
   });
 
   final List<ParametricEqBand> bands;
@@ -209,6 +231,8 @@ class _ParametricCurvePainter extends CustomPainter {
   final double height;
   final String? selectedBandId;
   final ColorScheme colorScheme;
+  final List<double>? spectrum;
+  final List<double> spectrumEdges;
 
   static const List<double> _majorFreqs = [
     20,
@@ -234,6 +258,19 @@ class _ParametricCurvePainter extends CustomPainter {
     final axisPaint = Paint()
       ..color = colorScheme.outlineVariant.withValues(alpha: 0.9)
       ..strokeWidth = 1.2;
+
+    // Real spectrum first: behind grid, curve and nodes.
+    paintSpectrumBands(
+      canvas,
+      size,
+      values: spectrum,
+      edgeFrequencies: spectrumEdges,
+      frequencyToX: (f) => _xFor(f) * width,
+      plotBottom: height,
+      maxBarHeight: height,
+      color: (enabled ? colorScheme.primary : colorScheme.onSurfaceVariant)
+          .withValues(alpha: 0.75),
+    );
 
     // Horizontal dB grid.
     for (final db in [-12.0, -6.0, 6.0, 12.0]) {
@@ -407,5 +444,7 @@ class _ParametricCurvePainter extends CustomPainter {
       oldDelegate.width != width ||
       oldDelegate.height != height ||
       oldDelegate.selectedBandId != selectedBandId ||
-      oldDelegate.colorScheme != colorScheme;
+      oldDelegate.colorScheme != colorScheme ||
+      !identical(oldDelegate.spectrumEdges, spectrumEdges) ||
+      !identical(oldDelegate.spectrum, spectrum);
 }

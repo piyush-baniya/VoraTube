@@ -84,7 +84,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
 
     return Column(
       children: [
-        _topBar(context, audio.eqEnabled),
+        _topBar(context, audio.eqEnabled, ui.spectrumEnabled),
         _nowPlaying(context, song?.title, song?.artist, song?.artPath),
         Padding(
           padding: const EdgeInsets.fromLTRB(
@@ -141,7 +141,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
 
   // ── Top bar ──────────────────────────────────────────────────────────
 
-  Widget _topBar(BuildContext context, bool enabled) {
+  Widget _topBar(BuildContext context, bool enabled, bool spectrumEnabled) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -164,6 +164,20 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          ),
+          IconButton(
+            onPressed: () {
+              ref
+                  .read(equalizerSettingsProvider.notifier)
+                  .setSpectrumEnabled(!spectrumEnabled);
+            },
+            icon: Icon(
+              spectrumEnabled ? Icons.graphic_eq_rounded : Icons.graphic_eq,
+            ),
+            tooltip: spectrumEnabled
+                ? 'Spectrum analyzer on'
+                : 'Spectrum analyzer off',
+            color: spectrumEnabled ? theme.colorScheme.primary : null,
           ),
           _BypassToggle(
             enabled: enabled,
@@ -228,7 +242,12 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
 
   // ── Curve ────────────────────────────────────────────────────────────
 
-  Widget _curveBlock(BuildContext context, bool enabled, List<double> levels) {
+  Widget _curveBlock(
+    BuildContext context,
+    bool enabled,
+    List<double> levels, {
+    bool showSpectrum = false,
+  }) {
     const height = 220.0;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppTokens.s2),
@@ -240,6 +259,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
             enabled: enabled,
             height: height,
             interactive: true,
+            showSpectrum: showSpectrum,
             onChanged: (index, value) => _onBandChanged(levels, index, value),
             onChangedEnd: _commitDraft,
           ),
@@ -268,7 +288,12 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
     required double preamp,
     required bool wide,
   }) {
-    final curve = _curveBlock(context, audio.eqEnabled, levels);
+    final curve = _curveBlock(
+      context,
+      audio.eqEnabled,
+      levels,
+      showSpectrum: ui.spectrumEnabled,
+    );
     final controls = _controlsBlock(
       context,
       audio: audio,
@@ -408,6 +433,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
           bands: bands,
           enabled: audio.eqEnabled,
           height: height,
+          showSpectrum: ref.watch(equalizerSettingsProvider).spectrumEnabled,
           selectedBandId: _selectedBandId,
           onSelectBand: (id) => setState(() => _selectedBandId = id),
           onBandChanged: _editBandDuringDrag,
@@ -1753,9 +1779,16 @@ class _ManagePresetsSheet extends ConsumerWidget {
                 child: ReorderableListView.builder(
                   shrinkWrap: true,
                   itemCount: presets.length,
-                  onReorder: (oldIndex, newIndex) => ref
+                  // onReorderItem reports the final destination index;
+                  // convert it back to the classic onReorder convention
+                  // (newIndex counts the item before removal) the
+                  // controller and its tests are written against.
+                  onReorderItem: (oldIndex, targetIndex) => ref
                       .read(equalizerSettingsProvider.notifier)
-                      .reorderPresets(oldIndex, newIndex),
+                      .reorderPresets(
+                        oldIndex,
+                        targetIndex > oldIndex ? targetIndex + 1 : targetIndex,
+                      ),
                   itemBuilder: (context, index) {
                     final preset = presets[index];
                     return ListTile(
@@ -1864,9 +1897,15 @@ class _ManageParametricPresetsSheet extends ConsumerWidget {
                 child: ReorderableListView.builder(
                   shrinkWrap: true,
                   itemCount: presets.length,
-                  onReorder: (oldIndex, newIndex) => ref
+                  // See the graphic sheet above: onReorderItem gives the
+                  // final destination index; the controller expects the
+                  // classic onReorder convention.
+                  onReorderItem: (oldIndex, targetIndex) => ref
                       .read(equalizerSettingsProvider.notifier)
-                      .reorderParametricPresets(oldIndex, newIndex),
+                      .reorderParametricPresets(
+                        oldIndex,
+                        targetIndex > oldIndex ? targetIndex + 1 : targetIndex,
+                      ),
                   itemBuilder: (context, index) {
                     final preset = presets[index];
                     final activeBands = preset.bands

@@ -1,299 +1,279 @@
 package com.piyushbaniya.vora_tube.audio
 
-import androidx.media3.common.C
-import androidx.media3.common.audio.AudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.ShortBuffer
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.ln
+import kotlin.math.log10
+import kotlin.math.min
+import kotlin.math.sin
 
 /**
- * Real-time FFT spectrum analyzer foundation.
- * Receives PCM buffers and produces logarithmic magnitude bands.
- * Designed to be fed from a bounded ring buffer on the audio thread;
- * FFT computation runs off the audio thread.
+ * Real-time FFT spectrum analyzer.
  *
- * PCM format assumed: 16-bit signed little-endian, [2..8] channels.
- * Sample rate supplied at construction; must match actual playback sample rate.
+ * The processor taps post-EQ PCM and feeds it via [feedFrame] on the audio
+ * thread; the analysis itself ([pullFrame]) runs on a dedicated worker at
+ * most ~30 times per second. [feedFrame] is a bounded copy into a fixed-size
+ * roll buffer — it never allocates and never grows, so it is safe for the
+ * realtime path. Analysis is observation only: it can never alter the audio.
+ *
+ * PCM format: 16-bit signed little-endian or 32-bit float, interleaved.
  */
-class SpectrumAnalyzer(
-    private val sampleRate: Int,
-    private val channels: Int,
-) {
-  private require(sampleRate > 0, "sampleRate must be > 0") {
-    IllegalArgumentException("sampleRate must be > 0")
-  }
-  require(channels in intArrayOf(1, 2, 4, 8)) {
-    IllegalArgumentException("channels must be 1, 2, 4, or 8, got $channels")
+class SpectrumAnalyzer {
+
+  companion object {
+    const val BAND_COUNT = 48
+    const val BAND_MIN_HZ = 20.0
+    const val FRAME_INTERVAL_MS = 33L // ~30 fps ceiling
   }
 
-  // FFT configuration
-  private val fftSize = 1024 // power of 2; next power of 2 above typical 44100/48000 Hz
-  private val logBands = 48 // target number of logarithmic bands
-  private val noiseFloorDb = -80f // perceptual noise floor
+  private val fftSize = 4096
+  private val noiseFloorDb = -66.0
+  private val ceilingDb = -6.0
 
-  // Internal state
-  @Volatile private var enabled = false
-  private val ringBuffer = RingBuffer(sampleRate, fftSize, channels)
-  private val smoothing = SmoothingAttackDecay()
+  @Volatile
+  var enabled: Boolean = false
+    private set
 
-  /** Start continuous analysis. Must be called before feeding buffers. */
+  // Fixed-size mono roll buffer. Audio thread writes newest samples,
+  // overwriting the oldest; worker snapshots under the same lightweight lock.
+  private val ring = FloatArray(fftSize)
+  private var ringWrite = 0
+  private var ringFilled = 0
+
+  // Precomputed FFT tables (allocation-free hot path).
+  private val bitReverse = IntArray(fftSize)
+  private val cosTable = DoubleArray(fftSize / 2)
+  private val sinTable = DoubleArray(fftSize / 2)
+  private val hann = DoubleArray(fftSize)
+  private val windowGain: Double
+
+  private val re = DoubleArray(fftSize)
+  private val im = DoubleArray(fftSize)
+  private val magnitudes = DoubleArray(fftSize / 2)
+  /** Reused worker-side analysis window (never touched by the audio thread). */
+  private val window = FloatArray(fftSize)
+  private val smoothed = FloatArray(BAND_COUNT)
+
+  /**
+   * Band → FFT-bin grid for the current sample rate. Replaced wholesale so the
+   * worker always reads one consistent grid while the rate changes.
+   */
+  @Volatile
+  private var bandEdges = IntArray(BAND_COUNT + 1)
+  private var fedTotal = 0L
+
+  @Volatile
+  private var lastFedTotal = -1L
+
+  @Volatile
+  var sampleRate: Int = 48000
+    private set
+
+  init {
+    val n = fftSize
+    var bits = 0
+    while (1 shl bits < n) bits++
+    for (i in 0 until n) {
+      var r = 0
+      for (b in 0 until bits) if (i and (1 shl b) != 0) r = r or (1 shl (bits - 1 - b))
+      bitReverse[i] = r
+    }
+    for (i in 0 until n / 2) {
+      val angle = -2.0 * PI * i / n
+      cosTable[i] = cos(angle)
+      sinTable[i] = sin(angle)
+    }
+    var sumW = 0.0
+    for (i in 0 until n) {
+      val w = 0.5 - 0.5 * cos(2.0 * PI * i / n)
+      hann[i] = w
+      sumW += w
+    }
+    windowGain = 2.0 / sumW // Hann amplitude-correction factor
+    computeBandEdges()
+  }
+
+  /** Re-aligns the log band grid to the actual playback sample rate. */
+  fun updateSampleRate(rate: Int) {
+    if (rate <= 0 || rate == sampleRate) return
+    sampleRate = rate
+    flush()
+    computeBandEdges()
+  }
+
+  private fun computeBandEdges() {
+    val minLog = ln(BAND_MIN_HZ)
+    val maxLog = ln(sampleRate / 2.0)
+    val edges = IntArray(BAND_COUNT + 1)
+    var prev = 1
+    for (b in 0 until BAND_COUNT) {
+      val f = kotlin.math.exp(minLog + (maxLog - minLog) * b / BAND_COUNT)
+      val bin = (f * fftSize / sampleRate).toInt().coerceIn(prev, fftSize / 2 - 1)
+      edges[b] = bin
+      prev = bin + 1
+    }
+    edges[BAND_COUNT] = fftSize / 2
+    bandEdges = edges
+  }
+
+  /** Begin analysis. Resets stale buffer state. */
   fun start() {
+    synchronized(ring) {
+      ringWrite = 0
+      ringFilled = 0
+    }
+    synchronized(smoothed) {
+      java.util.Arrays.fill(smoothed, 0f)
+    }
+    lastFedTotal = -1L
     enabled = true
-    ringBuffer.clear()
-    smoothing.reset()
   }
 
-  /** Stop analysis. Releases resources. */
+  /** Stop analysis; drops buffered audio and stops producing frames. */
   fun stop() {
     enabled = false
-    ringBuffer.clear()
+    flush()
   }
 
-  /** Feed a PCM sample frame from the audio thread.
-   *  Should be called from the audio callback at the playback sample rate.
-   *  Only the minimum required samples for one FFT window are copied;
-   *  the ring buffer is bounded and oldest windows are overwritten.
-   */
-  fun feedFrame(byteBuffer: ByteBuffer) {
-    if (!enabled) return
-    // Ensure correct endianness and format
-    val tmp = ByteBuffer.allocate(fftSize * channels * 2).apply { order(ByteOrder.LITTLE_ENDIAN) }
-    // Copy only the first fftSize * channels * 2 bytes (16-bit PCM)
-    val copyLen = Math.min(byteBuffer.remaining(), tmp.capacity())
-    tmp.put(byteBuffer.slice().retruncateTo(copyLen))
-    tmp.flip()
-    ringBuffer.addSampleFrame(tmp)
+  /** Clears stale buffered audio (seek / track change / pause restart). */
+  fun flush() {
+    synchronized(ring) {
+      ringWrite = 0
+      ringFilled = 0
+    }
   }
 
-  /** Retrieve the latest spectrum frame, or null if not enough data yet.
-   *  Must be called from a non-audio thread (e.g., UI handler or dedicated worker).
+  /**
+   * Audio-thread tap. Copies the buffer into the bounded roll buffer;
+   * no allocation and a monitor held only over a small float copy.
    */
-  fun pullFrame(): SpectrumFrame? {
+  fun feedFrame(buffer: ByteBuffer, channels: Int, isFloat: Boolean) {
+    if (!enabled || channels <= 0) return
+    val dup = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+    synchronized(ring) {
+      if (isFloat) {
+        while (dup.remaining() >= 4 * channels) {
+          var acc = 0f
+          for (c in 0 until channels) acc += dup.float
+          ring[ringWrite] = acc / channels
+          ringWrite = (ringWrite + 1) % fftSize
+          if (ringFilled < fftSize) ringFilled++
+          fedTotal++
+        }
+      } else {
+        val shorts: ShortBuffer = dup.asShortBuffer()
+        val frames = shorts.remaining() / channels
+        for (f in 0 until frames) {
+          var acc = 0
+          for (c in 0 until channels) acc += shorts.get().toInt()
+          ring[ringWrite] = acc / channels / 32768f
+          ringWrite = (ringWrite + 1) % fftSize
+          if (ringFilled < fftSize) ringFilled++
+          fedTotal++
+        }
+      }
+    }
+  }
+
+  /**
+   * Worker-side: compute the newest 48-band spectrum frame, or null when not
+   * enough audio has accumulated. Values are normalized 0..1 loudness with
+   * attack/decay smoothing applied (decay reaches 0 on silence, so pause
+   * decays the display naturally).
+   */
+  fun pullFrame(): FloatArray? {
     if (!enabled) return null
-    val samples = ringBuffer.getLatestWindow()
-    if (samples.size < fftSize) return null
+    val fedNow: Long
+    synchronized(ring) {
+      if (ringFilled < fftSize) return null
+      fedNow = fedTotal
+      var read = ringWrite // oldest sample sits at the write cursor
+      for (i in 0 until fftSize) {
+        window[i] = ring[read]
+        read = (read + 1) % fftSize
+      }
+    }
+    if (fedNow == lastFedTotal) {
+      // No new audio since the last frame (playback paused): decay the
+      // display smoothly to silence instead of freezing.
+      synchronized(smoothed) {
+        for (i in smoothed.indices) {
+          smoothed[i] *= 0.85f
+          if (smoothed[i] < 0.005f) smoothed[i] = 0f
+        }
+      }
+      lastFedTotal = fedNow
+      return smoothed.copyOf()
+    }
+    lastFedTotal = fedNow
+    for (i in 0 until fftSize) {
+      re[i] = window[i] * hann[i]
+      im[i] = 0.0
+    }
+    transform()
+    for (i in 0 until fftSize / 2) {
+      magnitudes[i] = hypot(re[i], im[i]) * windowGain
+    }
 
-    // Window: Hann
-    val windowed = applyHannWindow(samples)
-
-    // FFT
-    val spectrum = forwardFft(windowed)
-
-    // Magnitude (absolute value)
-    val magnitudes = spectrum.map { it.abs }
-
-    // Logarithmic band mapping
-    val bands = mapToLogBands(magnitudes)
-
-    // Smoothing
-    val smoothed = smoothing.next(bands)
-
-    return SpectrumFrame(
-      bands = smoothed,
-      sampleRate = sampleRate,
-      timestamp = System.currentTimeMillis().toFloat(),
-    )
+    val next = FloatArray(BAND_COUNT)
+    for (b in 0 until BAND_COUNT) {
+      val lo = bandEdges[b]
+      val hi = min(bandEdges[b + 1], fftSize / 2)
+      if (hi <= lo) continue
+      var peak = 0.0
+      for (i in lo until hi) {
+        val m = magnitudes[i]
+        if (m > peak) peak = m
+      }
+      val db = 20.0 * log10(peak + 1e-9)
+      next[b] = (((db - noiseFloorDb) / (ceilingDb - noiseFloorDb)).coerceIn(0.0, 1.0)).toFloat()
+    }
+    synchronized(smoothed) {
+      for (i in next.indices) {
+        val target = next[i]
+        val current = smoothed[i]
+        val coef = if (target > current) 0.55f else 0.16f
+        smoothed[i] = current + coef * (target - current)
+        next[i] = smoothed[i]
+      }
+    }
+    return next
   }
 
-  /** Apply a Hann window to the time-domain samples. */
-  private fun applyHannWindow(samples: DoubleArray): DoubleArray {
-    val n = samples.size
-    val window = DoubleArray(n)
+  /** Iterative radix-2 Cooley-Tukey FFT, in place on [re]/[im]. */
+  private fun transform() {
+    val n = fftSize
     for (i in 0 until n) {
-      window[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (n - 1)))
+      val j = bitReverse[i]
+      if (j > i) {
+        val tr = re[i]; re[i] = re[j]; re[j] = tr
+        val ti = im[i]; im[i] = im[j]; im[j] = ti
+      }
     }
-    return samples.windowed(window) // custom extension below
-  }
-
-  /** Forward radix-2 Cooley-Tukey FFT (in-place on complex array treated as interleaved real/imag).
-   *  Input: complex array of length fftSize where even indices = real, odd = imag.
-   *  Output: same array with forward transform.
-   */
-  private fun forwardFft(real: DoubleArray): ComplexArray {
-    val n = real.size
-    if ((n and (n - 1)) != 0) {
-      throw IllegalArgumentException("FFT size must be a power of 2; got $n")
-    }
-    // Bit-reversal permutation
-    val reversed = ReversedView(real.size)
-    val work = DoubleArray(n * 2)
-    for (i in 0 until n) {
-      work[2 * i] = real[reversed[i]]
-      work[2 * i + 1] = 0.0
-    }
-    // Iterative butterfly
     var size = 2
     while (size <= n) {
-      var step = size * 2
-      var halfSize = size
-      var angle = 2 * Math.PI / size
-      var realW = Math.cos(angle)
-      var imagW = -Math.sin(angle)
-      for (var j = 0; j < halfSize; j++) {
-        var j2 = j + halfSize
-        var realTw = work[2 * j2] * realW - work[2 * j2 + 1] * imagW
-        var imagTw = work[2 * j2] * imagW + work[2 * j2 + 1] * realW
-        work[2 * j2] = work[2 * j] - realTw
-        work[2 * j2 + 1] = work[2 * j + 1] - imagTw
-        work[2 * j] = work[2 * j] + realTw
-        work[2 * j + 1] = work[2 * j + 1] + imagTw
-      }
-      size = step
-    }
-    return ComplexArray(work)
-  }
-
-  /** Map magnitude spectrum to logarithmic frequency bands.
-   *  Bands are spaced logarithmically from 20 Hz to Nyquist (sampleRate/2).
-   *  Each band uses RMS magnitude.
-   */
-  private fun mapToLogBands(magnitudes: DoubleArray): DoubleArray {
-    val nyquist = sampleRate / 2
-    val minFreq = 20f
-    val maxFreq = nyquist.toFloat
-    // Generate center frequencies for log bands
-    val centerFreqs = generateLogFrequencies(minFreq, maxFreq, logBands)
-    val bands = DoubleArray(logBands)
-    for (i in 0 until logBands) {
-      val freqLo = centerFreqs[i - 1] ?: minFreq
-      val freqHi = centerFreqs[i + 1] ?: maxFreq
-      // Find bin indices for frequency range
-      val binLo = (freqLo * fftSize / sampleRate).coerceAtLeast(0).coerceAtMost(fftSize - 1)
-      val binHi = (freqHi * fftSize / sampleRate).coerceAtLeast(1).coerceAtMost(fftSize)
-      // Compute RMS magnitude in this band
-      var sum = 0.0
-      var count = 0
-      for (j in binLo until binHi) {
-        val mag = magnitudes[j]
-        if (mag.isFinite() && mag > 0) {
-          sum += mag * mag
-          count++
+      val half = size / 2
+      val tableStep = n / size
+      for (start in 0 until n step size) {
+        var k = 0
+        for (j in start until start + half) {
+          val twR = cosTable[k]
+          val twI = sinTable[k]
+          val i2 = j + half
+          val tr = re[i2] * twR - im[i2] * twI
+          val ti = re[i2] * twI + im[i2] * twR
+          re[i2] = re[j] - tr
+          im[i2] = im[j] - ti
+          re[j] += tr
+          im[j] += ti
+          k += tableStep
         }
       }
-      if (count > 0) {
-        bands[i] = 10f * Math.log10(sum / count) // dB
-      } else {
-        bands[i] = -100f // below noise floor
-      }
-    }
-    // Apply noise floor
-    for (i in bands.indices) {
-      bands[i] = math.max(bands[i], noiseFloorDb)
-    }
-    return bands
-  }
-
-  /** Generate logarithmically spaced frequencies. */
-  private fun generateLogFrequencies(minFreq: Float, maxFreq: Float, bands: Int): DoubleArray {
-    val result = DoubleArray(bands + 1)
-    for (i in 0..bands) {
-      val ratio = i.toFloat() / bands
-      result[i] = Math.pow(maxFreq / minFreq, ratio) * minFreq
-    }
-    return result
-  }
-
-  /** Simple exponential smoothing: fast attack, slower decay. */
-  private class SmoothingAttackDecay {
-    private var last: DoubleArray? = null
-    private val attackCoef = 0.2f   // fast: 20% toward new each step
-    private val decayCoef = 0.02f   // slower: 2% toward new each step
-
-    fun reset() {
-      last = null
-    }
-
-    fun next(newBands: DoubleArray): DoubleArray {
-      if (last == null) {
-        last = newBands.toDoubleArray()
-        return last
-      }
-      val result = DoubleArray(newBands.size)
-      for (i in newBands.indices) {
-        val target = newBands[i]
-        val current = last[i]
-        val coef = if (target > current) attackCoef else decayCoef
-        result[i] = current + coef * (target - current)
-      }
-      last = result
-      return result
+      size *= 2
     }
   }
-
-  /** Bounded ring buffer holding the latest FFT window samples.
-   *  Oldest windows are overwritten; never grows unbounded.
-   */
-  private class RingBuffer(private val sampleRate: Int, private val fftSize: Int, private val ch: Int) {
-    // Hold up to 3 windows to avoid unbounded growth
-    private val windowSize = fftSize * ch * 2 // 16-bit PCM: 2 bytes per sample
-    private val buffers = ArrayDeque<DoubleArray>()
-    buffers.reserveCapacity(3)
-
-    fun clear() {
-      buffers.clear()
-    }
-
-    /** Add a newly acquired frame (fftSize samples, ch channels, 16-bit PCM). */
-    fun addSampleFrame(byteBuffer: ByteBuffer) {
-      // Extract samples: average channels if stereo, or take single channel
-      val sampleCount = fftSize
-      val samples = DoubleArray(fftSize)
-      // Simple: take first channel samples, or interleave then average
-      val rawSamples = extractFirstChannelSamples(byteBuffer, fftSize, ch)
-      for (i in 0 until fftSize) {
-        samples[i] = rawSamples[i].toDouble() / 32768.0 // normalize to [-1,1]
-      }
-      // Maintain bounded deque
-      if (buffers.size >= 3) buffers.removeFirst()
-      buffers.addLast(samples)
-    }
-
-    /** Get the most recent window of fftSize samples. */
-    fun getLatestWindow(): DoubleArray {
-      return buffers.lastOrNull() ?: emptyArray().also { it.isNotEmpty() false }
-    }
-
-    /** Extract the first channel's samples from interleaved buffer.
-     *  Assumes buffer contains fftSize * ch 16-bit PCM frames.
-     */
-    private fun extractFirstChannelSamples(buf: ByteBuffer, count: Int, ch: Int): DoubleArray {
-      val samples = DoubleArray(count)
-      // 16-bit PCM: 2 bytes per sample, little-endian
-      for (i in 0 until count) {
-        val offset = (i * ch + 0) * 2 // first channel offset within each frame
-        if (offset + 1 < buf.capacity()) {
-          val s = buf.shortAtIndex(offset) /*fake*/ .toDouble() / 32768.0
-          samples[i] = s
-        }
-      }
-      return samples
-    }
-  }
-
-  /** Helper: extract first-channel samples from interleaved 16-bit PCM buffer. */
-  private fun ByteBuffer.shortAtIndex(idx: Int): Short {
-    // Simplified: read 2 bytes at idx assuming little-endian
-    val lo = this.get(idx * 2 + 0).toShort()
-    val hi = this.get(idx * 2 + 1).toShort()
-    return (hi shl 8) or lo
-  }
-
-  /** Complex number pair for FFT output. */
-  data class ComplexArray(
-      val real: DoubleArray,
-      val imag: DoubleArray
-  ) {
-    fun abs(): DoubleArray {
-      val result = DoubleArray(real.size)
-      for (i in real.indices) {
-        result[i] = Math.hypot(real[i], imag[i])
-      }
-      return result
-    }
-  }
-
-  /** Result container pulled from pullFrame(). */
-  data class SpectrumFrame(
-      val bands: DoubleArray,          // logarithmic magnitude bands in dB
-      val sampleRate: Int,
-      val timestamp: Float
-  )
+}

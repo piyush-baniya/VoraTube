@@ -240,6 +240,12 @@ class EqualizerSettingsController extends StateNotifier<EqualizerUiSettings> {
     await _persist();
   }
 
+  Future<void> setSpectrumEnabled(bool enabled) async {
+    if (state.spectrumEnabled == enabled) return;
+    state = state.copyWith(spectrumEnabled: enabled);
+    await _persist();
+  }
+
   Future<void> selectParametricPreset(String id) async {
     state = state.copyWith(selectedParametricPresetId: id);
     await _persist();

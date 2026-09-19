@@ -19,6 +19,8 @@ class VoraTubeParametricEqBridge(private val messenger: BinaryMessenger) {
 
   val processor = VoraTubeParametricEqProcessor()
 
+  private val spectrumBridge = VoraTubeSpectrumBridge(messenger, SpectrumAnalyzer())
+
   private val channel = MethodChannel(messenger, "voratube/parametric_eq_v1")
   private val rateChannel = MethodChannel(messenger, "voratube/parametric_eq_v1/sampleRate")
 
@@ -55,5 +57,18 @@ class VoraTubeParametricEqBridge(private val messenger: BinaryMessenger) {
       rateChannel.invokeMethod("sampleRate", sampleRate, null)
       Unit
     }
+
+    // Real spectrum path: post-EQ PCM from this processor, observed only.
+    processor.spectrumTap = spectrumBridge::onPcm
+    processor.onPlaybackReset = spectrumBridge::onReset
+    processor.onConfigured = { rate -> spectrumBridge.setSampleRate(rate) }
+    spectrumBridge.register()
+  }
+
+  fun dispose() {
+    processor.spectrumTap = null
+    processor.onPlaybackReset = null
+    processor.onConfigured = null
+    spectrumBridge.dispose()
   }
 }

@@ -43,6 +43,18 @@ class VoraTubeParametricEqProcessor : AudioProcessor {
   private var channels = 2
   private var encoding = C.ENCODING_PCM_16BIT
 
+  /**
+   * Observation-only spectrum tap. Fired with the post-EQ output buffer after
+   * every [queueInput]; the tap itself must be cheap and must never modify the
+   * buffer. Null when no spectrum consumer is active.
+   */
+  @Volatile
+  var spectrumTap: ((ByteBuffer, Int, Boolean) -> Unit)? = null
+
+  /** Invoked from [flush] (seek / track change) so stale spectrum windows clear. */
+  @Volatile
+  var onPlaybackReset: (() -> Unit)? = null
+
   private var processedGeneration = Int.MIN_VALUE
   private var fadeRemaining = 0
   private var prevOut = DoubleArray(2)
@@ -57,6 +69,10 @@ class VoraTubeParametricEqProcessor : AudioProcessor {
   /** Callback for the sample-rate events Dart needs to recompute biquads. */
   var onSampleRateChanged: ((Int) -> Unit)? = null
 
+  /** Fired on every [configure] with the actual playback sample rate. */
+  @Volatile
+  var onConfigured: ((Int) -> Unit)? = null
+
   override fun getDurationAfterProcessorApplied(inputDurationUs: Long): Long = inputDurationUs
 
   override fun configure(inputFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -64,6 +80,7 @@ class VoraTubeParametricEqProcessor : AudioProcessor {
     channels = inputFormat.channelCount
     encoding = inputFormat.encoding
     if (prevOut.size != channels) prevOut = DoubleArray(channels)
+    onConfigured?.invoke(sampleRate)
     val cfg = config
     if (cfg != null && cfg.enabled && cfg.bandCount > 0 &&
         cfg.validForSampleRate != sampleRate) {
@@ -80,6 +97,7 @@ class VoraTubeParametricEqProcessor : AudioProcessor {
     if (!active || sampleRate == 0 || cfg.validForSampleRate != sampleRate) {
       // Bypassed or coefficients not ready for this rate: copy unchanged.
       rawCopy(byteBuffer)
+      notifyTap()
       return
     }
     if (processedGeneration != cfg.generation) {
@@ -98,6 +116,7 @@ class VoraTubeParametricEqProcessor : AudioProcessor {
       processShort(byteBuffer, outBuf, cfg)
     }
     outputBuffer.flip()
+    notifyTap()
   }
 
   override fun queueEndOfStream() {}
@@ -110,6 +129,7 @@ class VoraTubeParametricEqProcessor : AudioProcessor {
     // Keep filtering state across seeks; a fresh config generation already
     // triggers the short crossfade and biquad state decays in a few samples.
     fadeRemaining = 0
+    onPlaybackReset?.invoke()
   }
 
   override fun reset() {
@@ -198,6 +218,21 @@ class VoraTubeParametricEqProcessor : AudioProcessor {
     }
     prevOut[ch] = sample
     return sample
+  }
+
+  /**
+   * Fires the spectrum tap with a view of the finished output. The tap copies
+   * immediately (and returns at once when the analyzer is off), so no buffer
+   * is allocated here and the audio thread never pays for a disabled analyzer.
+   */
+  private fun notifyTap() {
+    val tap = spectrumTap ?: return
+    val isFloat = encoding == C.ENCODING_PCM_FLOAT
+    try {
+      tap(outputBuffer, channels, isFloat)
+    } catch (_: Throwable) {
+      // Spectrum is strictly observational: never disturb playback.
+    }
   }
 
   private companion object {

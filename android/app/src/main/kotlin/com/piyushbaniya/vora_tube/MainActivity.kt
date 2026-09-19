@@ -18,6 +18,7 @@ class MainActivity : AudioServiceActivity() {
     private lateinit var mediaDeleteBridge: VoraTubeMediaDeleteBridge
     private lateinit var backupStorageBridge: VoraTubeBackupStorageBridge
     private lateinit var playUpdateBridge: VoraTubePlayUpdateBridge
+    private lateinit var parametricEqBridge: VoraTubeParametricEqBridge
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -29,8 +30,8 @@ class MainActivity : AudioServiceActivity() {
             .register(flutterEngine.dartExecutor.binaryMessenger)
         VoraTubeVolumeBoosterBridge(applicationContext)
             .register(flutterEngine.dartExecutor.binaryMessenger)
-        VoraTubeParametricEqBridge(flutterEngine.dartExecutor.binaryMessenger)
-            .register()
+        parametricEqBridge = VoraTubeParametricEqBridge(flutterEngine.dartExecutor.binaryMessenger)
+        parametricEqBridge.register()
         mediaDeleteBridge = VoraTubeMediaDeleteBridge(applicationContext)
         mediaDeleteBridge.register(flutterEngine.dartExecutor.binaryMessenger)
         backupStorageBridge = VoraTubeBackupStorageBridge(applicationContext)
@@ -76,6 +77,11 @@ class MainActivity : AudioServiceActivity() {
         }
         if (::playUpdateBridge.isInitialized) {
             playUpdateBridge.dispose()
+        }
+        // Tears down the spectrum worker thread (and its PCM tap) so no audio
+        // analysis thread can outlive the activity.
+        if (::parametricEqBridge.isInitialized) {
+            parametricEqBridge.dispose()
         }
         super.onDestroy()
     }

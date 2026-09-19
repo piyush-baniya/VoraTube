@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../core/audio/audio_effects.dart';
+import 'spectrum_painter.dart';
 
 /// The interactive 10-band equalizer curve.
 ///
@@ -23,6 +26,7 @@ class EqualizerCurve extends StatefulWidget {
     this.interactive = true,
     this.height = 220,
     this.showLabels = true,
+    this.showSpectrum = false,
   });
 
   final List<double> levels;
@@ -37,6 +41,10 @@ class EqualizerCurve extends StatefulWidget {
   final bool interactive;
   final double height;
   final bool showLabels;
+
+  /// Renders the real-time spectrum behind the curve and runs the native
+  /// analyzer while this curve is on screen.
+  final bool showSpectrum;
 
   @override
   State<EqualizerCurve> createState() => _EqualizerCurveState();
@@ -55,6 +63,7 @@ class _EqualizerCurveState extends State<EqualizerCurve>
   late List<double> _from;
   late List<double> _to;
   int? _dragIndex;
+  final SpectrumStreamBinder _spectrum = SpectrumStreamBinder();
 
   @override
   void initState() {
@@ -66,6 +75,13 @@ class _EqualizerCurveState extends State<EqualizerCurve>
       duration: const Duration(milliseconds: 280),
     )..value = 1.0;
     _curve = CurvedAnimation(parent: _animation, curve: Curves.easeOutCubic);
+  }
+
+  @override
+  void dispose() {
+    _spectrum.dispose();
+    _animation.dispose();
+    super.dispose();
   }
 
   @override
@@ -83,12 +99,6 @@ class _EqualizerCurveState extends State<EqualizerCurve>
     } else {
       _animation.forward(from: 0.0);
     }
-  }
-
-  @override
-  void dispose() {
-    _animation.dispose();
-    super.dispose();
   }
 
   List<double> _displayed() {
@@ -161,6 +171,9 @@ class _EqualizerCurveState extends State<EqualizerCurve>
     final accent = widget.enabled
         ? colorScheme.primary
         : colorScheme.onSurfaceVariant;
+    _spectrum.sync(widget.showSpectrum, () {
+      if (mounted) setState(() {});
+    });
 
     return RepaintBoundary(
       child: SizedBox(
@@ -184,21 +197,26 @@ class _EqualizerCurveState extends State<EqualizerCurve>
                         _handleUpdate(details.localPosition, size),
                     onPanEnd: (_) => _handleEnd(),
                     onPanCancel: _handleEnd,
-                    child: CustomPaint(
-                      size: size,
-                      painter: _EqualizerCurvePainter(
-                        levels: levels,
-                        accent: accent,
-                        enabled: widget.enabled,
-                        showLabels: widget.showLabels,
-                        activeIndex: _dragIndex,
-                        labelColor: colorScheme.onSurfaceVariant,
-                        gridColor: colorScheme.outlineVariant,
-                        surfaceColor: colorScheme.surface,
-                        leftPad: _leftPad,
-                        rightPad: _rightPad,
-                        topPad: _plotTop(),
-                        bottomPad: widget.showLabels ? _bottomPad : 0,
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        size: size,
+                        painter: _EqualizerCurvePainter(
+                          levels: levels,
+                          accent: accent,
+                          enabled: widget.enabled,
+                          showLabels: widget.showLabels,
+                          activeIndex: _dragIndex,
+                          labelColor: colorScheme.onSurfaceVariant,
+                          gridColor: colorScheme.outlineVariant,
+                          surfaceColor: colorScheme.surface,
+                          leftPad: _leftPad,
+                          rightPad: _rightPad,
+                          topPad: _plotTop(),
+                          bottomPad: widget.showLabels ? _bottomPad : 0,
+                          spectrum: _spectrum.values,
+                          spectrumEdges: _spectrum.edges,
+                          spectrumColor: colorScheme.primary,
+                        ),
                       ),
                     ),
                   ),
@@ -233,6 +251,9 @@ class _EqualizerCurvePainter extends CustomPainter {
     required this.rightPad,
     required this.topPad,
     required this.bottomPad,
+    this.spectrum,
+    required this.spectrumEdges,
+    required this.spectrumColor,
   });
 
   final List<double> levels;
@@ -247,6 +268,9 @@ class _EqualizerCurvePainter extends CustomPainter {
   final double rightPad;
   final double topPad;
   final double bottomPad;
+  final List<double>? spectrum;
+  final List<double> spectrumEdges;
+  final Color spectrumColor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -264,6 +288,28 @@ class _EqualizerCurvePainter extends CustomPainter {
     double yFor(double db) => topPad + (kEqLevelMax - db) / range * plotHeight;
     double xFor(int index) =>
         plotLeft + plotWidth / (eqVirtualBandCount - 1) * index;
+
+    // Real spectrum first: it sits behind the grid and the curve.
+    paintSpectrumBands(
+      canvas,
+      size,
+      values: spectrum,
+      edgeFrequencies: spectrumEdges,
+      frequencyToX: (f) {
+        // The graphic graph's x axis is its node grid: the 10 virtual band
+        // centres (31 Hz → 16 kHz) sit at evenly spaced positions, and they are
+        // exactly octave-spaced, so the axis is the log range between the first
+        // and last node. Anchoring here makes spectrum energy line up with the
+        // node labels (1 kHz energy appears under the "1k" node).
+        final minLog = math.log(kEqVirtualBandFrequencies.first);
+        final maxLog = math.log(kEqVirtualBandFrequencies.last);
+        final t = ((math.log(f) - minLog) / (maxLog - minLog)).clamp(0.0, 1.0);
+        return plotLeft + t * plotWidth;
+      },
+      plotBottom: topPad + plotHeight,
+      maxBarHeight: plotHeight,
+      color: spectrumColor,
+    );
 
     _paintGrid(canvas, size, plotLeft, plotWidth, plotHeight, yFor);
     _paintCurve(canvas, xFor, yFor);
@@ -431,7 +477,9 @@ class _EqualizerCurvePainter extends CustomPainter {
     return !_listEquals(oldDelegate.levels, levels) ||
         oldDelegate.accent != accent ||
         oldDelegate.enabled != enabled ||
-        oldDelegate.activeIndex != activeIndex;
+        oldDelegate.activeIndex != activeIndex ||
+        !identical(oldDelegate.spectrumEdges, spectrumEdges) ||
+        !identical(oldDelegate.spectrum, spectrum);
   }
 }
 
