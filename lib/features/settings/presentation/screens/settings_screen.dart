@@ -31,6 +31,7 @@ import '../widgets/settings_section.dart';
 import '../widgets/settings_tile.dart';
 import '../widgets/storage_info_card.dart';
 import '../../../../shared/widgets/empty_state.dart' show ScreenHeader;
+import '../../../backup/presentation/screens/backup_screen.dart';
 
 /// Snackbar copy for a finished missing-file cleanup, derived from the REAL
 /// removed-entry count returned by `reconcileMissingFiles`.
@@ -101,6 +102,8 @@ class SettingsScreen extends ConsumerWidget {
           SliverToBoxAdapter(child: _LibrarySection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           SliverToBoxAdapter(child: _StorageSection()),
+          const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
+          const SliverToBoxAdapter(child: _BackupSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
           const SliverToBoxAdapter(child: _SupportSection()),
           const SliverToBoxAdapter(child: SizedBox(height: AppTokens.s4)),
@@ -491,6 +494,49 @@ class _StorageSection extends ConsumerWidget {
             ),
           ),
           data: (info) => StorageInfoCard(),
+        ),
+      ],
+    );
+  }
+}
+
+/// Backup section: saves a `.vtb` file of user data to a folder the user owns
+/// and restores from one. Music files themselves are never included.
+class _BackupSection extends StatelessWidget {
+  const _BackupSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SettingsSection(
+      title: 'Backup & Restore',
+      children: [
+        SettingsTile(
+          title: 'Backup & Restore',
+          subtitle: 'Save or restore your playlists, favorites, history and settings',
+          leading: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: colorScheme.secondary.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(AppTokens.rMd),
+            ),
+            child: Icon(
+              Icons.settings_backup_restore_rounded,
+              size: 20,
+              color: colorScheme.secondary,
+            ),
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const BackupScreen()),
+          ),
+          isLastInSection: true,
         ),
       ],
     );
