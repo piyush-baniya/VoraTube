@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../shared/widgets/empty_state.dart' show EmptyState;
+import '../../../ads/banner_ad_widget.dart';
+import '../../../ads/interstitial_ads_provider.dart';
 import '../../../library/data/library_models.dart';
 import '../../../library/data/song_ref_mapper.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
@@ -13,11 +15,25 @@ import '../widgets/listening_insights.dart';
 
 /// Dedicated statistics screen — a deeper, scrollable view of listening
 /// history than the compact "Your Listening" strip on the Library.
-class StatisticsScreen extends ConsumerWidget {
+class StatisticsScreen extends ConsumerStatefulWidget {
   const StatisticsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<StatisticsScreen> createState() => _StatisticsScreenState();
+}
+
+class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Interstitial ad trigger: the user opened Statistics.
+    Future.microtask(
+      () => ref.read(interstitialAdControllerProvider).showOnTrigger(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -33,51 +49,63 @@ class StatisticsScreen extends ConsumerWidget {
         backgroundColor: theme.colorScheme.surface,
         foregroundColor: theme.colorScheme.onSurface,
       ),
-      body: ref
-          .watch(listeningStatsProvider)
-          .when(
-            skipLoadingOnRefresh: true,
-            loading: () => const Center(
-              child: CircularProgressIndicator(strokeWidth: 2.4),
-            ),
-            error: (_, _) => EmptyState(
-              icon: Icons.bar_chart_rounded,
-              title: 'Could not load statistics',
-              message: 'Your data is safe. Try again in a moment.',
-              actionLabel: 'Retry',
-              onAction: () => ref.invalidate(listeningStatsProvider),
-            ),
-            data: (stats) {
-              if (stats.totalSongs == 0) {
-                return const EmptyState(
-                  icon: Icons.bar_chart_rounded,
-                  title: 'No data yet',
-                  message:
-                      'Scan or import music, then play a song to see '
-                      'your listening statistics.',
-                );
-              }
-              return CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  SliverToBoxAdapter(child: _SummaryHeader(stats: stats)),
-                  const SliverToBoxAdapter(
-                    child: SizedBox(height: AppTokens.s2),
-                  ),
-                  const _TopArtistOverview(),
-                  const _TopPlayedSection(),
-                  const _RecentlyPlayedSection(),
-                  const _TodaySection(),
-                  const _PeakDaySection(),
-                  const _WeeklyReportSection(),
-                  const _YearlyReportSection(),
-                  const SliverToBoxAdapter(
-                    child: SizedBox(height: AppTokens.s8),
-                  ),
-                ],
-              );
-            },
+      body: Column(
+        children: [
+          // A compact banner above the stats (collapses to nothing for
+          // Premium users).
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+            child: VoraTubeBannerAd(),
           ),
+          Expanded(
+            child: ref
+                .watch(listeningStatsProvider)
+                .when(
+                  skipLoadingOnRefresh: true,
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                  error: (_, _) => EmptyState(
+                    icon: Icons.bar_chart_rounded,
+                    title: 'Could not load statistics',
+                    message: 'Your data is safe. Try again in a moment.',
+                    actionLabel: 'Retry',
+                    onAction: () => ref.invalidate(listeningStatsProvider),
+                  ),
+                  data: (stats) {
+                    if (stats.totalSongs == 0) {
+                      return const EmptyState(
+                        icon: Icons.bar_chart_rounded,
+                        title: 'No data yet',
+                        message:
+                            'Scan or import music, then play a song to see '
+                            'your listening statistics.',
+                      );
+                    }
+                    return CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        SliverToBoxAdapter(child: _SummaryHeader(stats: stats)),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: AppTokens.s2),
+                        ),
+                        const _TopArtistOverview(),
+                        const _TopPlayedSection(),
+                        const _RecentlyPlayedSection(),
+                        const _TodaySection(),
+                        const _PeakDaySection(),
+                        const _WeeklyReportSection(),
+                        const _YearlyReportSection(),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: AppTokens.s8),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+          ),
+        ],
+      ),
     );
   }
 }

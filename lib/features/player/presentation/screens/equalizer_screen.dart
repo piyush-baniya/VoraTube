@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_tokens.dart';
 import '../../../../app/widgets/vora_snackbar.dart';
 import '../../../../core/audio/audio_effects.dart';
+import '../../../../core/audio/parametric_eq.dart';
 import '../../../../shared/widgets/artwork_view.dart';
 import '../../../settings/data/settings_models.dart';
 import '../../../settings/presentation/providers/settings_providers.dart';
@@ -11,6 +14,7 @@ import '../../data/equalizer_settings.dart';
 import '../providers/equalizer_providers.dart';
 import '../providers/player_providers.dart';
 import '../widgets/equalizer_curve.dart';
+import '../widgets/parametric_curve.dart';
 import '../widgets/player_palette_surface.dart';
 import '../widgets/speed_sheet.dart';
 import '../widgets/volume_booster_sheet.dart';
@@ -55,11 +59,17 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
   List<double>? _draftLevels;
   double? _draftPreamp;
 
+  /// Live parametric band stack while a node is being dragged; committed the
+  /// same way as [_draftLevels].
+  List<ParametricEqBand>? _draftBands;
+  String? _selectedBandId;
+
   @override
   Widget build(BuildContext context) {
     final audio = ref.watch(audioSettingsProvider);
     final ui = ref.watch(equalizerSettingsProvider);
     final song = ref.watch(currentTrackProvider);
+    final isParametric = audio.eqMode == EqEngineMode.parametric;
 
     final baseLevels = effectiveEqLevels(
       preset: audio.eqPreset,
@@ -67,17 +77,10 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
     );
     final levels = _draftLevels ?? baseLevels;
     final preamp = _draftPreamp ?? audio.preampDb;
+    final bands = _draftBands ?? audio.parametricBands;
 
     final screen = MediaQuery.sizeOf(context);
     final wide = screen.width > screen.height;
-    final curve = _curveBlock(context, audio.eqEnabled, levels);
-    final controls = _controlsBlock(
-      context,
-      audio: audio,
-      ui: ui,
-      levels: levels,
-      preamp: preamp,
-    );
 
     return Column(
       children: [
@@ -92,55 +95,42 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
           ),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: _modeBlock(context, ui.mode),
+            child: _engineModeBlock(context, audio.eqMode),
           ),
         ),
+        if (!isParametric)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.s4,
+              0,
+              AppTokens.s4,
+              AppTokens.s1,
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _modeBlock(context, ui.mode),
+            ),
+          ),
         Expanded(
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 1100),
-              child: wide
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          flex: 5,
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppTokens.s4,
-                              AppTokens.s2,
-                              AppTokens.s2,
-                              AppTokens.s6,
-                            ),
-                            child: curve,
-                          ),
-                        ),
-                        const VerticalDivider(width: 1),
-                        Expanded(
-                          flex: 4,
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(
-                              AppTokens.s3,
-                              AppTokens.s2,
-                              AppTokens.s4,
-                              AppTokens.s6,
-                            ),
-                            child: controls,
-                          ),
-                        ),
-                      ],
+              child: isParametric
+                  ? _parametricBody(
+                      context,
+                      audio: audio,
+                      ui: ui,
+                      bands: bands,
+                      preamp: preamp,
+                      wide: wide,
                     )
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppTokens.s4,
-                        AppTokens.s2,
-                        AppTokens.s4,
-                        AppTokens.s6,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [curve, controls],
-                      ),
+                  : _graphicBody(
+                      context,
+                      audio: audio,
+                      ui: ui,
+                      levels: levels,
+                      preamp: preamp,
+                      wide: wide,
                     ),
             ),
           ),
@@ -265,6 +255,319 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
           ),
         ],
       ),
+    );
+  }
+
+  // ── Graphic body ─────────────────────────────────────────────────────
+
+  Widget _graphicBody(
+    BuildContext context, {
+    required AudioSettings audio,
+    required EqualizerUiSettings ui,
+    required List<double> levels,
+    required double preamp,
+    required bool wide,
+  }) {
+    final curve = _curveBlock(context, audio.eqEnabled, levels);
+    final controls = _controlsBlock(
+      context,
+      audio: audio,
+      ui: ui,
+      levels: levels,
+      preamp: preamp,
+    );
+    if (wide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 5,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s4,
+                AppTokens.s2,
+                AppTokens.s2,
+                AppTokens.s6,
+              ),
+              child: curve,
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(
+            flex: 4,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s3,
+                AppTokens.s2,
+                AppTokens.s4,
+                AppTokens.s6,
+              ),
+              child: controls,
+            ),
+          ),
+        ],
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s4,
+        AppTokens.s2,
+        AppTokens.s4,
+        AppTokens.s6,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [curve, controls],
+      ),
+    );
+  }
+
+  // ── Parametric body ──────────────────────────────────────────────────
+
+  Widget _parametricBody(
+    BuildContext context, {
+    required AudioSettings audio,
+    required EqualizerUiSettings ui,
+    required List<ParametricEqBand> bands,
+    required double preamp,
+    required bool wide,
+  }) {
+    // The response graph lives OUTSIDE any scrollable so node drags never
+    // fight the scroll gesture; only the controls scroll beneath it.
+    final curve = _parametricCurveBlock(context, audio, bands);
+    final controls = _parametricControlsBlock(context, ui, bands, preamp);
+    if (wide) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s4,
+                AppTokens.s2,
+                AppTokens.s2,
+                AppTokens.s2,
+              ),
+              child: curve,
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(
+            flex: 4,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppTokens.s3,
+                AppTokens.s2,
+                AppTokens.s4,
+                AppTokens.s6,
+              ),
+              child: controls,
+            ),
+          ),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppTokens.s4,
+            AppTokens.s2,
+            AppTokens.s4,
+            AppTokens.s1,
+          ),
+          child: curve,
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              AppTokens.s4,
+              AppTokens.s1,
+              AppTokens.s4,
+              AppTokens.s6,
+            ),
+            child: controls,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _parametricCurveBlock(
+    BuildContext context,
+    AudioSettings audio,
+    List<ParametricEqBand> bands,
+  ) {
+    const height = 240.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ParametricEqCurve(
+          bands: bands,
+          enabled: audio.eqEnabled,
+          height: height,
+          selectedBandId: _selectedBandId,
+          onSelectBand: (id) => setState(() => _selectedBandId = id),
+          onBandChanged: _editBandDuringDrag,
+          onDragCommit: _commitDraftBands,
+        ),
+        const SizedBox(height: AppTokens.s1),
+        Text(
+          audio.eqEnabled
+              ? 'Drag nodes: horizontal = frequency, vertical = gain.'
+              : 'Bypassed — your curve is kept but not applied.',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  Widget _parametricControlsBlock(
+    BuildContext context,
+    EqualizerUiSettings ui,
+    List<ParametricEqBand> bands,
+    double preamp,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _parametricPresetsBlock(context, ui, bands),
+        const SizedBox(height: AppTokens.s3),
+        _parametricBandsBlock(context, bands),
+        const SizedBox(height: AppTokens.s3),
+        // Parametric biquads self-limit (no hard clip ceiling), but the shared
+        // preamp still matters for loudness; no clipping banner applies.
+        _preampBlock(
+          context,
+          ref.read(audioSettingsProvider),
+          List<double>.filled(eqVirtualBandCount, 0.0),
+          preamp,
+          showClipping: false,
+        ),
+        const SizedBox(height: AppTokens.s3),
+        _processingBlock(context),
+      ],
+    );
+  }
+
+  Widget _parametricPresetsBlock(
+    BuildContext context,
+    EqualizerUiSettings ui,
+    List<ParametricEqBand> bands,
+  ) {
+    final saved = ui.parametricPresets;
+    return _Section(
+      title: 'Presets',
+      action: TextButton.icon(
+        onPressed: _resetParametric,
+        icon: const Icon(Icons.restart_alt_rounded, size: 18),
+        label: const Text('Reset'),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (saved.isNotEmpty) ...[
+            Wrap(
+              spacing: AppTokens.s2,
+              runSpacing: AppTokens.s2,
+              children: [
+                for (final preset in saved)
+                  InputChip(
+                    avatar: preset.pinned
+                        ? const Icon(Icons.push_pin_rounded, size: 16)
+                        : null,
+                    label: Text(preset.name),
+                    selected: ui.selectedParametricPresetId == preset.id,
+                    onPressed: () => _applyParametricPreset(preset),
+                    onDeleted: () => _confirmDeleteParametricPreset(preset),
+                    deleteIcon: const Icon(Icons.close_rounded, size: 16),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppTokens.s2),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _saveCurrentBands(bands),
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                  label: const Text('Save bands'),
+                ),
+              ),
+              if (saved.isNotEmpty) ...[
+                const SizedBox(width: AppTokens.s2),
+                IconButton(
+                  onPressed: () => _showManageParametricPresets(),
+                  icon: const Icon(Icons.reorder_rounded),
+                  tooltip: 'Manage parametric presets',
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: AppTokens.s1),
+          Text(
+            bands.isEmpty
+                ? 'No bands — output is flat. Add a band to sculpt the sound.'
+                : '${bands.length} band${bands.length == 1 ? '' : 's'} shaping the sound.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _parametricBandsBlock(
+    BuildContext context,
+    List<ParametricEqBand> bands,
+  ) {
+    return _Section(
+      title: 'Bands',
+      action: TextButton.icon(
+        onPressed: bands.length >= parametricMaxBands ? null : _addBand,
+        icon: const Icon(Icons.add_rounded, size: 18),
+        label: const Text('Add'),
+      ),
+      child: bands.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
+              child: Text(
+                'No bands yet. Tap Add to insert a peaking filter.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                for (var index = 0; index < bands.length; index++) ...[
+                  _ParametricBandRow(
+                    index: index,
+                    band: bands[index],
+                    isFirst: index == 0,
+                    isLast: index == bands.length - 1,
+                    onChanged: (updated) => _onBandSlider(updated),
+                    onChangeEnd: _commitDraftBands,
+                    onCommitted: (updated) => _onBandCommitted(updated),
+                    onDelete: () => _deleteBand(updatedId: bands[index].id),
+                    onMoveUp: index > 0
+                        ? () => _moveBand(bands[index].id, up: true)
+                        : null,
+                    onMoveDown: index < bands.length - 1
+                        ? () => _moveBand(bands[index].id, up: false)
+                        : null,
+                  ),
+                  if (index != bands.length - 1)
+                    const SizedBox(height: AppTokens.s2),
+                ],
+              ],
+            ),
     );
   }
 
@@ -443,10 +746,11 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
     BuildContext context,
     AudioSettings audio,
     List<double> levels,
-    double preamp,
-  ) {
-    final boost = maxEqBoostDb(levels);
-    final clipped = audio.eqEnabled && (preamp + boost) > 0.05;
+    double preamp, {
+    bool showClipping = true,
+  }) {
+    final boost = showClipping ? maxEqBoostDb(levels) : 0.0;
+    final clipped = showClipping && audio.eqEnabled && (preamp + boost) > 0.05;
     final suggested = suggestedPreampDb(levels);
     final theme = Theme.of(context);
 
@@ -455,7 +759,7 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (clipped)
+          if (showClipping && clipped)
             _ClippingBanner(
               suggestedDb: suggested,
               onApply: () {
@@ -475,14 +779,15 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
                 ),
               ),
               const Spacer(),
-              Text(
-                'Headroom ${(boost + preamp).toStringAsFixed(1)} dB',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: clipped
-                      ? theme.colorScheme.error
-                      : theme.colorScheme.onSurfaceVariant,
+              if (showClipping)
+                Text(
+                  'Headroom ${(boost + preamp).toStringAsFixed(1)} dB',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: clipped
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
             ],
           ),
           Slider(
@@ -535,6 +840,32 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
           ),
         ],
       ),
+    );
+  }
+
+  // ── Engine switch ────────────────────────────────────────────────────
+
+  /// Chooses the audio engine: the Android hardware 10-band graphic EQ or the
+  /// in-app parametric biquad pipeline. Only one engine is active at a time
+  /// (both gated by the top bypass); switching preserves both curves.
+  Widget _engineModeBlock(BuildContext context, EqEngineMode mode) {
+    return SegmentedButton<EqEngineMode>(
+      segments: const [
+        ButtonSegment(
+          value: EqEngineMode.graphic,
+          label: Text('Graphic'),
+          icon: Icon(Icons.graphic_eq_rounded, size: 18),
+        ),
+        ButtonSegment(
+          value: EqEngineMode.parametric,
+          label: Text('Parametric'),
+          icon: Icon(Icons.multiline_chart_rounded, size: 18),
+        ),
+      ],
+      selected: {mode},
+      onSelectionChanged: (selection) {
+        ref.read(audioSettingsProvider.notifier).setEqMode(selection.first);
+      },
     );
   }
 
@@ -613,6 +944,163 @@ class _EqualizerBodyState extends ConsumerState<_EqualizerBody> {
         .read(audioSettingsProvider.notifier)
         .setEqCustomLevels(List<double>.filled(eqVirtualBandCount, 0.0));
     VoraSnackbar.success(context, 'Equalizer reset to flat.');
+  }
+
+  // ── Parametric band editing ─────────────────────────────────────────
+
+  List<ParametricEqBand> get _effectiveBands =>
+      _draftBands ??
+      List<ParametricEqBand>.from(
+        ref.read(audioSettingsProvider).parametricBands,
+      );
+
+  void _beginBandsEdit() {
+    if (_draftBands != null) return;
+    _draftBands = _effectiveBands;
+    ref
+        .read(equalizerSettingsProvider.notifier)
+        .clearSelectedParametricPreset();
+  }
+
+  void _editBandDuringDrag(ParametricEqBand updated) {
+    _beginBandsEdit();
+    final draft = _draftBands!;
+    final index = draft.indexWhere((b) => b.id == updated.id);
+    if (index < 0) return;
+    draft[index] = updated;
+    setState(() => _selectedBandId = updated.id);
+  }
+
+  void _commitDraftBands() {
+    final draft = _draftBands;
+    if (draft == null) return;
+    ref.read(audioSettingsProvider.notifier).setParametricBands(draft);
+    setState(() => _draftBands = null);
+  }
+
+  void _onBandSlider(ParametricEqBand updated) {
+    _beginBandsEdit();
+    final draft = _draftBands!;
+    final index = draft.indexWhere((b) => b.id == updated.id);
+    if (index < 0) return;
+    draft[index] = updated;
+    setState(() {});
+  }
+
+  void _onBandCommitted(ParametricEqBand updated) {
+    _beginBandsEdit();
+    final index = _draftBands!.indexWhere((b) => b.id == updated.id);
+    if (index < 0) return;
+    _draftBands![index] = updated;
+    _commitDraftBands();
+  }
+
+  void _addBand() {
+    _beginBandsEdit();
+    _draftBands!.add(
+      ParametricEqBand(
+        id: 'param-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}',
+      ),
+    );
+    _commitDraftBands();
+  }
+
+  void _deleteBand({required String updatedId}) {
+    _beginBandsEdit();
+    _draftBands!.removeWhere((b) => b.id == updatedId);
+    if (_selectedBandId == updatedId) {
+      setState(() => _selectedBandId = null);
+    }
+    _commitDraftBands();
+  }
+
+  void _moveBand(String id, {required bool up}) {
+    _beginBandsEdit();
+    final draft = _draftBands!;
+    final index = draft.indexWhere((b) => b.id == id);
+    if (index < 0) return;
+    final target = up ? index - 1 : index + 1;
+    if (target < 0 || target >= draft.length) return;
+    final moved = draft.removeAt(index);
+    draft.insert(target, moved);
+    _commitDraftBands();
+  }
+
+  void _applyParametricPreset(ParametricEqSavedPreset preset) {
+    ref
+        .read(equalizerSettingsProvider.notifier)
+        .selectParametricPreset(preset.id);
+    ref
+        .read(audioSettingsProvider.notifier)
+        .setParametricBands(List<ParametricEqBand>.from(preset.bands));
+    setState(() {
+      _draftBands = null;
+      _selectedBandId = null;
+    });
+  }
+
+  void _resetParametric() {
+    ref
+        .read(equalizerSettingsProvider.notifier)
+        .clearSelectedParametricPreset();
+    ref.read(audioSettingsProvider.notifier).setParametricBands(const []);
+    setState(() {
+      _draftBands = null;
+      _selectedBandId = null;
+    });
+    VoraSnackbar.success(context, 'Parametric equalizer reset to flat.');
+  }
+
+  Future<void> _saveCurrentBands(List<ParametricEqBand> bands) async {
+    if (bands.isEmpty) {
+      VoraSnackbar.info(context, 'Add at least one band before saving.');
+      return;
+    }
+    final name = await _promptName(context, title: 'Save parametric preset');
+    if (name == null || !mounted) return;
+    final saved = ref
+        .read(equalizerSettingsProvider.notifier)
+        .saveParametricPreset(name, bands);
+    if (saved == null) return;
+    _applyParametricPreset(saved);
+    if (mounted) {
+      VoraSnackbar.success(context, 'Saved “${saved.name}”.');
+    }
+  }
+
+  Future<void> _confirmDeleteParametricPreset(
+    ParametricEqSavedPreset preset,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete “${preset.name}”?'),
+        content: const Text('This preset will be removed from this device.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref
+        .read(equalizerSettingsProvider.notifier)
+        .deleteParametricPreset(preset.id);
+  }
+
+  Future<void> _showManageParametricPresets() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _ManageParametricPresetsSheet(),
+    );
   }
 
   Future<void> _saveCurrentCurve(List<double> levels) async {
@@ -900,6 +1388,233 @@ class _BandRow extends StatelessWidget {
   }
 }
 
+class _ParametricBandRow extends StatelessWidget {
+  const _ParametricBandRow({
+    required this.index,
+    required this.band,
+    required this.isFirst,
+    required this.isLast,
+    required this.onChanged,
+    required this.onChangeEnd,
+    required this.onCommitted,
+    required this.onDelete,
+    this.onMoveUp,
+    this.onMoveDown,
+  });
+
+  final int index;
+  final ParametricEqBand band;
+  final bool isFirst;
+  final bool isLast;
+  final ValueChanged<ParametricEqBand> onChanged;
+  final VoidCallback onChangeEnd;
+  final ValueChanged<ParametricEqBand> onCommitted;
+  final VoidCallback onDelete;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final gainEditable =
+        band.type != ParametricFilterType.lowPass &&
+        band.type != ParametricFilterType.highPass;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(
+        AppTokens.s3,
+        AppTokens.s2,
+        AppTokens.s3,
+        AppTokens.s2,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(AppTokens.rLg),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+          width: AppTokens.borderHairline,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Switch(
+                value: band.enabled,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: (value) =>
+                    onCommitted(band.copyWith(enabled: value)),
+              ),
+              const SizedBox(width: AppTokens.s1),
+              Expanded(
+                child: Text(
+                  '#${index + 1}  ${parametricTypeLabel(band.type)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+                tooltip: 'Move up',
+                onPressed: isFirst ? null : onMoveUp,
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.arrow_downward_rounded, size: 18),
+                tooltip: 'Move down',
+                onPressed: isLast ? null : onMoveDown,
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  Icons.delete_outline_rounded,
+                  size: 18,
+                  color: colorScheme.error,
+                ),
+                tooltip: 'Delete band',
+                onPressed: onDelete,
+              ),
+            ],
+          ),
+          const SizedBox(height: AppTokens.s1),
+          Row(
+            children: [
+              Text('Type', style: theme.textTheme.bodySmall),
+              const Spacer(),
+              SizedBox(
+                width: 120,
+                child: DropdownButton<ParametricFilterType>(
+                  value: band.type,
+                  isDense: true,
+                  isExpanded: true,
+                  borderRadius: BorderRadius.circular(AppTokens.rLg),
+                  onChanged: (value) {
+                    if (value != null) {
+                      onCommitted(band.copyWith(type: value));
+                    }
+                  },
+                  items: [
+                    for (final type in ParametricFilterType.values)
+                      DropdownMenuItem(
+                        value: type,
+                        child: Text(
+                          parametricTypeLabel(type),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          _SliderRow(
+            label: 'Frequency',
+            valueText: formatFrequency(band.frequencyHz),
+            slider: Slider(
+              min: math.log(parametricMinFrequencyHz) / math.ln10,
+              max: math.log(20000) / math.ln10,
+              divisions: 180,
+              value: (math.log(band.frequencyHz) / math.ln10).clamp(
+                math.log(parametricMinFrequencyHz) / math.ln10,
+                math.log(20000) / math.ln10,
+              ),
+              label: formatFrequency(band.frequencyHz),
+              onChanged: (value) => onChanged(
+                band.copyWith(
+                  frequencyHz: clampedFrequency(math.pow(10, value).toDouble()),
+                ),
+              ),
+              onChangeEnd: (_) => onChangeEnd(),
+            ),
+          ),
+          if (gainEditable)
+            _SliderRow(
+              label: 'Gain',
+              valueText:
+                  '${band.gainDb >= 0 ? '+' : ''}${band.gainDb.toStringAsFixed(1)} dB',
+              slider: Slider(
+                min: -parametricMaxGainDb,
+                max: parametricMaxGainDb,
+                divisions: 48,
+                value: band.gainDb.clamp(
+                  -parametricMaxGainDb,
+                  parametricMaxGainDb,
+                ),
+                label: '${band.gainDb.toStringAsFixed(1)} dB',
+                onChanged: (value) => onChanged(band.copyWith(gainDb: value)),
+                onChangeEnd: (_) => onChangeEnd(),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppTokens.s2),
+              child: Text(
+                'Gain is fixed for ${parametricTypeLabel(band.type)} filters.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          _SliderRow(
+            label: 'Q',
+            valueText: band.q.toStringAsFixed(1),
+            slider: Slider(
+              min: parametricMinQ,
+              max: parametricMaxQ,
+              divisions: 99,
+              value: band.q.clamp(parametricMinQ, parametricMaxQ),
+              label: band.q.toStringAsFixed(1),
+              onChanged: (value) => onChanged(band.copyWith(q: value)),
+              onChangeEnd: (_) => onChangeEnd(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({
+    required this.label,
+    required this.valueText,
+    required this.slider,
+  });
+
+  final String label;
+  final String valueText;
+  final Widget slider;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(label, style: theme.textTheme.bodySmall),
+            const Spacer(),
+            Text(
+              valueText,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        slider,
+      ],
+    );
+  }
+}
+
 class _ClippingBanner extends StatelessWidget {
   const _ClippingBanner({required this.suggestedDb, required this.onApply});
 
@@ -1104,6 +1819,130 @@ class _ManagePresetsSheet extends ConsumerWidget {
       ),
     );
   }
+}
+
+// ── Parametric preset management ───────────────────────────────────────
+
+class _ManageParametricPresetsSheet extends ConsumerWidget {
+  const _ManageParametricPresetsSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final presets = ref.watch(equalizerSettingsProvider).parametricPresets;
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppTokens.s4,
+          0,
+          AppTokens.s4,
+          AppTokens.s4,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Parametric presets',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: AppTokens.s2),
+            if (presets.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppTokens.s4),
+                child: Text(
+                  'No saved presets yet. Shape the bands and tap Save bands.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              )
+            else
+              Flexible(
+                child: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  itemCount: presets.length,
+                  onReorder: (oldIndex, newIndex) => ref
+                      .read(equalizerSettingsProvider.notifier)
+                      .reorderParametricPresets(oldIndex, newIndex),
+                  itemBuilder: (context, index) {
+                    final preset = presets[index];
+                    final activeBands = preset.bands
+                        .where((b) => b.enabled)
+                        .length;
+                    return ListTile(
+                      key: ValueKey(preset.id),
+                      leading: IconButton(
+                        icon: Icon(
+                          preset.pinned
+                              ? Icons.push_pin_rounded
+                              : Icons.push_pin_outlined,
+                        ),
+                        tooltip: preset.pinned ? 'Unpin' : 'Pin',
+                        onPressed: () => ref
+                            .read(equalizerSettingsProvider.notifier)
+                            .toggleParametricPin(preset.id),
+                      ),
+                      title: Text(preset.name),
+                      subtitle: Text(
+                        '${preset.bands.length} band${preset.bands.length == 1 ? '' : 's'} · $activeBands active',
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            tooltip: 'Rename',
+                            onPressed: () async {
+                              final name = await _promptName(
+                                context,
+                                title: 'Rename preset',
+                                initial: preset.name,
+                              );
+                              if (name == null) return;
+                              await ref
+                                  .read(equalizerSettingsProvider.notifier)
+                                  .renameParametricPreset(preset.id, name);
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy_rounded),
+                            tooltip: 'Duplicate',
+                            onPressed: () => ref
+                                .read(equalizerSettingsProvider.notifier)
+                                .duplicateParametricPreset(preset.id),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            tooltip: 'Delete',
+                            onPressed: () => ref
+                                .read(equalizerSettingsProvider.notifier)
+                                .deleteParametricPreset(preset.id),
+                          ),
+                          const Icon(Icons.drag_handle_rounded),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String parametricTypeLabel(ParametricFilterType type) {
+  return switch (type) {
+    ParametricFilterType.peaking => 'Peaking',
+    ParametricFilterType.lowShelf => 'Low shelf',
+    ParametricFilterType.highShelf => 'High shelf',
+    ParametricFilterType.lowPass => 'Low-pass',
+    ParametricFilterType.highPass => 'High-pass',
+  };
 }
 
 // ── Dialogs ─────────────────────────────────────────────────────────────

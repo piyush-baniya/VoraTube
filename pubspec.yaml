@@ -34,7 +34,8 @@ dependencies:
   flutter_riverpod: ^2.6.1
   drift: ^2.34.3
   drift_flutter: ^0.3.1
-  just_audio: ^0.10.6
+  just_audio:
+    path: third_party/just_audio
   audio_service: ^0.18.19
   audio_session: ^0.2.4
   permission_handler: ^13.0.1

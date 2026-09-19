@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/audio/audio_effects.dart';
+import '../../../core/audio/parametric_eq.dart';
 
 /// A user-saved equalizer curve.
 ///
@@ -73,6 +74,102 @@ class EqCustomPreset {
   int get hashCode => Object.hash(id, name, pinned, Object.hashAll(levels));
 }
 
+/// A user-saved parametric equalizer preset: a full band stack that can be
+/// recreated at any sample rate.
+@immutable
+class ParametricEqSavedPreset {
+  const ParametricEqSavedPreset({
+    required this.id,
+    required this.name,
+    required this.bands,
+    this.pinned = false,
+  });
+
+  final String id;
+  final String name;
+  final List<ParametricEqBand> bands;
+  final bool pinned;
+
+  ParametricEqSavedPreset copyWith({
+    String? name,
+    List<ParametricEqBand>? bands,
+    bool? pinned,
+  }) {
+    return ParametricEqSavedPreset(
+      id: id,
+      name: name ?? this.name,
+      bands: bands ?? this.bands,
+      pinned: pinned ?? this.pinned,
+    );
+  }
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'pinned': pinned,
+    'bands': [for (final band in bands) band.toJson()],
+  };
+
+  static ParametricEqSavedPreset? tryFromJson(Object? json) {
+    if (json is! Map) return null;
+    final id = json['id'];
+    final name = json['name'];
+    if (id is! String || id.isEmpty) return null;
+    if (name is! String || name.isEmpty) return null;
+    final rawBands = json['bands'];
+    final bands = <ParametricEqBand>[];
+    if (rawBands is List) {
+      for (final raw in rawBands) {
+        final band = tryBandFromJson(raw);
+        if (band != null) bands.add(band);
+      }
+    }
+    if (bands.isEmpty) return null;
+    return ParametricEqSavedPreset(
+      id: id,
+      name: name,
+      bands: bands,
+      pinned: json['pinned'] == true,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ParametricEqSavedPreset &&
+          other.id == id &&
+          other.name == name &&
+          other.pinned == pinned &&
+          listEquals(other.bands, bands);
+
+  @override
+  int get hashCode => Object.hash(id, name, pinned, Object.hashAll(bands));
+}
+
+ParametricEqBand? tryBandFromJson(Object? json) {
+  if (json is! Map) return null;
+  final id = json['id'];
+  if (id is! String || id.isEmpty) return null;
+  final typeName = json['type'];
+  final type = ParametricFilterType.values.firstWhere(
+    (t) => t.name == typeName,
+    orElse: () => ParametricFilterType.peaking,
+  );
+  final frequency = json['f'];
+  final gain = json['g'];
+  final q = json['q'];
+  final band = ParametricEqBand(
+    id: id,
+    enabled: json['enabled'] == true,
+    type: type,
+    frequencyHz: frequency is num ? frequency.toDouble() : 1000,
+    gainDb: gain is num ? gain.toDouble() : 0,
+    q: q is num ? q.toDouble() : 1,
+  );
+  band.clampToDspBounds();
+  return band;
+}
+
 /// Persisted equalizer UI preferences.
 ///
 /// Kept separate from [AudioSettings] on purpose: the sound itself is still
@@ -84,6 +181,8 @@ class EqualizerUiSettings {
     this.mode = EqMode.simple,
     this.presets = const [],
     this.selectedPresetId,
+    this.parametricPresets = const [],
+    this.selectedParametricPresetId,
   });
 
   final EqMode mode;
@@ -92,6 +191,18 @@ class EqualizerUiSettings {
   /// Id of the saved preset currently selected, or null when a built-in preset
   /// or a free-edited curve is active.
   final String? selectedPresetId;
+
+  /// User-saved parametric band stacks and the one currently selected.
+  final List<ParametricEqSavedPreset> parametricPresets;
+  final String? selectedParametricPresetId;
+
+  ParametricEqSavedPreset? parametricPresetById(String? id) {
+    if (id == null) return null;
+    for (final preset in parametricPresets) {
+      if (preset.id == id) return preset;
+    }
+    return null;
+  }
 
   EqCustomPreset? presetById(String? id) {
     if (id == null) return null;
@@ -106,6 +217,9 @@ class EqualizerUiSettings {
     List<EqCustomPreset>? presets,
     String? selectedPresetId,
     bool clearSelectedPreset = false,
+    List<ParametricEqSavedPreset>? parametricPresets,
+    String? selectedParametricPresetId,
+    bool clearSelectedParametricPreset = false,
   }) {
     return EqualizerUiSettings(
       mode: mode ?? this.mode,
@@ -113,6 +227,10 @@ class EqualizerUiSettings {
       selectedPresetId: clearSelectedPreset
           ? null
           : (selectedPresetId ?? this.selectedPresetId),
+      parametricPresets: parametricPresets ?? this.parametricPresets,
+      selectedParametricPresetId: clearSelectedParametricPreset
+          ? null
+          : (selectedParametricPresetId ?? this.selectedParametricPresetId),
     );
   }
 
@@ -121,9 +239,15 @@ class EqualizerUiSettings {
     'mode': mode.name,
     'selected': selectedPresetId,
     'presets': [for (final preset in presets) preset.toJson()],
+    'parametricPresets': [
+      for (final preset in parametricPresets) preset.toJson(),
+    ],
+    'selectedParametric': selectedParametricPresetId,
   });
 
-  /// Never throws: a corrupt blob resolves to the neutral default.
+  /// Never throws: a corrupt blob resolves to the neutral default. Unknown keys
+  /// from newer app versions are ignored, so v1 blobs stay readable after a
+  /// downgrade.
   static EqualizerUiSettings tryDecode(String source) {
     try {
       final decoded = jsonDecode(source);
@@ -142,11 +266,29 @@ class EqualizerUiSettings {
         }
       }
       final selected = decoded['selected'];
+      final rawParametric = decoded['parametricPresets'];
+      final parametricPresets = <ParametricEqSavedPreset>[];
+      final seenParametric = <String>{};
+      if (rawParametric is List) {
+        for (final raw in rawParametric) {
+          final preset = ParametricEqSavedPreset.tryFromJson(raw);
+          if (preset != null && seenParametric.add(preset.id)) {
+            parametricPresets.add(preset);
+          }
+        }
+      }
+      final selectedParametric = decoded['selectedParametric'];
       return EqualizerUiSettings(
         mode: mode,
         presets: presets,
         selectedPresetId: selected is String && seen.contains(selected)
             ? selected
+            : null,
+        parametricPresets: parametricPresets,
+        selectedParametricPresetId:
+            selectedParametric is String &&
+                seenParametric.contains(selectedParametric)
+            ? selectedParametric
             : null,
       );
     } catch (_) {
@@ -160,9 +302,16 @@ class EqualizerUiSettings {
       other is EqualizerUiSettings &&
           other.mode == mode &&
           other.selectedPresetId == selectedPresetId &&
-          listEquals(other.presets, presets);
+          listEquals(other.presets, presets) &&
+          listEquals(other.parametricPresets, parametricPresets) &&
+          other.selectedParametricPresetId == selectedParametricPresetId;
 
   @override
-  int get hashCode =>
-      Object.hash(mode, selectedPresetId, Object.hashAll(presets));
+  int get hashCode => Object.hash(
+    mode,
+    selectedPresetId,
+    Object.hashAll(presets),
+    Object.hashAll(parametricPresets),
+    selectedParametricPresetId,
+  );
 }

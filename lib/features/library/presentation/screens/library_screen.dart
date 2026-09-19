@@ -406,8 +406,8 @@ class _SongsSliver extends ConsumerWidget {
   final bool hasMore;
   final void Function(List<SongTileData> tiles, int startIndex) onPlay;
 
-  /// Insert a banner after every group of this many songs (per 90 songs).
-  static const int _adEveryTracks = 90;
+  /// Insert a banner after every group of this many songs (per 30 songs).
+  static const int _adEveryTracks = 30;
 
   /// Number of banner slots for [tiles]: one per full group of [tiles].
   int get _adCount => tiles.length ~/ _adEveryTracks;

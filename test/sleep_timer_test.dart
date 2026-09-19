@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/core/audio/audio_effects.dart';
+import 'package:vora_tube/core/audio/parametric_eq.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
 import 'package:vora_tube/features/player/presentation/providers/sleep_timer_provider.dart';
@@ -156,6 +157,12 @@ class _RecordingPlayer implements PlayerController {
     required bool enabled,
     required EqPreset preset,
     required List<double> customLevels,
+  }) async {}
+
+  @override
+  Future<void> setParametricEq({
+    required bool enabled,
+    required List<ParametricEqBand> bands,
   }) async {}
 
   @override
@@ -536,18 +543,16 @@ void main() {
 
         // Step the steppers down/up to 1 minute 30 seconds and confirm the
         // preview updates. The minutes stepper starts at 15.
-        final minutesStepper = find.ancestor(
-          of: find.text('Minutes'),
-          matching: find.byType(Column),
-        ).first;
+        final minutesStepper = find
+            .ancestor(of: find.text('Minutes'), matching: find.byType(Column))
+            .first;
         final minutesMinus = find.descendant(
           of: minutesStepper,
           matching: find.byIcon(Icons.remove_rounded),
         );
-        final secondsStepper = find.ancestor(
-          of: find.text('Seconds'),
-          matching: find.byType(Column),
-        ).first;
+        final secondsStepper = find
+            .ancestor(of: find.text('Seconds'), matching: find.byType(Column))
+            .first;
         final secondsPlus = find.descendant(
           of: secondsStepper,
           matching: find.byIcon(Icons.add_rounded),
@@ -573,7 +578,10 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(controller.state.isActive, isTrue);
-        expect(controller.state.remaining, const Duration(minutes: 1, seconds: 30));
+        expect(
+          controller.state.remaining,
+          const Duration(minutes: 1, seconds: 30),
+        );
       },
     );
 
@@ -628,18 +636,15 @@ void main() {
 
   group('SleepTimer time-of-day helpers', () {
     test('upcomingHours lists the next five whole hours', () {
-      expect(
-        upcomingHours(DateTime(2026, 1, 1, 8, 30, 0)),
-        [9, 10, 11, 12, 13],
-      );
-      expect(
-        upcomingHours(DateTime(2026, 1, 1, 8, 0, 0)),
-        [8, 9, 10, 11, 12],
-      );
-      expect(
-        upcomingHours(DateTime(2026, 1, 1, 23, 30, 0)),
-        [0, 1, 2, 3, 4],
-      );
+      expect(upcomingHours(DateTime(2026, 1, 1, 8, 30, 0)), [
+        9,
+        10,
+        11,
+        12,
+        13,
+      ]);
+      expect(upcomingHours(DateTime(2026, 1, 1, 8, 0, 0)), [8, 9, 10, 11, 12]);
+      expect(upcomingHours(DateTime(2026, 1, 1, 23, 30, 0)), [0, 1, 2, 3, 4]);
     });
 
     test('formatTimeOfDay renders 12-hour clock times', () {
@@ -651,32 +656,35 @@ void main() {
   });
 
   group('SleepTimerController time-of-day', () {
-    test('startTimeOfDay arms for the next occurrence and persists end time', () {
-      fakeAsync((async) {
-        final player = _RecordingPlayer(playing: true);
-        final pers = _ScheduleMemoryPersistence();
-        final now = DateTime(2026, 1, 1, 14, 30, 0);
-        final c = SleepTimerController(
-          player: player,
-          persistence: pers,
-          now: () => now,
-        );
-        c.startTimeOfDay(21, recurring: true);
-        async.flushMicrotasks();
+    test(
+      'startTimeOfDay arms for the next occurrence and persists end time',
+      () {
+        fakeAsync((async) {
+          final player = _RecordingPlayer(playing: true);
+          final pers = _ScheduleMemoryPersistence();
+          final now = DateTime(2026, 1, 1, 14, 30, 0);
+          final c = SleepTimerController(
+            player: player,
+            persistence: pers,
+            now: () => now,
+          );
+          c.startTimeOfDay(21, recurring: true);
+          async.flushMicrotasks();
 
-        expect(c.state.isActive, isTrue);
-        expect(c.state.isTimeOfDay, isTrue);
-        expect(c.state.hour, 21);
-        expect(c.state.recurring, isTrue);
-        expect(
-          c.state.endTimeMs,
-          DateTime(2026, 1, 1, 21, 0, 0).millisecondsSinceEpoch,
-        );
-        expect(pers.endMs, isNotNull);
-        expect(pers.schedule?.recurring, isTrue);
-        expect(player.pauseCalls, 0);
-      });
-    });
+          expect(c.state.isActive, isTrue);
+          expect(c.state.isTimeOfDay, isTrue);
+          expect(c.state.hour, 21);
+          expect(c.state.recurring, isTrue);
+          expect(
+            c.state.endTimeMs,
+            DateTime(2026, 1, 1, 21, 0, 0).millisecondsSinceEpoch,
+          );
+          expect(pers.endMs, isNotNull);
+          expect(pers.schedule?.recurring, isTrue);
+          expect(player.pauseCalls, 0);
+        });
+      },
+    );
 
     test('ignoreToday skips today and re-arms for tomorrow', () {
       fakeAsync((async) {

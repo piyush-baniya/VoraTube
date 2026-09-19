@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/core/audio/audio_effects.dart';
+import 'package:vora_tube/core/audio/parametric_eq.dart';
 import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
@@ -46,6 +47,16 @@ class SpyPlayerController implements PlayerController {
     required List<double> customLevels,
   }) async {
     lastEq = (enabled: enabled, preset: preset, levels: customLevels);
+  }
+
+  ({bool enabled, List<ParametricEqBand> bands})? lastParametricEq;
+
+  @override
+  Future<void> setParametricEq({
+    required bool enabled,
+    required List<ParametricEqBand> bands,
+  }) async {
+    lastParametricEq = (enabled: enabled, bands: bands);
   }
 
   @override
@@ -133,6 +144,21 @@ class _TestAudioSettingsController extends AudioSettingsController {
   Future<void> setPreampDb(double v) async {
     state = state.copyWith(preampDb: v.clamp(-12.0, 12.0));
   }
+
+  @override
+  Future<void> setEqEnabled(bool v) async {
+    state = state.copyWith(eqEnabled: v);
+  }
+
+  @override
+  Future<void> setEqMode(EqEngineMode v) async {
+    state = state.copyWith(eqMode: v);
+  }
+
+  @override
+  Future<void> setParametricBands(List<ParametricEqBand> v) async {
+    state = state.copyWith(parametricBands: v);
+  }
 }
 
 void main() {
@@ -185,6 +211,78 @@ void main() {
       expect(spy.replayGainCalls, hasLength(3));
       expect(spy.replayGainCalls[1].$1, ReplayGainMode.album);
       expect(spy.replayGainCalls[2].$2, -2.0);
+    });
+  });
+
+  group('parametric engine selection', () {
+    ProviderContainer _container(SpyPlayerController spy) {
+      final container = ProviderContainer(
+        overrides: [
+          playerProvider.overrideWithValue(spy),
+          audioSettingsProvider.overrideWith(
+            (ref) => _TestAudioSettingsController(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(audioSettingsBridgeProvider);
+      return container;
+    }
+
+    test('both engines start bypassed when the EQ is disabled', () {
+      final spy = SpyPlayerController();
+      _container(spy);
+      expect(spy.lastEq!.enabled, false);
+      expect(spy.lastParametricEq!.enabled, false);
+    });
+
+    test('graphic mode enables only the graphic engine', () {
+      final spy = SpyPlayerController();
+      final container = _container(spy);
+      final notifier = container.read(audioSettingsProvider.notifier);
+      notifier.setEqEnabled(true);
+
+      expect(spy.lastEq!.enabled, true);
+      expect(spy.lastParametricEq!.enabled, false);
+    });
+
+    test('parametric mode enables only the parametric engine', () {
+      final spy = SpyPlayerController();
+      final container = _container(spy);
+      final notifier = container.read(audioSettingsProvider.notifier);
+      notifier.setEqEnabled(true);
+      notifier.setEqMode(EqEngineMode.parametric);
+
+      expect(spy.lastEq!.enabled, false);
+      expect(spy.lastParametricEq!.enabled, true);
+    });
+
+    test('switching engines never leaves both active', () {
+      final spy = SpyPlayerController();
+      final container = _container(spy);
+      final notifier = container.read(audioSettingsProvider.notifier);
+      notifier.setEqEnabled(true);
+      notifier.setEqMode(EqEngineMode.parametric);
+      notifier.setEqMode(EqEngineMode.graphic);
+
+      expect(spy.lastEq!.enabled, true);
+      expect(spy.lastParametricEq!.enabled, false);
+    });
+
+    test('the parametric band stack is forwarded to the player', () {
+      final spy = SpyPlayerController();
+      final container = _container(spy);
+      final notifier = container.read(audioSettingsProvider.notifier);
+      notifier.setEqEnabled(true);
+      notifier.setEqMode(EqEngineMode.parametric);
+      notifier.setParametricBands([
+        ParametricEqBand(id: 'a', frequencyHz: 250, gainDb: 3),
+      ]);
+
+      expect(spy.lastParametricEq!.bands, hasLength(1));
+      expect(spy.lastParametricEq!.bands.single.frequencyHz, 250);
+      expect(spy.lastParametricEq!.bands.single.gainDb, 3);
+      expect(spy.lastEq!.enabled, false);
     });
   });
 }

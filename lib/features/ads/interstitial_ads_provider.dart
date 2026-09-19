@@ -11,10 +11,9 @@ import 'premium_providers.dart';
 /// off), presents a full-screen interstitial ad before continuing to count.
 /// Premium suppresses ads entirely.
 ///
-/// The same monotonic counter also unlocks the always-visible banner
-/// placements (Library/detail pages, home, playlists, search, settings) once
-/// [InterstitialAdController.bannerPlayThreshold] songs have been played, so a
-/// single counter drives every ad milestone and nothing is double-counted.
+/// Banner placements (home, Library, detail pages, playlists, search,
+/// settings, all songs, filtered songs, smart mixes, statistics, full player
+/// and mini player) are always visible, independently of the song counter.
 class InterstitialAdController extends ChangeNotifier {
   InterstitialAdController({
     required this.isPremium,
@@ -33,19 +32,13 @@ class InterstitialAdController extends ChangeNotifier {
   /// 10th, 15th, … distinct track start.
   static const int songInterval = 5;
 
-  /// Songs played before the always-visible banner ads may render.
-  static const int bannerPlayThreshold = 30;
-
   /// Test seam interval (defaults to [songInterval]); only tuned by tests.
   int _interval = songInterval;
 
   /// Monotonic count of distinct track starts since the session began. Never
-  /// reset per-ad, so the banner milestone keeps counting past the interstitials.
+  /// reset per-ad, so interstitials keep counting past their threshold.
   int _plays = 0;
   int get plays => _plays;
-
-  /// Whether the always-visible banners (Library/detail pages) may render.
-  bool get bannerEligible => _plays >= bannerPlayThreshold;
 
   /// Reacts to Premium activation/deactivation.
   ///
@@ -131,8 +124,4 @@ final interstitialAdControllerProvider =
   return controller;
 });
 
-/// Whether the always-visible banner placements may render yet, derived from
-/// the same monotonic song counter the interstitials use.
-final bannerEligibleProvider = Provider<bool>((ref) {
-  return ref.watch(interstitialAdControllerProvider).bannerEligible;
-});
+

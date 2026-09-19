@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/app_theme.dart';
 import '../../../core/audio/audio_effects.dart';
+import '../../../core/audio/parametric_eq.dart';
 
 /// User's theme preference.
 enum AppThemeMode {
@@ -47,6 +48,8 @@ class AudioSettings {
     this.eqEnabled = false,
     this.eqPreset = EqPreset.flat,
     this.eqCustomLevels = const [],
+    this.eqMode = EqEngineMode.graphic,
+    this.parametricBands = const [],
     this.playbackSpeed = kDefaultPlaybackSpeed,
     this.transitionMode = PlaybackTransitionMode.crossfade,
     this.crossfadeSeconds = kDefaultCrossfadeSeconds,
@@ -67,6 +70,16 @@ class AudioSettings {
   /// The 10-band custom curve (dB), only applied when [eqPreset] is
   /// [EqPreset.custom]. Persisted normalized to [eqVirtualBandCount] entries.
   final List<double> eqCustomLevels;
+
+  /// Which audio engine drives the equalizer: the Android hardware 10-band
+  /// graphic EQ, or the in-app parametric biquad pipeline. Only one engine is
+  /// ever active ([eqEnabled] gates both), so switching never double-processes.
+  final EqEngineMode eqMode;
+
+  /// The parametric band stack used when [eqMode] is [EqEngineMode.parametric].
+  /// Coefficients are computed from these bands in Dart and pushed to the
+  /// native audio processor; filtering state survives band edits.
+  final List<ParametricEqBand> parametricBands;
 
   /// Playback speed multiplied into the audio pipeline. Preserves pitch
   /// so speeding up / slowing down does not affect voice timbre.
@@ -91,6 +104,8 @@ class AudioSettings {
     bool? eqEnabled,
     EqPreset? eqPreset,
     List<double>? eqCustomLevels,
+    EqEngineMode? eqMode,
+    List<ParametricEqBand>? parametricBands,
     double? playbackSpeed,
     PlaybackTransitionMode? transitionMode,
     int? crossfadeSeconds,
@@ -104,6 +119,8 @@ class AudioSettings {
       eqCustomLevels: eqCustomLevels == null
           ? this.eqCustomLevels
           : normalizeEqLevels(eqCustomLevels),
+      eqMode: eqMode ?? this.eqMode,
+      parametricBands: parametricBands ?? this.parametricBands,
       playbackSpeed: playbackSpeed == null
           ? this.playbackSpeed
           : playbackSpeed
@@ -128,6 +145,8 @@ class AudioSettings {
           other.eqEnabled == eqEnabled &&
           other.eqPreset == eqPreset &&
           other.eqCustomLevels == eqCustomLevels &&
+          other.eqMode == eqMode &&
+          _bandListsEqual(other.parametricBands, parametricBands) &&
           other.playbackSpeed == playbackSpeed &&
           other.transitionMode == transitionMode &&
           other.crossfadeSeconds == crossfadeSeconds &&
@@ -140,11 +159,44 @@ class AudioSettings {
     eqEnabled,
     eqPreset,
     eqCustomLevels,
+    eqMode,
+    _bandsHash(parametricBands),
     playbackSpeed,
     transitionMode,
     crossfadeSeconds,
     audioBalance,
   );
+}
+
+bool _bandListsEqual(List<ParametricEqBand> a, List<ParametricEqBand> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].id != b[i].id ||
+        a[i].enabled != b[i].enabled ||
+        a[i].type != b[i].type ||
+        a[i].frequencyHz != b[i].frequencyHz ||
+        a[i].gainDb != b[i].gainDb ||
+        a[i].q != b[i].q) {
+      return false;
+    }
+  }
+  return true;
+}
+
+int _bandsHash(List<ParametricEqBand> bands) {
+  var hash = 0;
+  for (final b in bands) {
+    hash = Object.hash(
+      hash,
+      b.id,
+      b.enabled,
+      b.type,
+      b.frequencyHz,
+      b.gainDb,
+      b.q,
+    );
+  }
+  return hash * 0x1fffffff;
 }
 
 /// Settings for library management.
@@ -283,6 +335,8 @@ extension AudioSettingsJson on AudioSettings {
       '{"replayGain": "${replayGain.name}", "preampDb": $preampDb, '
       '"eqEnabled": $eqEnabled, "eqPreset": "${eqPreset.name}", '
       '"eqCustomLevels": ${_jsonList(eqCustomLevels)}, '
+      '"eqMode": "${eqMode.name}", '
+      '"parametricBands": ${parametricBandsToJson(parametricBands)}, '
       '"playbackSpeed": $playbackSpeed, '
       '"transitionMode": "${transitionMode.name}", '
       '"crossfadeSeconds": $crossfadeSeconds, '
@@ -303,6 +357,7 @@ extension AudioSettingsJson on AudioSettings {
       ).firstMatch(json);
       final playbackSpeedMatch = RegExp(r'"playbackSpeed"\s*:\s*([\d\.\-]+)')
           .firstMatch(json);
+      final eqModeMatch = RegExp(r'"eqMode"\s*:\s*"(\w+)"').firstMatch(json);
       final transitionModeMatch = RegExp(r'"transitionMode"\s*:\s*"(\w+)"')
           .firstMatch(json);
       final crossfadeSecondsMatch = RegExp(r'"crossfadeSeconds"\s*:\s*(\d+)')
@@ -329,6 +384,10 @@ extension AudioSettingsJson on AudioSettings {
           int.tryParse(crossfadeSecondsMatch?.group(1) ?? '4') ?? 4;
       final parsedBalance =
           double.tryParse(audioBalanceMatch?.group(1) ?? '0') ?? 0.0;
+      final parsedEqMode = EqEngineMode.values.firstWhere(
+        (e) => e.name == (eqModeMatch?.group(1) ?? 'graphic'),
+        orElse: () => EqEngineMode.graphic,
+      );
 
       return AudioSettings(
         replayGain: ReplayGainPreference.values.firstWhere(
@@ -342,6 +401,8 @@ extension AudioSettingsJson on AudioSettings {
           orElse: () => EqPreset.flat,
         ),
         eqCustomLevels: parsedCustomLevels,
+        eqMode: parsedEqMode,
+        parametricBands: parametricBandsFromJson(json),
         playbackSpeed: parsedSpeed
             .clamp(kPlaybackSpeedMin, kPlaybackSpeedMax)
             .toDouble(),

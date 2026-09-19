@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/ingest/ingest_service.dart';
+import 'package:vora_tube/features/ads/premium_providers.dart';
 import 'package:vora_tube/features/collections/presentation/screens/statistics_screen.dart';
 import 'package:vora_tube/features/collections/presentation/widgets/listening_insights.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
@@ -54,6 +55,9 @@ void main() {
         appDatabaseProvider.overrideWithValue(db),
         libraryRepositoryProvider.overrideWithValue(repo),
         playerProvider.overrideWithValue(FakePlayerController()),
+        // Premium on: collapses every banner (and suppresses interstitial
+        // loads) so widget tests never touch the ad SDK.
+        isPremiumProvider.overrideWithValue(true),
       ],
       child: MaterialApp(home: child),
     );

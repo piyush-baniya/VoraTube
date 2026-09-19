@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/storage/device_storage_service.dart';
 import '../../../../core/audio/audio_effects.dart';
+import '../../../../core/audio/parametric_eq.dart';
 import '../../../../features/library/data/library_repository.dart';
 import '../../../../features/library/presentation/providers/library_providers.dart';
 import '../../../../app/theme/app_theme.dart';
@@ -134,6 +135,18 @@ class AudioSettingsController extends StateNotifier<AudioSettings> {
 
   Future<void> setEqCustomLevels(List<double> levels) async {
     state = state.copyWith(eqCustomLevels: levels);
+    await _persist();
+  }
+
+  Future<void> setEqMode(EqEngineMode mode) async {
+    state = state.copyWith(eqMode: mode);
+    await _persist();
+  }
+
+  Future<void> setParametricBands(List<ParametricEqBand> bands) async {
+    state = state.copyWith(
+      parametricBands: List<ParametricEqBand>.unmodifiable(bands),
+    );
     await _persist();
   }
 

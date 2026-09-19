@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../audio/audio_effects.dart';
+import '../audio/parametric_eq.dart';
 import '../../../core/ingest/ingest_service.dart';
 
 enum RepeatMode { off, all, one }
@@ -374,6 +375,19 @@ abstract class PlayerController {
     required bool enabled,
     required EqPreset preset,
     required List<double> customLevels,
+  });
+
+  /// Drives the in-app parametric equalizer pipeline.
+  ///
+  /// When [enabled] is true and [bands] is non-empty, the engine computes RBJ
+  /// biquad coefficients for [bands] and pushes them to the native audio
+  /// processor; otherwise the processor is forced to a byte-for-byte
+  /// pass-through. Only ever applies while [EqEngineMode.parametric] is active
+  /// — the graphic engine and this one are mutually exclusive. On non-Android
+  /// platforms this is a documented no-op so the UI never blocks.
+  Future<void> setParametricEq({
+    required bool enabled,
+    required List<ParametricEqBand> bands,
   });
 
   /// Sets the crossfade/gapless/off transition mode. Pass [crossfadeSeconds]

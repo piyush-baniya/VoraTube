@@ -6,6 +6,7 @@ import '../../../../shared/widgets/scroll_reveal.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/utils/scroll_pagination.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../ads/banner_ad_widget.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
 import '../../data/song_ref_mapper.dart';
@@ -80,6 +81,14 @@ class _AllSongsScreenState extends ConsumerState<AllSongsScreen> {
             controller: _controller,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
+              // A compact banner at the top of the list (collapses to nothing
+              // for Premium users).
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+                  child: VoraTubeBannerAd(),
+                ),
+              ),
               SliverList.separated(
                 itemCount:
                     tiles.length +

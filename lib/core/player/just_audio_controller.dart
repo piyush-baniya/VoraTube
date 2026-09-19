@@ -10,6 +10,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../services/analytics_service.dart';
 import '../audio/audio_effects.dart';
+import '../audio/parametric_eq.dart';
 import 'player_controller.dart';
 import 'queue_order.dart';
 
@@ -224,6 +225,28 @@ class JustAudioController extends BaseAudioHandler
     'voratube/volume_booster_v1',
   );
 
+  /// Platform channel to the native parametric equalizer audio processor, plus
+  /// the event channel used by native code to report the decoded sample rate so
+  /// Dart can recompute biquad coefficients for that exact rate.
+  static const MethodChannel _paramEqChannel = MethodChannel(
+    'voratube/parametric_eq_v1',
+  );
+  static const MethodChannel _paramEqRateChannel = MethodChannel(
+    'voratube/parametric_eq_v1/sampleRate',
+  );
+
+  /// Last known decoded sample rate (0 until the engine first configures the
+  /// processor). Biquad coefficients are only valid for one rate; when this
+  /// changes the native side emits `sampleRate` and the config is re-pushed.
+  int _paramSampleRate = 0;
+
+  /// Bumped on every push so the native processor crossfades rather than
+  /// clicking when the curve changes; 0 while nothing has ever been pushed.
+  int _parametricGeneration = 0;
+
+  bool _parametricEnabled = false;
+  List<ParametricEqBand> _parametricBands = const [];
+
   /// Authoritative current-first queue: `_queueRefs[0]` is ALWAYS the
   /// currently-playing (or selected) song. The engine loads exactly one source
   /// at a time from this list, so the displayed queue, the Dart state and the
@@ -381,6 +404,7 @@ class JustAudioController extends BaseAudioHandler
             .catchError((_) {}),
       );
     }
+    _initParametricChannel();
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
 
@@ -1139,8 +1163,9 @@ class JustAudioController extends BaseAudioHandler
       unawaited(_player.play());
       return;
     }
-    final existingIdx =
-        _queueRefs.indexWhere((r) => r.identityKey == key && r.identityKey != _historyInterimKey);
+    final existingIdx = _queueRefs.indexWhere(
+      (r) => r.identityKey == key && r.identityKey != _historyInterimKey,
+    );
     final inQueue = existingIdx >= 0;
     SongRef? target = inQueue ? _queueRefs[existingIdx] : null;
     if (!inQueue) {
@@ -1321,8 +1346,7 @@ class JustAudioController extends BaseAudioHandler
       if (removedCurrent) {
         // The current entry (real or placeholder) is gone: the next song, if
         // any, is the first real current; a removed placeholder never lingers.
-        if (interimKey != null &&
-            interimKey == _queueRefs.first.identityKey) {
+        if (interimKey != null && interimKey == _queueRefs.first.identityKey) {
           _historyInterimKey = null;
         }
       }
@@ -1676,7 +1700,8 @@ class JustAudioController extends BaseAudioHandler
     final live = interimKey == null
         ? _queueRefs
         : [
-            for (final r in _queueRefs) if (r.identityKey != interimKey) r,
+            for (final r in _queueRefs)
+              if (r.identityKey != interimKey) r,
           ];
     _baseQueue = List.unmodifiable(
       reconcileBaseOrder(
@@ -1727,8 +1752,9 @@ class JustAudioController extends BaseAudioHandler
 
   @override
   Future<void> setPlaybackSpeed(double speed) async {
-    final clamped =
-        speed.clamp(kPlaybackSpeedMin, kPlaybackSpeedMax).toDouble();
+    final clamped = speed
+        .clamp(kPlaybackSpeedMin, kPlaybackSpeedMax)
+        .toDouble();
     await _player.setSpeed(clamped);
     // Let the media notification / lock screen reflect the new speed.
     _broadcastSystemState();
@@ -1769,6 +1795,56 @@ class JustAudioController extends BaseAudioHandler
     } catch (_) {
       // EQ apply is best-effort on session reactivation; never block the player.
     }
+  }
+
+  @override
+  Future<void> setParametricEq({
+    required bool enabled,
+    required List<ParametricEqBand> bands,
+  }) async {
+    if (!Platform.isAndroid) return;
+    _parametricEnabled = enabled;
+    _parametricBands = List<ParametricEqBand>.from(bands);
+    _pushParametricConfig();
+  }
+
+  /// Listens for native sample-rate events and re-pushes the coefficient
+  /// config whenever the decoded rate changes (the native processor otherwise
+  /// stays a hard pass-through because coefficients are rate-specific).
+  void _initParametricChannel() {
+    _paramEqRateChannel.setMethodCallHandler((call) async {
+      if (call.method == 'sampleRate') {
+        _paramSampleRate = (call.arguments as num?)?.toInt() ?? 0;
+        _pushParametricConfig();
+      }
+    });
+  }
+
+  /// Computes coefficients for the current band stack and pushes the whole
+  /// snapshot to the native processor. Disabled / empty stacks push `enabled:
+  /// false` with a bumped generation so the native side switches cleanly back
+  /// to pass-through. Never blocks or throws on channel issues.
+  void _pushParametricConfig() {
+    final active =
+        _parametricEnabled && _parametricBands.any((band) => band.enabled);
+    final rate = _paramSampleRate;
+    final bands = active
+        ? _parametricBands.where((band) => band.enabled).toList()
+        : const <ParametricEqBand>[];
+    final coeffs = [
+      for (final band in bands) parametricBandCoeffs(band, sampleRate: rate),
+    ];
+    _parametricGeneration++;
+    unawaited(
+      _paramEqChannel
+          .invokeMethod<void>('configure', {
+            'gen': _parametricGeneration,
+            'enabled': active,
+            'rate': rate,
+            'coeffs': coeffs,
+          })
+          .catchError((_) {}),
+    );
   }
 
   @override
@@ -2021,9 +2097,11 @@ class JustAudioController extends BaseAudioHandler
             preampLinear,
     };
     final duckFactor = _ducked ? 0.33 : 1.0;
-    final effective = (_userVolume * gainMultiplier * duckFactor *
-            _transitionVolume)
-        .clamp(0.0, 1.0);
+    final effective =
+        (_userVolume * gainMultiplier * duckFactor * _transitionVolume).clamp(
+          0.0,
+          1.0,
+        );
     try {
       await _player.setVolume(effective);
     } catch (e) {
@@ -2062,7 +2140,9 @@ class JustAudioController extends BaseAudioHandler
       return false;
     }
     const steps = 10;
-    final step = Duration(milliseconds: math.max(1, duration.inMilliseconds ~/ steps));
+    final step = Duration(
+      milliseconds: math.max(1, duration.inMilliseconds ~/ steps),
+    );
     final gen = ++_fadeGeneration;
     for (var i = 1; i <= steps; i++) {
       if (gen != _fadeGeneration || _disposed) {
@@ -2380,8 +2460,7 @@ class JustAudioController extends BaseAudioHandler
       final snapshot = QueueSnapshot(
         identityKeys: [
           for (final r in _queueRefs)
-            if (r.identityKey.isNotEmpty &&
-                r.identityKey != _historyInterimKey)
+            if (r.identityKey.isNotEmpty && r.identityKey != _historyInterimKey)
               r.identityKey,
         ],
         index: 0,

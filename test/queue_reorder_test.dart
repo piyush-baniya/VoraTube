@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vora_tube/core/audio/audio_effects.dart';
+import 'package:vora_tube/core/audio/parametric_eq.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 
 /// Regression tests for the **queue reorder index contract**.
@@ -73,6 +74,12 @@ class _RecordingPlayer implements PlayerController {
   }) async {}
 
   @override
+  Future<void> setParametricEq({
+    required bool enabled,
+    required List<ParametricEqBand> bands,
+  }) async {}
+
+  @override
   Future<void> setTransitionMode(
     PlaybackTransitionMode mode, {
     int crossfadeSeconds = kDefaultCrossfadeSeconds,
@@ -82,8 +89,7 @@ class _RecordingPlayer implements PlayerController {
   Future<void> setAudioBalance(double balance) async {}
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {

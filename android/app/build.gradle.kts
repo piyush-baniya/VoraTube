@@ -165,6 +165,7 @@ kotlin {
 dependencies {
     implementation("com.google.android.play:app-update:2.1.0")
     implementation("com.google.android.play:app-update-ktx:2.1.0")
+    implementation("androidx.media3:media3-common:1.4.1")
 }
 
 flutter {

@@ -12,6 +12,7 @@ import 'package:vora_tube/core/db/app_database.dart';
 import 'package:vora_tube/core/ingest/ingest_service.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/core/permissions/permission_service.dart';
+import 'package:vora_tube/features/ads/premium_providers.dart';
 import 'package:vora_tube/features/library/data/library_repository.dart';
 import 'package:vora_tube/features/library/presentation/providers/library_providers.dart';
 import 'package:vora_tube/features/player/presentation/providers/player_providers.dart';
@@ -109,6 +110,9 @@ void main() {
         permissionServiceProvider.overrideWithValue(
           const _GrantedPermissionService(),
         ),
+        // Premium on: collapses every banner (and suppresses interstitial
+        // loads) so widget tests never touch the ad SDK.
+        isPremiumProvider.overrideWithValue(true),
         storageInfoProvider.overrideWith(
           (ref) => const StorageInfo(
             databaseSizeBytes: 0,

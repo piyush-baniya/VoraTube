@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vora_tube/core/audio/audio_effects.dart';
+import 'package:vora_tube/core/audio/parametric_eq.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 import 'package:vora_tube/features/ringtones/data/audio_util_service.dart';
 import 'package:vora_tube/features/ringtones/domain/ringtone_selection.dart';
@@ -166,6 +167,11 @@ class _FakePlayer implements PlayerController {
     required bool enabled,
     required EqPreset preset,
     required List<double> customLevels,
+  }) async {}
+  @override
+  Future<void> setParametricEq({
+    required bool enabled,
+    required List<ParametricEqBand> bands,
   }) async {}
   @override
   Future<void> setTransitionMode(
@@ -393,34 +399,27 @@ void main() {
       expect(service.setRingtoneCalls, hasLength(1));
     });
 
-    test(
-      'permissionRequired outcome when write settings is not granted, '
-      'and no assignment is attempted',
-      () async {
-        final service = _FakeAudioUtilService()..canWrite = false;
-        final c = RingtoneCutterController(
-          service: service,
-          durationMs: 120000,
-        )..attachTrack(sourceUri: _song().uri, title: _song().title);
-        final outcome = await c.setAsRingtone();
-        expect(outcome, SetRingtoneOutcome.permissionRequired);
-        expect(c.lastSetRingtoneOutcome, SetRingtoneOutcome.permissionRequired);
-        expect(c.lastError, isNotNull);
-        // The clip was exported (so it can be assigned after granting) but
-        // the direct assignment was never attempted without permission.
-        expect(service.cutRequests, hasLength(1));
-        expect(service.setRingtoneCalls, isEmpty);
-      },
-    );
+    test('permissionRequired outcome when write settings is not granted, '
+        'and no assignment is attempted', () async {
+      final service = _FakeAudioUtilService()..canWrite = false;
+      final c = RingtoneCutterController(service: service, durationMs: 120000)
+        ..attachTrack(sourceUri: _song().uri, title: _song().title);
+      final outcome = await c.setAsRingtone();
+      expect(outcome, SetRingtoneOutcome.permissionRequired);
+      expect(c.lastSetRingtoneOutcome, SetRingtoneOutcome.permissionRequired);
+      expect(c.lastError, isNotNull);
+      // The clip was exported (so it can be assigned after granting) but
+      // the direct assignment was never attempted without permission.
+      expect(service.cutRequests, hasLength(1));
+      expect(service.setRingtoneCalls, isEmpty);
+    });
 
     test(
       'assignExportedClip succeeds once the permission is granted',
       () async {
         final service = _FakeAudioUtilService();
-        final c = RingtoneCutterController(
-          service: service,
-          durationMs: 120000,
-        )..attachTrack(sourceUri: _song().uri, title: _song().title);
+        final c = RingtoneCutterController(service: service, durationMs: 120000)
+          ..attachTrack(sourceUri: _song().uri, title: _song().title);
         // Export once with permission granted -> assigned.
         expect(await c.setAsRingtone(), SetRingtoneOutcome.assigned);
         expect(service.setRingtoneCalls, hasLength(1));

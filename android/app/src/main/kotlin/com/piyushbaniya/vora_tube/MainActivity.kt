@@ -4,6 +4,7 @@ import android.content.Intent
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import com.piyushbaniya.vora_tube.audio.VoraTubeAudioUtilBridge
+import com.piyushbaniya.vora_tube.audio.VoraTubeParametricEqBridge
 import com.piyushbaniya.vora_tube.audio.VoraTubeVolumeBoosterBridge
 import com.piyushbaniya.vora_tube.ingest.VoraTubeIngestBridge
 import com.piyushbaniya.vora_tube.storage.VoraTubeBackupStorageBridge
@@ -28,6 +29,8 @@ class MainActivity : AudioServiceActivity() {
             .register(flutterEngine.dartExecutor.binaryMessenger)
         VoraTubeVolumeBoosterBridge(applicationContext)
             .register(flutterEngine.dartExecutor.binaryMessenger)
+        VoraTubeParametricEqBridge(flutterEngine.dartExecutor.binaryMessenger)
+            .register()
         mediaDeleteBridge = VoraTubeMediaDeleteBridge(applicationContext)
         mediaDeleteBridge.register(flutterEngine.dartExecutor.binaryMessenger)
         backupStorageBridge = VoraTubeBackupStorageBridge(applicationContext)

@@ -100,45 +100,6 @@ void main() {
       },
     );
 
-    test('banner placements stay locked until the 30-song milestone, then '
-        'stay eligible (shared monotonic counter)', () async {
-      final service = _FakeService();
-      final controller = InterstitialAdController(
-        isPremium: () => false,
-        service: service,
-      );
-
-      // 29 distinct starts: still not banner-eligible (and interstitials
-      // fired on the way, proving the milestone shares the song counter).
-      for (var i = 0; i < 29; i++) {
-        controller.onTrackStarted();
-        // Each threshold crossing reloads asynchronously; settle it so the
-        // next one can show (as the real seconds-long gap between songs does).
-        if (controller.plays % InterstitialAdController.songInterval == 0) {
-          await Future<void>.delayed(Duration.zero);
-        }
-      }
-      expect(controller.plays, 29);
-      expect(controller.bannerEligible, isFalse);
-      expect(service.showCalls, 5); // 5, 10, 15, 20, 25
-
-      controller.onTrackStarted(); // 30 -> milestone reached
-      expect(controller.plays, 30);
-      expect(controller.bannerEligible, isTrue);
-      expect(service.showCalls, 6); // and the 30th also crosses an interval
-      await Future<void>.delayed(Duration.zero);
-
-      // Monotonic: the milestone is never re-locked past 30.
-      for (var i = 0; i < 10; i++) {
-        controller.onTrackStarted();
-        if (controller.plays % InterstitialAdController.songInterval == 0) {
-          await Future<void>.delayed(Duration.zero);
-        }
-      }
-      expect(controller.plays, 40);
-      expect(controller.bannerEligible, isTrue);
-    });
-
     test('does not present when the ad is not ready (non-blocking)', () {
       // A service that stays unready: its load() never marks it ready.
       final idle = _IdleService();
@@ -169,7 +130,6 @@ void main() {
         controller.onTrackStarted();
       }
       expect(controller.plays, 0);
-      expect(controller.bannerEligible, isFalse);
       expect(service.showCalls, 0);
       expect(service.loadCalls, 0);
     });

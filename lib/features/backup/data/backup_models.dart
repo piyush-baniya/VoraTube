@@ -522,7 +522,8 @@ void validateBackupStructure(Map<String, dynamic> json) {
     for (final row in json[section] as List) {
       final index = row['i'];
       if (index != null &&
-          (index >= count || (section != 'history' && !seen.add(index as int)))) {
+          (index >= count ||
+              (section != 'history' && !seen.add(index as int)))) {
         invalid();
       }
     }
@@ -584,6 +585,7 @@ void validatePortableSetting(String key, String value) {
     'eqEnabled': 'b',
     'eqPreset': 's',
     'eqCustomLevels': 'l',
+    'eqMode': 's',
     'playbackSpeed': 'n',
     'transitionMode': 's',
     'crossfadeSeconds': 'n',

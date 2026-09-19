@@ -8,6 +8,7 @@ import '../../../../shared/widgets/pressable_scale.dart';
 import '../../../../shared/widgets/skeleton_list.dart';
 import '../../../../shared/widgets/transitions.dart';
 import '../../../../app/theme/app_tokens.dart';
+import '../../../ads/banner_ad_widget.dart';
 import '../../../player/presentation/providers/player_providers.dart';
 import '../../data/library_models.dart';
 import '../../data/library_repository.dart';
@@ -155,6 +156,14 @@ class _FilteredSongsScreenState extends ConsumerState<FilteredSongsScreen> {
                       collectionKind: widget.collectionKind,
                       collectionLabel: widget.collectionLabel,
                       subtitle: subtitle,
+                    ),
+                  ),
+                  // A compact banner under the header (collapses to nothing
+                  // for Premium users).
+                  const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+                      child: VoraTubeBannerAd(),
                     ),
                   ),
                   // Artist detail page: albums the artist appears on, shown as a

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/player/player_controller.dart';
+import '../../../../core/audio/parametric_eq.dart';
 import '../../../library/data/library_repository.dart';
 import '../../../library/presentation/providers/library_providers.dart';
 import '../../../library/presentation/providers/library_view_providers.dart';
@@ -250,11 +251,25 @@ final audioSettingsBridgeProvider = Provider((ref) {
     };
     unawaited(player.setReplayGainMode(mode, preampDb: settings.preampDb));
     unawaited(player.setPlaybackSpeed(settings.playbackSpeed));
+    // Only one equalizer engine is ever active: the Android hardware graphic
+    // EQ or the in-app parametric biquad pipeline, both gated by `eqEnabled`.
+    // Passing the other engine `enabled: false` forces it to pass-through, so
+    // a curve can never be coloured twice.
+    final graphicActive =
+        settings.eqEnabled && settings.eqMode == EqEngineMode.graphic;
+    final parametricActive =
+        settings.eqEnabled && settings.eqMode == EqEngineMode.parametric;
     unawaited(
       player.setEqualizer(
-        enabled: settings.eqEnabled,
+        enabled: graphicActive,
         preset: settings.eqPreset,
         customLevels: settings.eqCustomLevels,
+      ),
+    );
+    unawaited(
+      player.setParametricEq(
+        enabled: parametricActive,
+        bands: settings.parametricBands,
       ),
     );
     unawaited(

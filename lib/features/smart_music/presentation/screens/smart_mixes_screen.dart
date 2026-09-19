@@ -2,20 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../app/theme/app_tokens.dart';
+import '../../../../../features/ads/banner_ad_widget.dart';
+import '../../../../../features/ads/interstitial_ads_provider.dart';
 import '../../../../../features/library/presentation/providers/library_view_providers.dart';
 import '../../../../../shared/widgets/empty_state.dart' show EmptyState;
-import '../../../../../shared/widgets/skeleton_list.dart';
 import '../../data/smart_mix_service.dart';
 import '../providers/smart_music_providers.dart';
 import '../widgets/mix_card.dart';
 import '../widgets/recommendation_disclaimer.dart';
 import 'smart_mix_detail_screen.dart';
 
-class SmartMixesScreen extends ConsumerWidget {
+class SmartMixesScreen extends ConsumerStatefulWidget {
   const SmartMixesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SmartMixesScreen> createState() => _SmartMixesScreenState();
+}
+
+class _SmartMixesScreenState extends ConsumerState<SmartMixesScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Interstitial ad trigger: the user opened the Smart Mixes list.
+    Future.microtask(
+      () => ref.read(interstitialAdControllerProvider).showOnTrigger(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final asyncMixes = ref.watch(smartMixesProvider);
@@ -28,16 +43,29 @@ class SmartMixesScreen extends ConsumerWidget {
         backgroundColor: colorScheme.surface,
         foregroundColor: colorScheme.onSurface,
       ),
-      body: asyncMixes.when(
-        loading: () => _buildSkeleton(),
-        error: (error, stack) => _buildError(context, ref, error),
-        data: (mixes) {
-          if (mixes.isEmpty || mixes.every((m) => m.songs.isEmpty)) {
-            final hasSongs = ref.watch(libraryHasSongsProvider).value ?? true;
-            return _buildEmpty(context, hasSongs);
-          }
-          return _buildMixesList(context, mixes);
-        },
+      body: Column(
+        children: [
+          // A compact banner above the content (collapses to nothing for
+          // Premium users).
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppTokens.s5),
+            child: VoraTubeBannerAd(),
+          ),
+          Expanded(
+            child: asyncMixes.when(
+              loading: () => _buildSkeleton(),
+              error: (error, stack) => _buildError(context, ref, error),
+              data: (mixes) {
+                if (mixes.isEmpty || mixes.every((m) => m.songs.isEmpty)) {
+                  final hasSongs =
+                      ref.watch(libraryHasSongsProvider).value ?? true;
+                  return _buildEmpty(context, hasSongs);
+                }
+                return _buildMixesList(context, mixes);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:vora_tube/core/audio/audio_effects.dart';
+import 'package:vora_tube/core/audio/parametric_eq.dart';
 import 'package:vora_tube/core/player/player_controller.dart';
 
 /// Deterministic no-op player for widget tests. Never touches platform
@@ -119,6 +120,8 @@ class FakePlayerController implements PlayerController {
   bool? eqEnabled;
   EqPreset? eqPreset;
   List<double>? eqCustomLevels;
+  bool? parametricEqEnabled;
+  List<ParametricEqBand>? parametricEqBands;
   PlaybackTransitionMode? transitionMode;
   int? crossfadeSeconds;
   double? audioBalance;
@@ -137,6 +140,15 @@ class FakePlayerController implements PlayerController {
     eqEnabled = enabled;
     eqPreset = preset;
     eqCustomLevels = List<double>.of(customLevels);
+  }
+
+  @override
+  Future<void> setParametricEq({
+    required bool enabled,
+    required List<ParametricEqBand> bands,
+  }) async {
+    parametricEqEnabled = enabled;
+    parametricEqBands = List<ParametricEqBand>.of(bands);
   }
 
   @override
